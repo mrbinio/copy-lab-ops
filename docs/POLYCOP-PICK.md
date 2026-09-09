@@ -58,4 +58,4 @@ Hunt 994 nowych nazw **nie znalazł** lepszego profilu do PolyCop niż Antblack.
 
 ## Kiedy włączasz
 
-Copy zostaje **off**, dopóki **Ty** nie włączysz w Telegramie. Jak włączasz: tylko Antblack, SL $31, spend $15.
+Copy zostaje **off**. Kartka jest przygotowana: Antblack Paused, reszta Paused, capy $5 / $15 / SL $31. Włączasz tylko Ty, później, i tylko Turn On Copy — nie All.
