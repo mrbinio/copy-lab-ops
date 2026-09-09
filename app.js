@@ -48,7 +48,9 @@
     $("app").hidden = false;
     $("who").textContent = state.user
       ? state.user.email + " · " + state.role
-      : "local lab (no Firebase yet)";
+      : (location.hostname.indexOf("github.io") !== -1
+        ? "GitHub Pages · internet"
+        : "no Firebase yet");
     const canWrite = state.role === "owner" || state.role === "local";
     $("btn-note").disabled = !canWrite;
     $("btn-cmd").disabled = !canWrite;
