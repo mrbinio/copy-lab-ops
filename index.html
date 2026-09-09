@@ -3,15 +3,15 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Copy Lab 2133</title>
+  <title>Copy Lab</title>
   <meta http-equiv="Cache-Control" content="no-store" />
-  <link rel="stylesheet" href="./dash-2133.css" />
+  <link rel="stylesheet" href="./dash-2141.css" />
 </head>
 <body>
   <div id="gate" class="gate">
-    <p class="stamp">BUILD 21:33 UTC · charts + 3 paths · if this bar is missing, the browser is cached</p>
+    <p class="stamp">BUILD 21:41 UTC · 2026 board</p>
     <h1>Copy Lab</h1>
-    <p class="lede">Recovery and forward P&amp;L board. Does not trade. Password from chat until Google is wired.</p>
+    <p class="lede">Remote decision board. Does not place trades. Password from chat until Google is wired.</p>
     <p id="gate-msg" class="msg"></p>
     <button class="btn primary" id="btn-google" type="button" hidden>Continue with Google</button>
     <label class="lbl" for="page-code">Page password</label>
@@ -27,14 +27,21 @@
       </div>
       <div class="mast-right">
         <p class="who" id="who"></p>
-        <p class="hunt-live" id="hunt-pulse"></p>
+        <p class="hunt-live"><span class="pulse" aria-hidden="true"></span><span id="hunt-pulse"></span></p>
       </div>
     </header>
 
+    <section class="how">
+      <h2>How this page works</h2>
+      <p>This is a remote lab. It does not buy or sell. You enable copy only in Telegram <b>@PolyCop_BOT</b>. The page is here so you can see cash, the recovery plan, and every wallet the hunt scored — then decide.</p>
+      <p>Hunt runs on GitHub at <b>:20 and :50 UTC</b> (twice an hour), Mac off. The open board refreshes hunt data every <b>15 seconds</b>. New names appear in the charts and table. Hunt never turns PolyCop on.</p>
+    </section>
+
     <section class="next">
       <p class="kicker">Best next step</p>
-      <p class="next-line">Keep copy <b>OFF</b> in @PolyCop_BOT. Hunt is already searching sport, politics, crypto, culture, finance, economics every 30 minutes. You turn on <b>one</b> wallet later, by hand, only if a WAIT name also has ≥90 days, both lab windows green, concentration ≤0.45, CopyGrade not Avoid.</p>
+      <p class="next-line">Keep copy <b>OFF</b> in @PolyCop_BOT. Hunt is already searching sport, politics, crypto, culture, finance, economics. You turn on <b>one</b> wallet later, by hand, only if a WAIT name also has ≥90 days, both lab windows green, concentration ≤0.45, CopyGrade not Avoid.</p>
     </section>
+
 
     <section class="kpis" aria-label="Money">
       <div><p class="kpi" id="s-cash">—</p><p class="lbl">Cash</p></div>
@@ -112,7 +119,7 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
-  <script src="./access-2133.js"></script>
-  <script src="./dash-2133.js"></script>
+  <script src="./access-2141.js"></script>
+  <script src="./dash-2141.js"></script>
 </body>
 </html>
