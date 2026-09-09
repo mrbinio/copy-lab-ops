@@ -1,0 +1,4 @@
+/*
+  X-Frame-Options: DENY
+  Referrer-Policy: same-origin
+  X-Content-Type-Options: nosniff
