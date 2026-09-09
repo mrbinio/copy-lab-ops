@@ -8,11 +8,11 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="./dash-2232.css" />
+  <link rel="stylesheet" href="./dash-2124.css" />
 </head>
 <body>
   <div id="gate" class="gate">
-    <p class="stamp">BUILD 22:32 UTC</p>
+    <p class="stamp">BUILD 21:24 UTC</p>
     <h1>Copy Lab</h1>
     <p class="lede" data-i18n="gate.lede"></p>
     <p id="gate-msg" class="msg"></p>
@@ -80,6 +80,12 @@
           </article>
         </div>
         <p class="muted" data-i18n="do.warn"></p>
+        <div class="section">
+          <h2 data-i18n="lane.title"></h2>
+          <p class="lead" data-i18n="lane.lead"></p>
+          <p class="lane-head" id="lane-head">—</p>
+          <div class="lanes" id="lane-grid"></div>
+        </div>
         <div class="section">
           <h2 data-i18n="res.title"></h2>
           <p class="lead" data-i18n="res.lead"></p>
@@ -181,6 +187,7 @@
         <div class="section">
           <h2 data-i18n="sim.table"></h2>
           <p class="lead" id="hunt-plain"></p>
+          <p class="lane-filter" id="lane-filter" hidden></p>
           <div class="table-wrap">
             <table class="cmp">
               <thead>
@@ -261,7 +268,7 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
-  <script src="./access-2232.js"></script>
-  <script src="./dash-2232.js"></script>
+  <script src="./access-2124.js"></script>
+  <script src="./dash-2124.js"></script>
 </body>
 </html>

@@ -148,5 +148,13 @@
     },
     "score": 15.0
   },
+  "lanes": [
+    {"cat": "POLITICS", "tone": "cold", "checked": 6, "both_windows": 0, "best": null, "w60": 0, "w90": 0, "conc": null},
+    {"cat": "CULTURE", "tone": "cold", "checked": 6, "both_windows": 0, "best": "stauffen", "w60": 0, "w90": 6.4, "conc": 1.0},
+    {"cat": "TECH", "tone": "cold", "checked": 6, "both_windows": 0, "best": "unwillingly-publ", "w60": 0, "w90": 9.3, "conc": 1.0},
+    {"cat": "FINANCE", "tone": "cold", "checked": 6, "both_windows": 0, "best": "cassino", "w60": 3.5, "w90": 0, "conc": 0.77},
+    {"cat": "SPORTS", "tone": "no", "checked": 6, "both_windows": 1, "best": "Daemon99", "w60": 25.9, "w90": 27.9, "conc": 0.6},
+    {"cat": "ECONOMICS", "tone": "wait", "checked": 6, "both_windows": 1, "best": "Dreamlawn", "w60": 4.4, "w90": 4.4, "conc": 0.27}
+  ],
   "updated_at": "2026-09-09T18:03:31.239855+00:00"
 }
