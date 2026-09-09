@@ -1,142 +1,96 @@
 <!DOCTYPE html>
-<html lang="pl">
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Copy Lab</title>
+  <title>Copy Lab — decision board</title>
   <meta http-equiv="Cache-Control" content="no-cache" />
-  <link rel="stylesheet" href="./styles.css?v=5" />
+  <link rel="stylesheet" href="./styles.css?v=7" />
 </head>
 <body>
-  <div id="gate" class="auth-gate">
-    <h1>Copy Lab</h1>
-    <p class="gate-lead">Zaloguj się Google: <b>damianbiniarz@gmail.com</b>. To zamyka tablicę przed obcymi. Hasło strony jest zapasem, jeśli Google nie wstanie.</p>
-    <p id="gate-msg" class="gate-lead"></p>
-    <label class="lbl" for="page-code">Hasło strony</label>
-    <input id="page-code" type="password" autocomplete="current-password" placeholder="hasło z czatu" />
-    <button class="btn primary" id="btn-code" type="button">Wejdź</button>
-    <button class="btn" id="btn-google" type="button" hidden>Wejdź przez Google</button>
-  </div>
-
-  <div id="app" class="shell hidden" hidden>
-    <header class="top">
-      <div>
-        <p class="kicker">Copy Lab · nie handluje</p>
-        <h1>Co robić z $39</h1>
-        <p class="sub">Copy włączasz tylko Ty, w Telegramie <b>@PolyCop_BOT</b>. Tu tylko decyzja i hunt 24/7.</p>
-      </div>
-      <div class="who" id="who"></div>
-    </header>
-
-    <section class="card money">
-      <p class="kicker">1 · Pieniądze <span class="hint">ile USDC jest naprawdę na koncie PolyCop</span></p>
-      <div class="bigrow">
-        <div>
-          <p class="num" id="s-cash">—</p>
-          <p class="lbl">Cash teraz</p>
-          <p class="hint">To jedyna prawda. Nie sim, nie dashboard −$10.</p>
-        </div>
-        <div>
-          <p class="num bad" id="s-live">—</p>
-          <p class="lbl">Ostatnia sesja live</p>
-          <p class="hint">Strata na <b>invorser</b> (esport). Dlatego copy jest <b>wyłączony</b>.</p>
-        </div>
-      </div>
-    </section>
-
-    <section class="card pick">
-      <p class="kicker">2 · Rozwiązanie <span class="hint">jeden portfel, nie lista ośmiu nazw</span></p>
-      <h2 id="hero-name">—</h2>
-      <p class="lead" id="hero-why"></p>
-      <p class="addr" id="hero-addr"></p>
-      <p class="hint" id="hero-meaning"></p>
-      <table class="plain">
-        <thead><tr><th>W PolyCop ustaw</th><th>Co to znaczy</th></tr></thead>
-        <tbody id="pick-caps"></tbody>
-      </table>
-    </section>
-
-    <section class="card hunt">
-      <p class="kicker">3 · Hunt 24/7 <span class="hint">szuka kogoś lepszego niż Antblack; strona sama się nadpisuje</span></p>
-      <p class="status" id="hunt-pulse">Ładuję hunt…</p>
-      <p class="lead" id="hunt-plain"></p>
-      <div id="hunt-cards"></div>
-      <details>
-        <summary>Log skanowania (surowy)</summary>
-        <pre id="hunt-log"></pre>
-      </details>
-    </section>
-
-    <section class="card">
-      <p class="kicker">4 · Tego nie wklejaj</p>
-      <p class="hint">Invorser spalił kasę. Weasel ma 60d = $0. PoppyG to świece Bitcoin 5 min. CopyGrade Avoid = farm.</p>
-      <ul class="ban" id="ban-list"></ul>
-    </section>
-
-    <details class="more">
-      <summary>Więcej liczb (research, lejek, CopyGrade)</summary>
-      <section data-view="research">
-        <h2>Skąd Antblack</h2>
-        <p class="lead" id="research-lead"></p>
-        <div class="chart-wrap"><canvas id="chart-conc" height="280"></canvas></div>
-        <p class="caption">Udział |PnL| w jednym rynku. Poniżej ~0.40 = nie jednorynkowy fortel.</p>
-        <table>
-          <thead><tr><th>Name</th><th>Dni</th><th>60d</th><th>90d</th><th>Kopie</th></tr></thead>
-          <tbody id="sport-passers"></tbody>
-        </table>
-      </section>
-      <section data-view="funnel">
-        <h2>Lejek</h2>
-        <div class="chart-wrap"><canvas id="chart-funnel" height="220"></canvas></div>
-        <p id="funnel-ns" class="hint"></p>
-        <p id="funnel-all" class="hint"></p>
-      </section>
-      <section data-view="veto">
-        <h2>CopyGrade</h2>
-        <table>
-          <thead><tr><th>Name</th><th>Źródło</th><th>Score</th><th>Label</th><th>Farm</th><th>Edge</th></tr></thead>
-          <tbody id="cg-rows"></tbody>
-        </table>
-        <table>
-          <thead><tr><th>Name</th><th>Dni</th><th>tpd</th><th>60d</th><th>90d</th><th>Świeca</th><th>Top rynek</th></tr></thead>
-          <tbody id="cg-lab"></tbody>
-        </table>
-      </section>
-      <section data-view="docs">
-        <h2>Handoffs</h2>
-        <table>
-          <thead><tr><th>Data</th><th>Tytuł</th><th>Plik</th></tr></thead>
-          <tbody id="doc-rows"></tbody>
-        </table>
-      </section>
-      <p class="hint" id="live-reason"></p>
-      <p class="hint" id="live-eval"></p>
-      <p class="hint" id="s-sims" hidden></p>
-      <span id="live-sl-old" hidden></span>
-      <span id="live-sl-new" hidden></span>
-      <span id="s-enable" hidden></span>
-      <div id="watch-rows" hidden></div>
-      <div id="ban-rows" hidden></div>
-      <div id="hunt-status" hidden></div>
-      <div id="hunt-rows" hidden></div>
-      <div id="pick-lead" hidden></div>
-      <div id="pick-name" hidden></div>
-      <div id="pick-why" hidden></div>
-      <div id="pick-addr" hidden></div>
-      <div id="verdict-body" hidden></div>
-      <div id="notes" hidden></div>
-      <textarea id="note-text" hidden></textarea>
-      <button id="btn-note" hidden type="button"></button>
-      <button id="btn-cmd" hidden type="button"></button>
-      <p id="remote-url" hidden></p>
+  <div id="gate" class="gate">
+    <p class="eyebrow">Copy Lab</p>
+    <h1>Decision board</h1>
+    <p class="lede">Allowlist: <b>damianbiniarz@gmail.com</b>. This is not a public sheet.</p>
+    <p id="gate-msg" class="msg"></p>
+    <button class="btn primary" id="btn-google" type="button" hidden>Continue with Google</button>
+    <details class="backup">
+      <summary>Page password (backup)</summary>
+      <label class="lbl" for="page-code">Password</label>
+      <input id="page-code" type="password" autocomplete="current-password" />
+      <button class="btn" id="btn-code" type="button">Enter</button>
     </details>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <div id="app" class="shell hidden" hidden>
+    <header class="mast">
+      <div>
+        <p class="eyebrow">Copy Lab · does not trade</p>
+        <h1>Copy decision</h1>
+      </div>
+      <p class="who" id="who"></p>
+    </header>
+
+    <section class="status" aria-label="Account">
+      <div class="pill off" id="copy-state">COPY OFF</div>
+      <div class="kpis">
+        <div>
+          <p class="kpi" id="s-cash">—</p>
+          <p class="lbl">Cash</p>
+        </div>
+        <div>
+          <p class="kpi bad" id="s-live">—</p>
+          <p class="lbl">Last live</p>
+        </div>
+        <div>
+          <p class="kpi" id="s-hole">—</p>
+          <p class="lbl">To recover</p>
+        </div>
+      </div>
+      <p class="foot" id="live-line"></p>
+    </section>
+
+    <section class="decision">
+      <p class="headline" id="decision-headline"></p>
+      <p id="decision-why"></p>
+      <p class="change" id="decision-change"></p>
+    </section>
+
+    <section>
+      <h2>Compare the field</h2>
+      <p class="sec">Same $5 / $15 lab for every row. Bigger 90d number is not a better copy. Hunt rows update every hour.</p>
+      <div class="table-wrap">
+        <table class="cmp" id="field-table">
+          <thead>
+            <tr>
+              <th>Call</th>
+              <th>Wallet</th>
+              <th>60d</th>
+              <th>90d</th>
+              <th>Days</th>
+              <th>Conc</th>
+              <th>Why this call</th>
+            </tr>
+          </thead>
+          <tbody id="field-body"></tbody>
+        </table>
+      </div>
+      <p class="foot" id="hunt-pulse"></p>
+    </section>
+
+    <details class="more">
+      <summary>Addresses, PolyCop caps, ban list</summary>
+      <h3>If you override (not a go-live)</h3>
+      <div id="override-box"></div>
+      <h3>Do not paste</h3>
+      <ul class="ban" id="ban-list"></ul>
+    </details>
+  </div>
+
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
-  <script src="./access-config.js?v=5"></script>
-  <script src="./app.js?v=5"></script>
+  <script src="./access-config.js?v=7"></script>
+  <script src="./firebase-config.js"></script>
+  <script src="./app.js?v=7"></script>
 </body>
 </html>

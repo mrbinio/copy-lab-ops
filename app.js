@@ -1,18 +1,25 @@
-/* Copy Lab ops. Does not place trades. */
+/* Copy Lab decision board. Does not place trades. */
 (function () {
-  const charts = {};
-  const state = { snap: null, user: null, role: null, db: null, hunt: null };
+  const state = { snap: null, user: null, role: null, hunt: null };
 
   function $(id) { return document.getElementById(id); }
-  function money(n, digits) {
-    if (n == null || Number.isNaN(n)) return "—";
-    const d = digits == null ? 1 : digits;
-    const abs = Math.abs(n).toFixed(d);
-    return (n < 0 ? "−$" : "+$") + abs;
+  function esc(s) {
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   }
-  function moneyPlain(n) {
-    if (n == null || Number.isNaN(n)) return "—";
-    return (n < 0 ? "−$" : "+$") + Math.abs(n).toFixed(1);
+  function money(n, digits) {
+    if (n == null || Number.isNaN(Number(n))) return "—";
+    const d = digits == null ? 1 : digits;
+    const v = Number(n);
+    return (v < 0 ? "−$" : "+$") + Math.abs(v).toFixed(d);
+  }
+  function usd(n) {
+    if (n == null || Number.isNaN(Number(n))) return "—";
+    return "$" + Number(n).toFixed(2);
+  }
+  function conc(n) {
+    if (n == null || Number.isNaN(Number(n))) return "—";
+    return Number(n).toFixed(2);
   }
 
   async function sha256hex(text) {
@@ -22,21 +29,8 @@
     }).join("");
   }
 
-  function unlocked() {
-    return sessionStorage.getItem("copy-lab-ok") === "1";
-  }
-  function unlockSession() {
-    sessionStorage.setItem("copy-lab-ok", "1");
-  }
-
-  function page() {
-    return (location.hash || "#now").replace("#", "") || "now";
-  }
-  function setRoute() {
-    const p = page();
-    if (p === "funnel" && state.snap) renderFunnel(state.snap);
-    if (p === "research" && state.snap) renderResearch(state.snap);
-  }
+  function unlocked() { return sessionStorage.getItem("copy-lab-ok") === "1"; }
+  function unlockSession() { sessionStorage.setItem("copy-lab-ok", "1"); }
 
   function roleOf(email) {
     const cfg = window.OPS_CONFIG || { owners: [], viewers: [] };
@@ -51,9 +45,7 @@
     $("gate").hidden = true;
     $("app").classList.remove("hidden");
     $("app").hidden = false;
-    $("who").textContent = state.user && state.user.email
-      ? state.user.email
-      : "damianbiniarz@gmail.com";
+    $("who").textContent = (state.user && state.user.email) || "damianbiniarz@gmail.com";
   }
 
   function showGate(msg) {
@@ -68,12 +60,12 @@
     const typed = ($("page-code").value || "").trim();
     const expect = (window.OPS_CONFIG && window.OPS_CONFIG.pageCodeSha256) || "";
     if (!typed || !expect) {
-      showGate("Wpisz hasło strony.");
+      showGate("Enter the page password.");
       return;
     }
     const hex = await sha256hex(typed);
     if (hex !== expect) {
-      showGate("Złe hasło.");
+      showGate("Wrong password.");
       return;
     }
     unlockSession();
@@ -82,242 +74,170 @@
     renderAll();
   }
 
-  function darkChart() {
-    if (!window.Chart) return;
-    Chart.defaults.color = "#5c5850";
-    Chart.defaults.borderColor = "#d9d3c7";
+  function firebaseReady() {
+    const cfg = window.OPS_CONFIG && window.OPS_CONFIG.firebase;
+    return cfg && cfg.apiKey && window.firebase;
   }
 
-  function drawBar(id, labels, data, opts) {
-    if (!$(id) || !window.Chart) return;
-    if (charts[id]) charts[id].destroy();
-    charts[id] = new Chart($(id).getContext("2d"), {
-      type: "bar",
-      data: { labels: labels, datasets: [{ label: opts.label, data: data, backgroundColor: opts.color || "#1f4b99" }] },
-      options: {
-        indexAxis: "y",
-        plugins: { legend: { display: false } },
-        scales: {
-          x: { beginAtZero: true, max: opts.max, title: { display: true, text: opts.xTitle } },
-          y: { title: { display: true, text: opts.yTitle } },
-        },
-      },
-    });
+  function classifyHunt(row, official) {
+    const cg = row.copygrade || {};
+    const label = String(cg.label || "");
+    const w60 = Number(row.w60 || 0);
+    const w90 = Number(row.w90 || 0);
+    const c = Number(row.conc || 1);
+    const days = Number(row.history_days || 0);
+    const copies = Number(row.copies || 0);
+    const candle = Number(row.candle || 0);
+    const o60 = official && official.w60 != null ? Number(official.w60) : 17;
+    const o90 = official && official.w90 != null ? Number(official.w90) : 9.2;
+
+    if (label.indexOf("Avoid") !== -1) {
+      return { call: "reject", why: "CopyGrade Avoid" };
+    }
+    if (candle > 0.25) {
+      return { call: "reject", why: "5-minute candle book" };
+    }
+    if (w60 <= 0 || w90 <= 0) {
+      return { call: "reject", why: "Not profitable in both lab windows" };
+    }
+    if (c > 0.45) {
+      return { call: "reject", why: "Top market " + Math.round(c * 100) + "% of |PnL|" };
+    }
+    if (copies < 6) {
+      return { call: "reject", why: "Fewer than 6 copyable fills under $15" };
+    }
+    if (w60 > o60 && w90 > o90 && c <= 0.45 && days >= 90) {
+      return { call: "wait", why: "Beats Antblack on both windows — still your enable" };
+    }
+    if (days < 90) {
+      return { call: "wait", why: "Both windows green, track under 90 days" };
+    }
+    if (w60 < 8 && w90 < 8) {
+      return { call: "reject", why: "Lab edge too small vs $13.58 hole" };
+    }
+    return { call: "wait", why: "Partial gates only" };
+  }
+
+  function rowHtml(r) {
+    const call = r.call === "wait" ? "wait" : "reject";
+    const label = call === "wait" ? "WAIT" : "NO";
+    return '<tr class="' + call + '">' +
+      '<td><span class="pill ' + call + '">' + label + "</span></td>" +
+      '<td><span class="name">' + esc(r.name) + '</span><span class="src">' +
+      esc((r.domain || "") + (r.source ? " · " + r.source : "")) + "</span></td>" +
+      "<td>" + money(r.w60) + "</td>" +
+      "<td>" + money(r.w90) + "</td>" +
+      "<td>" + (r.days != null ? Math.round(r.days) + "d" : "—") + "</td>" +
+      "<td>" + conc(r.conc) + "</td>" +
+      '<td class="why">' + esc(r.why_short || r.meaning || "") + "</td>" +
+      "</tr>";
   }
 
   function renderNow(s) {
-    $("s-cash").textContent = "$" + Number(s.cash_usd).toFixed(2);
+    const board = s.board || {};
+    $("s-cash").textContent = usd(s.cash_usd);
     $("s-live").textContent = money(s.last_live_pnl_usd, 2);
-    if ($("s-sims")) $("s-sims").textContent = String((s.universe || {}).total_isolated_sims || 76);
-    if ($("verdict-body")) $("verdict-body").textContent = s.verdict || "";
+    $("s-hole").textContent = usd(Math.abs(Number(s.last_live_pnl_usd) || 0));
+    $("copy-state").textContent = board.copy_state || "COPY OFF";
+    $("live-line").textContent = board.live_line || "";
+    $("decision-headline").textContent = board.headline || "Do not enable copy.";
+    $("decision-why").textContent = board.why || "";
+    $("decision-change").textContent = board.change || "";
   }
 
-  function renderPick(s) {
-    const p = s.solution || {};
-    const name = (p.name || "—") + " · " + (p.domain || "");
-    $("hero-name").textContent = name;
-    $("hero-why").textContent = p.why || p.summary || "";
-    $("hero-addr").textContent = p.address || "";
-    $("hero-meaning").innerHTML =
-      "Co to znaczy: lab na $5 / ignore &lt;$20 / spend $15. 60 dni i 90 dni na plusie. " +
-      "Nie esport, nie świeca Bitcoin 5 min, CopyGrade nie mówi Avoid. " +
-      "76 dni to krótko — dlatego hunt leci dalej i nadpisuje tę kartę, jeśli ktoś przebije.";
-    if ($("pick-name")) $("pick-name").textContent = name;
-    if ($("pick-why")) $("pick-why").textContent = p.why || "";
-    if ($("pick-addr")) $("pick-addr").textContent = p.address || "";
-    const caps = s.caps_if_enabled_later || {};
-    const rows = [
-      ["Tylko 1 Active, reszta Paused", "Nie kopiujesz ośmiu osób naraz. Jeden specjalista."],
-      ["Fixed / Max / Yes-No / Market = $" + (caps.fixed_usd || 5), "Jedna kopia nie zjada stacka $39."],
-      ["Ignore poniżej $" + (caps.ignore_below_usd || 20), "Pomija drobnice, która spala prowizję."],
-      ["Total spend $" + (caps.total_spend_usd || 15), "Naraz w rynku max ~$15, nie cały cash."],
-      ["Balance SL $" + (caps.balance_sl_usd || 31), "Stary SL $42 jest zły przy cash ~$39. Nowy ≈ cash − $8."],
-      ["Turn On All Copy = NIE", "Nigdy cała lista. Tylko ten jeden adres."],
-    ];
-    $("pick-caps").innerHTML = rows.map(function (r) {
-      return "<tr><td>" + r[0] + "</td><td>" + r[1] + "</td></tr>";
+  function officialWatch(s) {
+    return ((s.board || {}).options || []).find(function (r) { return r.name === "Antblack"; }) || s.solution || {};
+  }
+
+  function renderField(s, hunt) {
+    const known = {};
+    const rows = ((s.board || {}).options || []).slice();
+    rows.forEach(function (r) { known[(r.name || "").toLowerCase()] = true; });
+    const official = officialWatch(s);
+    (hunt && hunt.candidates || []).forEach(function (h) {
+      const name = h.username || "";
+      if (known[name.toLowerCase()]) return;
+      known[name.toLowerCase()] = true;
+      const cls = classifyHunt(h, official);
+      rows.push({
+        name: name,
+        domain: h.cat || h.domain || "",
+        source: "hourly hunt",
+        call: cls.call,
+        why_short: cls.why + (h.top_market ? " (" + String(h.top_market).slice(0, 42) + ")" : ""),
+        w60: h.w60,
+        w90: h.w90,
+        days: h.history_days,
+        conc: h.conc
+      });
+    });
+    rows.sort(function (a, b) {
+      if (a.call === "wait" && b.call !== "wait") return -1;
+      if (b.call === "wait" && a.call !== "wait") return 1;
+      return (Number(b.w90) || 0) - (Number(a.w90) || 0);
+    });
+    $("field-body").innerHTML = rows.map(rowHtml).join("");
+  }
+
+  function renderBans(s) {
+    const onBoard = {};
+    ((s.board || {}).options || []).forEach(function (r) { onBoard[(r.name || "").toLowerCase()] = true; });
+    const extra = (s.do_not_copy || []).filter(function (r) {
+      return !onBoard[(r.name || "").toLowerCase()];
+    });
+    $("ban-list").innerHTML = extra.map(function (r) {
+      return "<li><b>" + esc(r.name) + "</b> — " + esc(r.why) + "</li>";
     }).join("");
   }
 
-  function beatsOfficial(h, official) {
-    if (!h || !h.username) return false;
-    const o60 = official && official.w60 != null ? official.w60 : 17;
-    const o90 = official && official.w90 != null ? official.w90 : 9;
-    if ((h.w60 || 0) <= o60) return false;
-    if ((h.w90 || 0) <= o90) return false;
-    if ((h.conc || 1) > 0.45) return false;
-    const lab = String((h.copygrade && (h.copygrade.label || h.copygrade.status)) || "");
-    if (lab.indexOf("Avoid") !== -1) return false;
-    return true;
+  function renderOverride(s) {
+    const p = (s.board && s.board.override) || s.solution || {};
+    const caps = s.caps_if_enabled_later || {};
+    const rows = [
+      ["Active wallet", p.name || "—"],
+      ["Address", p.address || ""],
+      ["Fixed / max Yes-No / max market", "$" + (caps.fixed_usd || 5)],
+      ["Ignore below", "$" + (caps.ignore_below_usd || 20)],
+      ["Total spend", "$" + (caps.total_spend_usd || 15)],
+      ["Balance SL", "$" + (caps.balance_sl_usd || 31)],
+      ["Turn On All Copy", "Never"]
+    ];
+    $("override-box").innerHTML = "<p>" + esc(p.note || "") +
+      "</p><p class='addr'>" + esc(p.address || "") + "</p><table class='caps'><tbody>" +
+      rows.map(function (r) {
+        return "<tr><td>" + esc(r[0]) + "</td><td>" + esc(r[1]) + "</td></tr>";
+      }).join("") + "</tbody></table>";
   }
 
-  async function renderHunt() {
+  async function loadHunt() {
     try {
       const h = await (await fetch("./data/hunt.json?t=" + Date.now())).json();
       state.hunt = h;
       let pulse = "";
       try {
         const p = await (await fetch("./data/pulse.json?t=" + Date.now())).json();
-        if (p.hunt === "running") pulse = "TERAZ SZUKA (GitHub Actions, Mac może być off). ";
+        if (p.hunt === "running") pulse = "Hunt running now. ";
       } catch (e) { /* optional */ }
       const when = h.updated_at ? String(h.updated_at).replace("T", " ").slice(0, 16) + " UTC" : "?";
-      const st = h.status === "running" ? "w trakcie skanowania" : (h.status === "done" ? "ostatni przebieg skończony" : (h.status || "?"));
-      $("hunt-pulse").textContent = pulse + st + " · " + when + " · sprawdzono " + (h.checked || 0) + " portfeli";
-      if ($("hunt-status")) {
-        $("hunt-status").textContent = $("hunt-pulse").textContent;
-      }
-      const official = (state.snap && state.snap.solution) || {};
-      const pick = h.pick;
-      if (!pick) {
-        $("hunt-plain").textContent = "Na razie hunt nie ma kandydata lepszego niż Antblack. Następny przebieg sam się odpali co godzinę.";
-      } else if (beatsOfficial(pick, official)) {
-        $("hunt-plain").textContent = "NOWE ROZWIĄZANIE z huntu: " + pick.username +
-          " bije Antblack (60d " + moneyPlain(pick.w60) + ", 90d " + moneyPlain(pick.w90) +
-          "). W PolyCop wklejasz tego, nie Antblack — jak zdecydujesz ręcznie.";
-        $("hero-name").textContent = pick.username + " · hunt";
-        $("hero-addr").textContent = pick.wallet || "";
-      } else {
-        $("hunt-plain").textContent = "Ostatni kandydat huntu: " + pick.username +
-          " (" + (pick.cat || "") + ", " + Math.round(pick.history_days || 0) + "d, 60d " +
-          moneyPlain(pick.w60) + " / 90d " + moneyPlain(pick.w90) + ", conc " + pick.conc +
-          "). To NIE przebija Antblack — za cienki sim albo za duża koncentracja. Pick zostaje Antblack.";
-      }
-      const cards = (h.candidates || []).slice(0, 6).map(function (r) {
-        const cg = r.copygrade || {};
-        return "<div class='hunt-card'><b>" + r.username + "</b>" +
-          "<span class='hint'>" + (r.cat || "") + " · " + Math.round(r.history_days || 0) +
-          " dni historii · 60d " + moneyPlain(r.w60) + " · 90d " + moneyPlain(r.w90) +
-          " · skupienie " + r.conc + " (mniej = lepiej, próg 0.45) · CopyGrade: " +
-          (cg.label || cg.status || "brak") + "</span></div>";
-      }).join("");
-      $("hunt-cards").innerHTML = cards || "<p class='hint'>Pusta lista — skan jeszcze filtruje.</p>";
-      $("hunt-log").textContent = (h.log || []).slice(-20).join("\n");
+      $("hunt-pulse").textContent = pulse + "Hunt last run " + when + " · " + (h.checked || 0) + " extra wallets.";
     } catch (e) {
-      $("hunt-pulse").textContent = "Hunt jeszcze nie zapisał przebiegu na stronie.";
+      $("hunt-pulse").textContent = "Hunt file missing on this deploy.";
     }
   }
 
-  function renderResearch(s) {
-    if (!$("research-lead")) return;
-    $("research-lead").textContent = s.verdict || "";
-    const conc = s.concentration || [];
-    drawBar("chart-conc", conc.map(function (c) { return c.name; }), conc.map(function (c) { return c.share; }),
-      { label: "Top-market", xTitle: "Udział |PnL|", yTitle: "Portfel", max: 1, color: "#1f4b99" });
-    $("sport-passers").innerHTML = (s.month_passers_sport || []).map(function (r) {
-      return "<tr><td>" + r.username + "</td><td>" + Math.round(r.history_days) + "</td><td>" +
-        money(r.w60) + "</td><td>" + money(r.w90) + "</td><td>" + r.copies + "</td></tr>";
-    }).join("");
-  }
-
-  function renderFunnel(s) {
-    if (!$("chart-funnel")) return;
-    const f = s.funnel_month || {};
-    drawBar("chart-funnel",
-      ["Unique", "<60d", "Whale", "Pass 60d", "Sim", "Oba okna"],
-      [f.unique, f.history_lt_60d, f.whale_month, f.history_pass, f.simulated, f.both_windows],
-      { label: "Wallets", xTitle: "Ile", yTitle: "Krok", color: "#1f4b99" });
-    const ns = s.funnel_nonsport || {};
-    $("funnel-ns").textContent = "Non-sport: " + ns.unique + " → " + ns.history_pass + " z 60d → " + ns.simulated + " sim → " + ns.both_windows + " oba okna +.";
-    const a = s.funnel_all_time || {};
-    $("funnel-all").textContent = "ALL mid-tier: " + a.unique + " → " + a.history_90d + " z 90d → " + a.simulated + " sim → " + a.both_windows + " oba okna +.";
-  }
-
-  function farmCell(f) {
-    if (!f) return "—";
-    return (f.level || "") + (f.signals != null ? " (" + f.signals + ")" : "");
-  }
-
-  function renderVeto(s) {
-    if (!$("cg-rows")) return;
-    $("cg-rows").innerHTML = (s.copygrade_indexed || []).map(function (r) {
-      return "<tr><td>" + r.username + "</td><td>" + (r.source || "") + "</td><td>" + r.score +
-        "</td><td>" + (r.label || "") + "</td><td>" + farmCell(r.farming) + "</td><td>" + money(r.edge_real) + "</td></tr>";
-    }).join("");
-    $("cg-lab").innerHTML = (s.copygrade_shortlist_lab || []).map(function (r) {
-      return "<tr><td>" + r.username + "</td><td>" + Math.round(r.history_days) + "</td><td>" + r.tpd +
-        "</td><td>" + money(r.w60) + "</td><td>" + money(r.w90) + "</td><td>" +
-        (r.candle ? "tak" : "nie") + "</td><td>" + (r.top_market || "—") + "</td></tr>";
-    }).join("");
-  }
-
-  function renderLists(s) {
-    const bans = s.do_not_copy || [];
-    $("ban-list").innerHTML = bans.map(function (r) {
-      return "<li><b>" + r.name + "</b> — " + r.why + "</li>";
-    }).join("");
-  }
-
-  function renderLive(s) {
-    const live = s.live || {};
-    if ($("live-reason")) $("live-reason").textContent = live.reason || "";
-    if ($("live-eval")) $("live-eval").textContent = live.eval_counter || "";
-  }
-
-  function renderDocs(s) {
-    if (!$("doc-rows")) return;
-    $("doc-rows").innerHTML = (s.handoffs || []).map(function (h) {
-      const href = "./docs/" + h.path.replace(/^docs\//, "");
-      return "<tr><td>" + h.date + "</td><td>" + h.title + "</td><td><a href='" + href + "'>" + h.path + "</a></td></tr>";
-    }).join("");
-  }
-
-  function notesKey() { return "copy-lab-ops-notes"; }
-  function cmdKey() { return "copy-lab-ops-commands"; }
-  function readLocal(key) {
-    try { return JSON.parse(localStorage.getItem(key) || "[]"); } catch (e) { return []; }
-  }
-  function writeLocal(key, rows) { localStorage.setItem(key, JSON.stringify(rows)); }
-  function renderNotes() {
-    if (!$("notes")) return;
-    const rows = readLocal(notesKey());
-    $("notes").innerHTML = rows.slice().reverse().map(function (n) {
-      return "<div class='note'>" + (n.text || "") + "</div>";
-    }).join("");
-  }
-  async function persistNote(row) {
-    const rows = readLocal(notesKey());
-    rows.push(row);
-    writeLocal(notesKey(), rows);
-    renderNotes();
-  }
-  async function persistCmd() {}
-  function bindLog() {
-    if ($("btn-code")) $("btn-code").onclick = tryPageCode;
-    if ($("page-code")) {
-      $("page-code").addEventListener("keydown", function (ev) {
-        if (ev.key === "Enter") tryPageCode();
-      });
-    }
-    if ($("btn-note")) {
-      $("btn-note").onclick = function () {
-        const text = ($("note-text").value || "").trim();
-        if (text) persistNote({ at: new Date().toISOString(), text: text });
-      };
-    }
-  }
-
-  function renderRemote() {}
-
-  function renderAll() {
+  async function renderAll() {
     const s = state.snap;
     if (!s) return;
-    darkChart();
     renderNow(s);
-    renderPick(s);
-    renderVeto(s);
-    renderLists(s);
-    renderLive(s);
-    renderDocs(s);
-    renderNotes();
-    renderHunt();
-    renderResearch(s);
-    renderFunnel(s);
+    renderBans(s);
+    renderOverride(s);
+    await loadHunt();
+    renderField(s, state.hunt);
   }
 
   async function bootFirebase() {
-    const cfg = window.OPS_CONFIG && window.OPS_CONFIG.firebase;
-    if (!cfg || !cfg.apiKey || !window.firebase) return false;
-    firebase.initializeApp(cfg);
+    if (!firebaseReady()) return false;
+    firebase.initializeApp(window.OPS_CONFIG.firebase);
     $("btn-google").hidden = false;
     $("btn-google").onclick = function () {
       firebase.auth().signInWithPopup(new firebase.auth.GoogleAuthProvider());
@@ -326,7 +246,7 @@
       if (!user) return;
       const role = roleOf(user.email);
       if (!role) {
-        showGate("To Google (" + user.email + ") nie jest na liście. Trzeba damianbiniarz@gmail.com.");
+        showGate("Google " + user.email + " is not on the allowlist. Use damianbiniarz@gmail.com.");
         return;
       }
       unlockSession();
@@ -338,21 +258,36 @@
     return true;
   }
 
+  function bind() {
+    if ($("btn-code")) $("btn-code").onclick = tryPageCode;
+    if ($("page-code")) {
+      $("page-code").addEventListener("keydown", function (ev) {
+        if (ev.key === "Enter") tryPageCode();
+      });
+    }
+  }
+
   async function main() {
-    bindLog();
-    window.addEventListener("hashchange", setRoute);
-    const snap = await (await fetch("./data/snapshot.json")).json();
+    bind();
+    const snap = await (await fetch("./data/snapshot.json?t=" + Date.now())).json();
     state.snap = snap;
-    await bootFirebase();
+    const hasFb = await bootFirebase();
+    const host = location.hostname;
+    if ((host === "127.0.0.1" || host === "localhost") &&
+        new URLSearchParams(location.search).get("lab") === "1") {
+      unlockSession();
+    }
     if (unlocked()) {
       state.role = state.role || "owner";
       showApp();
       renderAll();
+    } else if (!hasFb) {
+      showGate("Google is not connected on this deploy yet. Use the page-password backup.");
     } else {
-      showGate("Hasło strony (nie hasło Gmail).");
+      showGate("");
     }
     setInterval(function () {
-      if (unlocked()) renderHunt();
+      if (unlocked()) renderAll();
     }, 15000);
   }
 

@@ -1,17 +1,12 @@
 /* Copy to firebase-config.js after the Firebase web app exists.
-   firebase-config.js is gitignored. Web apiKey is a public client key;
-   access is Auth allowlist + Firestore rules + authorized domains. */
-window.OPS_CONFIG = {
-  owners: ["PUT_DAMIAN_GOOGLE_EMAIL_HERE"],
-  viewers: [
-    /* "mitch@gmail.com" */
-  ],
-  firebase: {
-    apiKey: "",
-    authDomain: "copy-lab-ops.firebaseapp.com",
-    projectId: "copy-lab-ops",
-    storageBucket: "copy-lab-ops.appspot.com",
-    messagingSenderId: "",
-    appId: "",
-  },
+   firebase-config.js is gitignored. Merge into OPS_CONFIG — do not wipe access-config.js. */
+window.OPS_CONFIG = window.OPS_CONFIG || {};
+window.OPS_CONFIG.owners = ["damianbiniarz@gmail.com"];
+window.OPS_CONFIG.firebase = {
+  apiKey: "",
+  authDomain: "copy-lab-ops.firebaseapp.com",
+  projectId: "copy-lab-ops",
+  storageBucket: "copy-lab-ops.appspot.com",
+  messagingSenderId: "",
+  appId: "",
 };
