@@ -60,13 +60,23 @@ input[type="password"] {
 .mast { display: flex; justify-content: space-between; gap: 1rem; align-items: baseline; }
 .who { font-size: 0.78rem; color: var(--muted); margin: 0; }
 
-.status, .decision {
+.what, .status, .decision {
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 0.9rem 1rem 1rem;
   margin: 0.85rem 0;
 }
+.what p { margin: 0.4rem 0 0; }
+.plan { margin: 0.5rem 0 0; padding-left: 1.2rem; }
+.plan li { margin: 0.45rem 0; }
+.bars { margin: 0.5rem 0 0; }
+.bar-row { display: grid; grid-template-columns: 9rem 4.5rem 1fr; gap: 0.4rem; align-items: center; margin: 0.28rem 0; font-size: 0.82rem; }
+.bar-row .nm { font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bar-track { background: #e8eaee; height: 0.7rem; border-radius: 4px; overflow: hidden; }
+.bar-fill { height: 100%; background: #98a0ab; }
+.bar-row.wait .bar-fill { background: #d4a017; }
+.bar-row.reject .bar-fill { background: #c5cad3; }
 h2 { font-size: 0.95rem; margin: 1rem 0 0.35rem; }
 h3 { font-size: 0.88rem; margin: 1rem 0 0.35rem; }
 .headline { font-size: 1.15rem; font-weight: 750; margin: 0 0 0.4rem; }

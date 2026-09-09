@@ -139,17 +139,15 @@
     $("s-live").textContent = money(s.last_live_pnl_usd, 2);
     $("s-hole").textContent = usd(Math.abs(Number(s.last_live_pnl_usd) || 0));
     $("copy-state").textContent = board.copy_state || "COPY OFF";
-    $("live-line").textContent = board.live_line || "";
-    $("decision-headline").textContent = board.headline || "Do not enable copy.";
-    $("decision-why").textContent = board.why || "";
-    $("decision-change").textContent = board.change || "";
+    $("live-line").textContent = board.live_line ||
+      "invorser esports, Aug 21–22. Cash is truth. Dashboard −$10 is not.";
   }
 
   function officialWatch(s) {
     return ((s.board || {}).options || []).find(function (r) { return r.name === "Antblack"; }) || s.solution || {};
   }
 
-  function renderField(s, hunt) {
+  function fieldRows(s, hunt) {
     const known = {};
     const rows = ((s.board || {}).options || []).slice();
     rows.forEach(function (r) { known[(r.name || "").toLowerCase()] = true; });
@@ -176,7 +174,25 @@
       if (b.call === "wait" && a.call !== "wait") return 1;
       return (Number(b.w90) || 0) - (Number(a.w90) || 0);
     });
+    return rows;
+  }
+
+  function renderBars(rows) {
+    if (!$("bars")) return;
+    const max = Math.max.apply(null, rows.map(function (r) { return Math.abs(Number(r.w90) || 0); }).concat([1]));
+    $("bars").innerHTML = rows.map(function (r) {
+      const call = r.call === "wait" ? "wait" : "reject";
+      const w = Math.max(4, Math.round(Math.abs(Number(r.w90) || 0) / max * 100));
+      return '<div class="bar-row ' + call + '"><span class="nm">' + esc(r.name) +
+        "</span><span>" + money(r.w90) + '</span><div class="bar-track"><div class="bar-fill" style="width:' +
+        w + '%"></div></div></div>';
+    }).join("");
+  }
+
+  function renderField(s, hunt) {
+    const rows = fieldRows(s, hunt);
     $("field-body").innerHTML = rows.map(rowHtml).join("");
+    renderBars(rows);
   }
 
   function renderBans(s) {
@@ -220,6 +236,9 @@
       } catch (e) { /* optional */ }
       const when = h.updated_at ? String(h.updated_at).replace("T", " ").slice(0, 16) + " UTC" : "?";
       $("hunt-pulse").textContent = pulse + "Hunt last run " + when + " · " + (h.checked || 0) + " extra wallets.";
+      if ($("hunt-plain") && h.candidates && h.candidates.length) {
+        $("hunt-plain").textContent = "Last hunt names are in the table (source: hourly hunt). None auto-enable copy. Next run ~20 minutes past each hour, UTC, on GitHub Actions.";
+      }
     } catch (e) {
       $("hunt-pulse").textContent = "Hunt file missing on this deploy.";
     }

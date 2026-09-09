@@ -3,15 +3,15 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Copy Lab — decision board</title>
+  <title>Copy Lab</title>
   <meta http-equiv="Cache-Control" content="no-cache" />
-  <link rel="stylesheet" href="./styles.css?v=8" />
+  <link rel="stylesheet" href="./styles.css?v=9" />
 </head>
 <body>
   <div id="gate" class="gate">
     <p class="eyebrow">Copy Lab</p>
-    <h1>Decision board</h1>
-    <p class="lede">This board is locked. Google sign-in is the real lock; until that SDK is on this deploy, use the page password from chat.</p>
+    <h1>Sign in</h1>
+    <p class="lede">Remote analysis board. Does not place trades. Google is the lock; until the Firebase web app is on this deploy, use the page password from chat.</p>
     <p id="gate-msg" class="msg"></p>
     <button class="btn primary" id="btn-google" type="button" hidden>Continue with Google</button>
     <label class="lbl" for="page-code">Page password</label>
@@ -22,11 +22,17 @@
   <div id="app" class="shell hidden" hidden>
     <header class="mast">
       <div>
-        <p class="eyebrow">Copy Lab · does not trade</p>
-        <h1>Copy decision</h1>
+        <p class="eyebrow">Copy Lab · remote · does not trade</p>
+        <h1>How to use the remaining $39</h1>
       </div>
       <p class="who" id="who"></p>
     </header>
+
+    <section class="what">
+      <h2>What this page is</h2>
+      <p>This is the live lab. You turn copy on only in Telegram <b>@PolyCop_BOT</b>. Here you see cash, the recovery plan, every wallet the lab and the hourly hunt scored, and why a fat backtest is still a no. It exists so you can decide — not so a bot trades for you.</p>
+      <p>Mac can be off. Hunt runs on GitHub every hour and rewrites the table. Private docs for Mitch: <a href="https://github.com/mrbinio/polymarket-copy-lab" target="_blank" rel="noopener">github.com/mrbinio/polymarket-copy-lab</a>.</p>
+    </section>
 
     <section class="status" aria-label="Account">
       <div class="pill off" id="copy-state">COPY OFF</div>
@@ -48,14 +54,31 @@
     </section>
 
     <section class="decision">
-      <p class="headline" id="decision-headline"></p>
-      <p id="decision-why"></p>
-      <p class="change" id="decision-change"></p>
+      <h2>Strategy</h2>
+      <p class="headline">Recover the $13.58, then small ongoing profit. Not eight wallets on a $39 stack.</p>
+      <ol class="plan">
+        <li><b>Today in PolyCop:</b> leave copy off. The hole is invorser esports. Turning copy on now repeats that night with a thinner stack.</li>
+        <li><b>What the lab is doing:</b> scan sport, politics, crypto, culture, finance, economics worldwide. 60-day and 90-day isolated copy at $5 / ignore under $20 / spend $15. CopyGrade veto. Ban 5-minute Bitcoin candles. Hunt adds new names every hour.</li>
+        <li><b>When copy may go on:</b> a WAIT row that also has ≥90 days, both lab windows green, concentration ≤0.45, CopyGrade not Avoid. You enable it by hand. One Active wallet. Caps $5 / $15 / stop $31. Never Turn On All Copy.</li>
+        <li><b>Least-bad paste if you override anyway:</b> Antblack (tennis) — not because it is “the solution”, because it failed the fewest gates. 76 days is still too short. Address under Caps.</li>
+      </ol>
+    </section>
+
+    <section>
+      <h2>Hunt 24/7</h2>
+      <p class="sec" id="hunt-pulse">Loading hunt…</p>
+      <p id="hunt-plain">Hourly GitHub Action. Looks for a specialist better than the current WAIT names. It does not auto-enable PolyCop and it does not lock a new mascot.</p>
+    </section>
+
+    <section>
+      <h2>90-day lab profit (same $5 copier)</h2>
+      <p class="sec">Tall bar is not the pick. Red/grey names failed a gate. Yellow is WAIT.</p>
+      <div id="bars" class="bars"></div>
     </section>
 
     <section>
       <h2>Compare the field</h2>
-      <p class="sec">Same $5 / $15 lab for every row. Bigger 90d number is not a better copy. Hunt rows update every hour.</p>
+      <p class="sec">Same lab for every row. Crypto, sport, politics, culture. Bigger 90d is often a cluster or candles.</p>
       <div class="table-wrap">
         <table class="cmp" id="field-table">
           <thead>
@@ -72,12 +95,20 @@
           <tbody id="field-body"></tbody>
         </table>
       </div>
-      <p class="foot" id="hunt-pulse"></p>
     </section>
 
-    <details class="more">
-      <summary>Addresses, PolyCop caps, ban list</summary>
-      <h3>If you override (not a go-live)</h3>
+    <section>
+      <h2>Tools in the live system</h2>
+      <ul class="ban">
+        <li><b>Used:</b> Polymarket leaderboards, Merlin leaderboard, CopyGrade grades + shortlist replay, isolated $5 lab sim, hourly hunt on GitHub Actions.</li>
+        <li><b>Not a second copy bot:</b> FrenFlow, Poly Syncer, PolyTrackers execute. PolyCop Telegram is the only executor.</li>
+        <li><b>Paywalled / no public feed:</b> Wallet Master, PolyMart, PredictFolio — not invented as scores.</li>
+      </ul>
+    </section>
+
+    <details class="more" open>
+      <summary>Caps, address, ban list</summary>
+      <h3>PolyCop if you override (not a go-live)</h3>
       <div id="override-box"></div>
       <h3>Do not paste</h3>
       <ul class="ban" id="ban-list"></ul>
@@ -86,7 +117,7 @@
 
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
-  <script src="./access-config.js?v=8"></script>
-  <script src="./app.js?v=8"></script>
+  <script src="./access-config.js?v=9"></script>
+  <script src="./app.js?v=9"></script>
 </body>
 </html>

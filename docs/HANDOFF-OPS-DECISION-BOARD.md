@@ -1,72 +1,32 @@
-# Copy Lab — decision board (2026-09-09)
+# Copy Lab — remote board (2026-09-09, evening)
 
-**Audience:** Damian; Mitch if later added as viewer  
-**Site:** https://mrbinio.github.io/copy-lab-ops/  
-**Executor:** PolyCop Telegram only. This page does not trade.
-
----
-
-## 1. Executive summary
-
-The live page was a Polish one-wallet sheet. That hid the comparison Damian actually needs: **whether copy can make the remaining ~$39**, not which name we already liked.
-
-**Call: copy stays OFF.** Cash **$39.08**. Last live **−$13.58** (invorser esports). Nothing in 76 isolated sims, CopyGrade, or a 994-wallet hunt clears: 90-day track + both lab windows + diversification + not candles + CopyGrade not Avoid.
-
-Antblack is **WAIT** (fewest gates failed, 76d still too short). Jittz **+$51** 90d, gambamaster **+$24** 60d, Bromsloy **+$53**, Gabriell11 **+$70**, PoppyG CopyGrade **#1** are on the board as **NO** with the reason. Hunt names Dreamlawn / Daemon99 are **NO** (thin / one-match).
+**Site (English):** https://mrbinio.github.io/copy-lab-ops/  
+**Docs for Mitch:** https://github.com/mrbinio/polymarket-copy-lab (private)  
+**Executor:** PolyCop Telegram only.
 
 ---
 
-## 2. What changed and why
+## What Damian asked (and was missing on the page)
 
-| Before | After |
-|--------|--------|
-| Polish one-wallet hero + long cards | English board: COPY OFF, then one comparison table (WAIT + bigger-sim NO + hunt) |
-| Hunt could overwrite the “solution” card | Hunt adds rows with WAIT/NO. It does not auto-lock a pick |
-| Cream serif / leftover 11-tab structure | One screen: cash, decision, field table. Caps/bans behind a details block |
-
-Google Sign-In: Firebase project exists on Damian’s account. This Mac’s Firebase CLI is **not** logged in, so the web SDK config is not on Pages yet. Gate uses page-password backup until CLI can create the web app + authorized domain `mrbinio.github.io`. Firestore owner email is **damianbiniarz@gmail.com**.
-
----
-
-## 3. Numbers on the board
-
-| Name | Call | 60d lab | 90d lab | Track | Why |
-|------|------|--------:|--------:|------:|-----|
-| Antblack | WAIT | +$17 | +$9 | 76d | Diversified tennis, CG not Avoid; sample too young |
-| 86shin | WAIT | +$9 | +$9 | 220d | Thin / one election theme |
-| Jittz | NO | +$15 | +$51 | 85d | World Cup date cluster |
-| gambamaster | NO | +$24 | +$38 | 81d | CG Avoid −100% |
-| Gabriell11 | NO | +$70 | +$70 | 130d | GTA view-count family |
-| Bromsloy142515 | NO | +$53 | +$53 | 522d | 100% 5-minute candles |
-| 0x760f1063 | NO | +$8.5 | +$26 | 105d | Same World Cup cluster |
-| martingaleking | NO | +$14 | +$16 | 139d | CG Avoid −42% |
-| PoppyG | NO | $0 | $0 | 185d | CG #1 is 81% candles |
-| Dreamlawn (hunt) | NO | +$4.4 | +$4.4 | 266d | Too thin vs a $13.58 hole |
-| Daemon99 (hunt) | NO | +$26 | +$28 | 80d | conc 0.60 one Portugal match |
-
-PolyCop if override (not a go-live): 1 Active Antblack, $5 / ignore <$20 / spend $15 / SL **$31**. Never Turn On All Copy.
+1. A **strategy to recover ~$13.58 then small profit** — not “nothing / we can’t”.
+2. **Remote** internet board, Mac off, hunt **24/7** rewriting the table.
+3. **What the page is for** — decide what to paste in PolyCop; it does not trade.
+4. **Compare the field** (sport, crypto, politics, culture) — do not lock one mascot.
+5. **GitHub for all MD** to share with Mitch.
+6. **Login** (Google). Until SDK is on Pages, page password from chat.
+7. Chat **Polish**, site **English**.
 
 ---
 
-## 4. Changelog
+## Strategy on the board
+
+Copy **off** today. Hunt hourly. Enable later only if WAIT + ≥90d + both windows + conc ≤0.45 + CopyGrade not Avoid. Override paste: Antblack, 1 Active, $5 / $15 / SL $31.
+
+---
+
+## Changelog
 
 ```
-2026-09-09  Decision board live (English). Copy off. Field compared, not one locked spoon.
-2026-09-09  Hunt publish stays data-only so hourly job cannot wipe the UI.
+2026-09-09  Board: what-this-is, 4-step strategy, hunt, 90d bars, field table, tools, GitHub link.
+2026-09-09  Gate: visible password (Google SDK still missing from this Mac).
 ```
-
----
-
-## 5. Gate bug (same day)
-
-Live github.io showed an empty card: Google button hidden, password buried in a collapsed “backup”. Damian’s path was the lock, not the board. Password field is now visible; `firebase-config.js` 404 script tag removed so the gate JS still runs.
-
----
-
-## 6. Next decision
-
-1. Keep copy **off** until a hunt/lab name clears the change bar on the site.  
-2. Finish Google on the gate: Firebase CLI login → web app → Auth Google → authorized domain `mrbinio.github.io` → `ops/firebase-config.js` on Pages (not committed to the private repo).  
-3. Mitch: GitHub collaborator when Damian names the account.
-
-*End of handoff.*
