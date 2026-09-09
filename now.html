@@ -5,11 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Copy Lab</title>
   <meta http-equiv="Cache-Control" content="no-store" />
-  <link rel="stylesheet" href="./dash-2141.css" />
+  <link rel="stylesheet" href="./dash-2148.css" />
 </head>
 <body>
   <div id="gate" class="gate">
-    <p class="stamp">BUILD 21:41 UTC · 2026 board</p>
+    <p class="stamp">BUILD 21:48 UTC · guide tab</p>
     <h1>Copy Lab</h1>
     <p class="lede">Remote decision board. Does not place trades. Password from chat until Google is wired.</p>
     <p id="gate-msg" class="msg"></p>
@@ -31,6 +31,12 @@
       </div>
     </header>
 
+    <nav class="tabs" aria-label="Sections">
+      <button type="button" class="tab on" data-tab="board" id="tab-board">Board</button>
+      <button type="button" class="tab" data-tab="guide" id="tab-guide">Instrukcja / Guide</button>
+    </nav>
+
+    <div id="view-board">
     <section class="how">
       <h2>How this page works</h2>
       <p>This is a remote lab. It does not buy or sell. You enable copy only in Telegram <b>@PolyCop_BOT</b>. The page is here so you can see cash, the recovery plan, and every wallet the hunt scored — then decide.</p>
@@ -114,12 +120,120 @@
       <h2>Do not paste</h2>
       <ul class="ban" id="ban-list"></ul>
     </section>
+    </div>
+
+    <div id="view-guide" class="guide hidden" hidden>
+      <article class="guide-col">
+        <h2>Instrukcja (PL)</h2>
+
+        <h3>Co to jest</h3>
+        <p>Zdalna tablica lab. <b>Nie kupuje i nie sprzedaje.</b> Copy włączasz tylko w Telegramie <b>@PolyCop_BOT</b>. Żadnego drugiego bota (FrenFlow, Poly Syncer, PolyTrackers).</p>
+
+        <h3>Do czego służy</h3>
+        <p>Żebyś z telefonu / innego komputera (Mac może być off) widział: kasę, dziurę po invorserze (−$13.58), najlepszy następny krok, trzy ścieżki, wykresy i portfele z huntu — i decydował, czy wklejać kogoś do PolyCop.</p>
+
+        <h3>Zakładki</h3>
+        <ul>
+          <li><b>Board</b> — liczby, wykresy, tabela, capy.</li>
+          <li><b>Instrukcja / Guide</b> — ta strona: co, kiedy, jak, do czego.</li>
+        </ul>
+
+        <h3>Board — co jest czym</h3>
+        <ul>
+          <li><b>How this page works</b> — przypomnienie: lab analizuje, bot handluje.</li>
+          <li><b>Best next step</b> — jedna decyzja na dziś. Teraz: copy OFF, hunt szuka.</li>
+          <li><b>Cash</b> — ile jest na stacku (~$39). <b>Live hole</b> — strata sesji invorser esport. <b>$15</b> — max w rynku jeśli kiedyś włączysz. <b>$31</b> — nowy balance SL (stary $42 jest zły przy ~$39).</li>
+          <li><b>Three paths</b> — (1) hunt, zostań off — zalecane; (2) override Antblack tenis — jeden portfel, małe capy; (3) gonić tłusty sim — nie (świece, mundial, jeden event, CopyGrade Avoid).</li>
+          <li><b>Charts</b> — lejek lab, 90d P&amp;L przy copy $5, koncentracja (powyżej 0.45 = jeden event, nie książka).</li>
+          <li><b>Hunt</b> — nowe nazwy ze sportu, polityki, krypto, kultury, finansów, ekonomii. Nie zamykamy się na jednego maskota.</li>
+          <li><b>Field</b> — WAIT = bramki prawie, ale copy jeszcze nie. NO = odrzut. Nie recyklingujemy starego Top 8.</li>
+          <li><b>PolyCop settings</b> — gotowa kartka: 1 Active, reszta Paused, $5 / $20 ignore / $15 spend / SL $31.</li>
+        </ul>
+
+        <h3>Jak lab ocenia portfel</h3>
+        <ol>
+          <li>Jak copy za <b>$5</b>, ignore poniżej <b>$20</b>, spend <b>$15</b>.</li>
+          <li>Sit: 60d i 90d na plusie, koncentracja ≤ 0.45, nie świece Bitcoin 5 min, CopyGrade nie Avoid, track najlepiej ≥90 dni.</li>
+          <li>Wynik ląduje na Board. Hunt <b>nigdy</b> sam nie włącza bota.</li>
+        </ol>
+
+        <h3>Co ile się odświeża</h3>
+        <ul>
+          <li><b>Hunt (nowe rozwiązania):</b> non-stop. GitHub <b>:20 i :50 UTC</b> (dwa razy na godzinę). Mac może być off.</li>
+          <li><b>Otwarta strona:</b> co <b>15 sekund</b> dociąga hunt i tabelę.</li>
+          <li><b>Cash / werdykt:</b> przy publikacji snapshotu, nie tick-by-tick z giełdy.</li>
+        </ul>
+
+        <h3>Kiedy włączasz copy</h3>
+        <p>Dopiero gdy WAIT ma też ≥90 dni, oba okna lab na plusie, conc ≤0.45, CopyGrade nie Avoid. Do tego momentu PolyCop zostaje <b>off</b>.</p>
+        <p><b>Nigdy „Turn On All Copy”.</b> To włącza całą listę (tak spalił się invorser). Przygotowana lista = <b>jeden</b> Active, reszta Paused. Wtedy tylko <b>Turn On Copy</b>.</p>
+
+        <h3>Kto ustawia PolyCop</h3>
+        <p>Lab (Cursor) przygotowuje <b>jeden</b> adres, capy i SL na tej stronie. Z tej sesji <b>nie da się kliknąć Telegrama</b> — nie ma API PolyCop. Ty nie ustawiasz listy ręcznie od zera: bierzesz kartkę z Board / Settings.</p>
+        <p>Twój jedyny klik, gdy bramki przejdą: <b>Turn On Copy</b> (nie All). Dziś tego klika nie ma — copy zostaje off.</p>
+
+        <h3>Dokumenty</h3>
+        <p>Prywatne GitHub (Mitch): <a href="https://github.com/mrbinio/polymarket-copy-lab">github.com/mrbinio/polymarket-copy-lab</a></p>
+      </article>
+      <article class="guide-col">
+        <h2>Guide (EN)</h2>
+
+        <h3>What this is</h3>
+        <p>A remote lab board. <b>It does not buy or sell.</b> Copy is enabled only in Telegram <b>@PolyCop_BOT</b>. No second copy bot (FrenFlow, Poly Syncer, PolyTrackers).</p>
+
+        <h3>What it is for</h3>
+        <p>So you can see cash, the live hole (−$13.58, invorser esports), the next step, three paths, charts, and hunt wallets from a phone or another machine (Mac off) — then decide whether to paste anyone into PolyCop.</p>
+
+        <h3>Tabs</h3>
+        <ul>
+          <li><b>Board</b> — numbers, charts, table, caps.</li>
+          <li><b>Instrukcja / Guide</b> — this page: what, when, how, what for.</li>
+        </ul>
+
+        <h3>Board — what each block is</h3>
+        <ul>
+          <li><b>How this page works</b> — lab analyzes; the bot trades.</li>
+          <li><b>Best next step</b> — one decision for today. Right now: copy OFF, hunt searching.</li>
+          <li><b>Cash</b> — stack (~$39). <b>Live hole</b> — invorser esports session. <b>$15</b> — max in market if you ever enable. <b>$31</b> — new balance SL (old $42 is wrong at ~$39).</li>
+          <li><b>Three paths</b> — (1) hunt, stay off — recommended; (2) Antblack tennis override — one wallet, small caps; (3) chase the fat sim — no (candles, World Cup cluster, one event, CopyGrade Avoid).</li>
+          <li><b>Charts</b> — lab funnel, 90d P&amp;L at $5 copy, concentration (above 0.45 = one event, not a book).</li>
+          <li><b>Hunt</b> — new names across sport, politics, crypto, culture, finance, economics. Not one locked mascot.</li>
+          <li><b>Field</b> — WAIT = gates almost, copy still off. NO = reject. Do not recycle the old Top 8.</li>
+          <li><b>PolyCop settings</b> — the paste card: 1 Active, rest Paused, $5 / $20 ignore / $15 spend / SL $31.</li>
+        </ul>
+
+        <h3>How the lab scores a wallet</h3>
+        <ol>
+          <li>As a <b>$5</b> copy, ignore under <b>$20</b>, spend <b>$15</b>.</li>
+          <li>Gates: both 60d and 90d lab profit, concentration ≤ 0.45, no 5-minute Bitcoin candles, CopyGrade not Avoid, track preferably ≥90 days.</li>
+          <li>Results land on the Board. Hunt <b>never</b> turns the bot on.</li>
+        </ol>
+
+        <h3>How often it updates</h3>
+        <ul>
+          <li><b>Hunt (new solutions):</b> continuously. GitHub at <b>:20 and :50 UTC</b> (twice an hour). Mac can be off.</li>
+          <li><b>Open page:</b> every <b>15 seconds</b> it reloads hunt + table.</li>
+          <li><b>Cash / verdict:</b> when a snapshot is published, not tick-by-tick from the exchange.</li>
+        </ul>
+
+        <h3>When you enable copy</h3>
+        <p>Only when a WAIT name also has ≥90 days, both lab windows green, conc ≤0.45, CopyGrade not Avoid. Until then PolyCop stays <b>off</b>.</p>
+        <p><b>Never “Turn On All Copy”.</b> That enables the whole list (that is how invorser burned the stack). Prepared roster = <b>one</b> Active, everyone else Paused. Then only <b>Turn On Copy</b>.</p>
+
+        <h3>Who sets PolyCop</h3>
+        <p>The lab (Cursor) prepares <b>one</b> address, caps, and SL on this page. This session <b>cannot click Telegram</b> — there is no PolyCop API. You do not rebuild the list from scratch: you take the card from Board / Settings.</p>
+        <p>Your only tap, after the gates pass: <b>Turn On Copy</b> (not All). That tap is not today — copy stays off.</p>
+
+        <h3>Docs</h3>
+        <p>Private GitHub (Mitch): <a href="https://github.com/mrbinio/polymarket-copy-lab">github.com/mrbinio/polymarket-copy-lab</a></p>
+      </article>
+    </div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
-  <script src="./access-2141.js"></script>
-  <script src="./dash-2141.js"></script>
+  <script src="./access-2148.js"></script>
+  <script src="./dash-2148.js"></script>
 </body>
 </html>

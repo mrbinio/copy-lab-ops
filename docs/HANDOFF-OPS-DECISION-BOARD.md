@@ -27,6 +27,6 @@ Copy **off** today. Hunt hourly. Enable later only if WAIT + ≥90d + both windo
 ## Changelog
 
 ```
-2026-09-09  Board: what-this-is, 4-step strategy, hunt, 90d bars, field table, tools, GitHub link.
+2026-09-09  21:41 UTC  Dark 2026 UI (motion, glass) + How this page works. Hunt :20 and :50 UTC.
 2026-09-09  Gate: visible password (Google SDK still missing from this Mac).
 ```
