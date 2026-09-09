@@ -269,6 +269,14 @@
 
   async function main() {
     bind();
+    try {
+      const fbFile = await fetch("./firebase-config.js", { cache: "no-store" });
+      if (fbFile.ok) {
+        const s = document.createElement("script");
+        s.textContent = await fbFile.text();
+        document.head.appendChild(s);
+      }
+    } catch (e) { /* optional */ }
     const snap = await (await fetch("./data/snapshot.json?t=" + Date.now())).json();
     state.snap = snap;
     const hasFb = await bootFirebase();
@@ -282,7 +290,7 @@
       showApp();
       renderAll();
     } else if (!hasFb) {
-      showGate("Google is not connected on this deploy yet. Use the page-password backup.");
+      showGate("Google is not on this deploy yet. Enter the page password from chat.");
     } else {
       showGate("");
     }

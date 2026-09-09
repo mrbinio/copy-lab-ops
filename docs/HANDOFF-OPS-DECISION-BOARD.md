@@ -57,7 +57,13 @@ PolyCop if override (not a go-live): 1 Active Antblack, $5 / ignore <$20 / spend
 
 ---
 
-## 5. Next decision
+## 5. Gate bug (same day)
+
+Live github.io showed an empty card: Google button hidden, password buried in a collapsed “backup”. Damian’s path was the lock, not the board. Password field is now visible; `firebase-config.js` 404 script tag removed so the gate JS still runs.
+
+---
+
+## 6. Next decision
 
 1. Keep copy **off** until a hunt/lab name clears the change bar on the site.  
 2. Finish Google on the gate: Firebase CLI login → web app → Auth Google → authorized domain `mrbinio.github.io` → `ops/firebase-config.js` on Pages (not committed to the private repo).  

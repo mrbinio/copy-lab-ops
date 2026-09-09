@@ -5,21 +5,18 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Copy Lab — decision board</title>
   <meta http-equiv="Cache-Control" content="no-cache" />
-  <link rel="stylesheet" href="./styles.css?v=7" />
+  <link rel="stylesheet" href="./styles.css?v=8" />
 </head>
 <body>
   <div id="gate" class="gate">
     <p class="eyebrow">Copy Lab</p>
     <h1>Decision board</h1>
-    <p class="lede">Allowlist: <b>damianbiniarz@gmail.com</b>. This is not a public sheet.</p>
+    <p class="lede">This board is locked. Google sign-in is the real lock; until that SDK is on this deploy, use the page password from chat.</p>
     <p id="gate-msg" class="msg"></p>
     <button class="btn primary" id="btn-google" type="button" hidden>Continue with Google</button>
-    <details class="backup">
-      <summary>Page password (backup)</summary>
-      <label class="lbl" for="page-code">Password</label>
-      <input id="page-code" type="password" autocomplete="current-password" />
-      <button class="btn" id="btn-code" type="button">Enter</button>
-    </details>
+    <label class="lbl" for="page-code">Page password</label>
+    <input id="page-code" type="password" autocomplete="current-password" />
+    <button class="btn primary" id="btn-code" type="button">Open the board</button>
   </div>
 
   <div id="app" class="shell hidden" hidden>
@@ -89,8 +86,7 @@
 
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
-  <script src="./access-config.js?v=7"></script>
-  <script src="./firebase-config.js"></script>
-  <script src="./app.js?v=7"></script>
+  <script src="./access-config.js?v=8"></script>
+  <script src="./app.js?v=8"></script>
 </body>
 </html>
