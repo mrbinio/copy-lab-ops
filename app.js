@@ -1,41 +1,36 @@
-/* Copy Lab ops. Does not place trades. */
+/* Copy Lab ops console. Does not place trades. */
 (function () {
   const charts = {};
-  const state = { snap: null, user: null, role: null, db: null, hunt: null };
+  const state = { snap: null, user: null, role: "local", db: null };
 
-  function $(id) { return document.getElementById(id); }
+  function $(id) {
+    return document.getElementById(id);
+  }
   function money(n, digits) {
     if (n == null || Number.isNaN(n)) return "—";
     const d = digits == null ? 1 : digits;
     const abs = Math.abs(n).toFixed(d);
     return (n < 0 ? "−$" : "+$") + abs;
   }
-  function moneyPlain(n) {
-    if (n == null || Number.isNaN(n)) return "—";
-    return (n < 0 ? "−$" : "+$") + Math.abs(n).toFixed(1);
+  function isLocalHost() {
+    return ["localhost", "127.0.0.1"].indexOf(location.hostname) !== -1;
   }
-
-  async function sha256hex(text) {
-    const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
-    return Array.from(new Uint8Array(buf)).map(function (b) {
-      return b.toString(16).padStart(2, "0");
-    }).join("");
-  }
-
-  function unlocked() {
-    return sessionStorage.getItem("copy-lab-ok") === "1";
-  }
-  function unlockSession() {
-    sessionStorage.setItem("copy-lab-ok", "1");
-  }
-
   function page() {
     return (location.hash || "#now").replace("#", "") || "now";
   }
   function setRoute() {
     const p = page();
-    if (p === "funnel" && state.snap) renderFunnel(state.snap);
-    if (p === "research" && state.snap) renderResearch(state.snap);
+    document.querySelectorAll("nav a").forEach(function (a) {
+      a.classList.toggle("on", a.getAttribute("data-page") === p);
+    });
+    document.querySelectorAll("[data-view]").forEach(function (el) {
+      el.classList.toggle("hidden", el.getAttribute("data-view") !== p);
+    });
+    if (p === "funnel" || p === "research" || p === "hunt") {
+      if (p === "funnel") renderFunnel(state.snap);
+      if (p === "research") renderResearch(state.snap);
+      if (p === "hunt") renderHunt();
+    }
   }
 
   function roleOf(email) {
@@ -51,9 +46,14 @@
     $("gate").hidden = true;
     $("app").classList.remove("hidden");
     $("app").hidden = false;
-    $("who").textContent = state.user && state.user.email
-      ? state.user.email
-      : "damianbiniarz@gmail.com";
+    $("who").textContent = state.user
+      ? state.user.email + " · " + state.role
+      : (location.hostname.indexOf("github.io") !== -1
+        ? "GitHub Pages · internet"
+        : "no Firebase yet");
+    const canWrite = state.role === "owner" || state.role === "local";
+    $("btn-note").disabled = !canWrite;
+    $("btn-cmd").disabled = !canWrite;
   }
 
   function showGate(msg) {
@@ -64,36 +64,31 @@
     $("gate-msg").textContent = msg || "";
   }
 
-  async function tryPageCode() {
-    const typed = ($("page-code").value || "").trim();
-    const expect = (window.OPS_CONFIG && window.OPS_CONFIG.pageCodeSha256) || "";
-    if (!typed || !expect) {
-      showGate("Wpisz hasło strony.");
-      return;
-    }
-    const hex = await sha256hex(typed);
-    if (hex !== expect) {
-      showGate("Złe hasło.");
-      return;
-    }
-    unlockSession();
-    state.role = "owner";
-    showApp();
-    renderAll();
+  async function loadConfig() {
+    return new Promise(function (resolve) {
+      const s = document.createElement("script");
+      s.src = "./firebase-config.js";
+      s.onload = function () { resolve(true); };
+      s.onerror = function () { resolve(false); };
+      document.head.appendChild(s);
+    });
   }
 
   function darkChart() {
-    if (!window.Chart) return;
-    Chart.defaults.color = "#5c5850";
-    Chart.defaults.borderColor = "#d9d3c7";
+    Chart.defaults.color = "#8b909c";
+    Chart.defaults.borderColor = "#2a2d36";
+    Chart.defaults.font.family = "-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif";
   }
 
   function drawBar(id, labels, data, opts) {
-    if (!$(id) || !window.Chart) return;
     if (charts[id]) charts[id].destroy();
-    charts[id] = new Chart($(id).getContext("2d"), {
+    const ctx = $(id).getContext("2d");
+    charts[id] = new Chart(ctx, {
       type: "bar",
-      data: { labels: labels, datasets: [{ label: opts.label, data: data, backgroundColor: opts.color || "#1f4b99" }] },
+      data: {
+        labels: labels,
+        datasets: [{ label: opts.label, data: data, backgroundColor: opts.color || "#6ea8fe" }],
+      },
       options: {
         indexAxis: "y",
         plugins: { legend: { display: false } },
@@ -108,101 +103,34 @@
   function renderNow(s) {
     $("s-cash").textContent = "$" + Number(s.cash_usd).toFixed(2);
     $("s-live").textContent = money(s.last_live_pnl_usd, 2);
-    if ($("s-sims")) $("s-sims").textContent = String((s.universe || {}).total_isolated_sims || 76);
-    if ($("verdict-body")) $("verdict-body").textContent = s.verdict || "";
+    $("s-sims").textContent = String((s.universe || {}).total_isolated_sims || 76);
+    $("verdict-body").textContent = s.verdict;
+    renderHuntPulse();
   }
 
-  function renderPick(s) {
-    const p = s.solution || {};
-    const name = (p.name || "—") + " · " + (p.domain || "");
-    $("hero-name").textContent = name;
-    $("hero-why").textContent = p.why || p.summary || "";
-    $("hero-addr").textContent = p.address || "";
-    $("hero-meaning").innerHTML =
-      "Co to znaczy: lab na $5 / ignore &lt;$20 / spend $15. 60 dni i 90 dni na plusie. " +
-      "Nie esport, nie świeca Bitcoin 5 min, CopyGrade nie mówi Avoid. " +
-      "76 dni to krótko — dlatego hunt leci dalej i nadpisuje tę kartę, jeśli ktoś przebije.";
-    if ($("pick-name")) $("pick-name").textContent = name;
-    if ($("pick-why")) $("pick-why").textContent = p.why || "";
-    if ($("pick-addr")) $("pick-addr").textContent = p.address || "";
-    const caps = s.caps_if_enabled_later || {};
-    const rows = [
-      ["Tylko 1 Active, reszta Paused", "Nie kopiujesz ośmiu osób naraz. Jeden specjalista."],
-      ["Fixed / Max / Yes-No / Market = $" + (caps.fixed_usd || 5), "Jedna kopia nie zjada stacka $39."],
-      ["Ignore poniżej $" + (caps.ignore_below_usd || 20), "Pomija drobnice, która spala prowizję."],
-      ["Total spend $" + (caps.total_spend_usd || 15), "Naraz w rynku max ~$15, nie cały cash."],
-      ["Balance SL $" + (caps.balance_sl_usd || 31), "Stary SL $42 jest zły przy cash ~$39. Nowy ≈ cash − $8."],
-      ["Turn On All Copy = NIE", "Nigdy cała lista. Tylko ten jeden adres."],
-    ];
-    $("pick-caps").innerHTML = rows.map(function (r) {
-      return "<tr><td>" + r[0] + "</td><td>" + r[1] + "</td></tr>";
-    }).join("");
-  }
-
-  function beatsOfficial(h, official) {
-    if (!h || !h.username) return false;
-    const o60 = official && official.w60 != null ? official.w60 : 17;
-    const o90 = official && official.w90 != null ? official.w90 : 9;
-    if ((h.w60 || 0) <= o60) return false;
-    if ((h.w90 || 0) <= o90) return false;
-    if ((h.conc || 1) > 0.45) return false;
-    const lab = String((h.copygrade && (h.copygrade.label || h.copygrade.status)) || "");
-    if (lab.indexOf("Avoid") !== -1) return false;
-    return true;
-  }
-
-  async function renderHunt() {
+  async function renderHuntPulse() {
+    const el = $("hunt-pulse");
+    if (!el) return;
     try {
       const h = await (await fetch("./data/hunt.json?t=" + Date.now())).json();
-      state.hunt = h;
-      let pulse = "";
-      try {
-        const p = await (await fetch("./data/pulse.json?t=" + Date.now())).json();
-        if (p.hunt === "running") pulse = "TERAZ SZUKA (GitHub Actions, Mac może być off). ";
-      } catch (e) { /* optional */ }
-      const when = h.updated_at ? String(h.updated_at).replace("T", " ").slice(0, 16) + " UTC" : "?";
-      const st = h.status === "running" ? "w trakcie skanowania" : (h.status === "done" ? "ostatni przebieg skończony" : (h.status || "?"));
-      $("hunt-pulse").textContent = pulse + st + " · " + when + " · sprawdzono " + (h.checked || 0) + " portfeli";
-      if ($("hunt-status")) {
-        $("hunt-status").textContent = $("hunt-pulse").textContent;
-      }
-      const official = (state.snap && state.snap.solution) || {};
-      const pick = h.pick;
-      if (!pick) {
-        $("hunt-plain").textContent = "Na razie hunt nie ma kandydata lepszego niż Antblack. Następny przebieg sam się odpali co godzinę.";
-      } else if (beatsOfficial(pick, official)) {
-        $("hunt-plain").textContent = "NOWE ROZWIĄZANIE z huntu: " + pick.username +
-          " bije Antblack (60d " + moneyPlain(pick.w60) + ", 90d " + moneyPlain(pick.w90) +
-          "). W PolyCop wklejasz tego, nie Antblack — jak zdecydujesz ręcznie.";
-        $("hero-name").textContent = pick.username + " · hunt";
-        $("hero-addr").textContent = pick.wallet || "";
-      } else {
-        $("hunt-plain").textContent = "Ostatni kandydat huntu: " + pick.username +
-          " (" + (pick.cat || "") + ", " + Math.round(pick.history_days || 0) + "d, 60d " +
-          moneyPlain(pick.w60) + " / 90d " + moneyPlain(pick.w90) + ", conc " + pick.conc +
-          "). To NIE przebija Antblack — za cienki sim albo za duża koncentracja. Pick zostaje Antblack.";
-      }
-      const cards = (h.candidates || []).slice(0, 6).map(function (r) {
-        const cg = r.copygrade || {};
-        return "<div class='hunt-card'><b>" + r.username + "</b>" +
-          "<span class='hint'>" + (r.cat || "") + " · " + Math.round(r.history_days || 0) +
-          " dni historii · 60d " + moneyPlain(r.w60) + " · 90d " + moneyPlain(r.w90) +
-          " · skupienie " + r.conc + " (mniej = lepiej, próg 0.45) · CopyGrade: " +
-          (cg.label || cg.status || "brak") + "</span></div>";
-      }).join("");
-      $("hunt-cards").innerHTML = cards || "<p class='hint'>Pusta lista — skan jeszcze filtruje.</p>";
-      $("hunt-log").textContent = (h.log || []).slice(-20).join("\n");
+      const when = h.updated_at ? String(h.updated_at).replace("T", " ").slice(0, 19) + " UTC" : "?";
+      const cand = h.pick && h.pick.username ? h.pick.username : "brak lepszego niż Antblack";
+      el.textContent = "Hunt 24/7: " + (h.status || "?") + " · ost. przebieg " + when +
+        " · skan " + (h.checked || 0) + " · kandydat: " + cand;
     } catch (e) {
-      $("hunt-pulse").textContent = "Hunt jeszcze nie zapisał przebiegu na stronie.";
+      el.textContent = "Hunt: jeszcze nie zapisał przebiegu.";
     }
   }
 
   function renderResearch(s) {
-    if (!$("research-lead")) return;
-    $("research-lead").textContent = s.verdict || "";
+    $("research-lead").textContent = s.verdict;
     const conc = s.concentration || [];
-    drawBar("chart-conc", conc.map(function (c) { return c.name; }), conc.map(function (c) { return c.share; }),
-      { label: "Top-market", xTitle: "Udział |PnL|", yTitle: "Portfel", max: 1, color: "#1f4b99" });
+    drawBar(
+      "chart-conc",
+      conc.map(function (c) { return c.name; }),
+      conc.map(function (c) { return c.share; }),
+      { label: "Top-market share", xTitle: "Share of |sim PnL|", yTitle: "Wallet", max: 1, color: "#e0b34e" }
+    );
     $("sport-passers").innerHTML = (s.month_passers_sport || []).map(function (r) {
       return "<tr><td>" + r.username + "</td><td>" + Math.round(r.history_days) + "</td><td>" +
         money(r.w60) + "</td><td>" + money(r.w90) + "</td><td>" + r.copies + "</td></tr>";
@@ -210,16 +138,19 @@
   }
 
   function renderFunnel(s) {
-    if (!$("chart-funnel")) return;
-    const f = s.funnel_month || {};
-    drawBar("chart-funnel",
-      ["Unique", "<60d", "Whale", "Pass 60d", "Sim", "Oba okna"],
+    const f = s.funnel_month;
+    drawBar(
+      "chart-funnel",
+      ["Unique pulled", "Dropped <60d", "Dropped whale", "Passed 60d", "Simulated", "Both windows"],
       [f.unique, f.history_lt_60d, f.whale_month, f.history_pass, f.simulated, f.both_windows],
-      { label: "Wallets", xTitle: "Ile", yTitle: "Krok", color: "#1f4b99" });
-    const ns = s.funnel_nonsport || {};
-    $("funnel-ns").textContent = "Non-sport: " + ns.unique + " → " + ns.history_pass + " z 60d → " + ns.simulated + " sim → " + ns.both_windows + " oba okna +.";
-    const a = s.funnel_all_time || {};
-    $("funnel-all").textContent = "ALL mid-tier: " + a.unique + " → " + a.history_90d + " z 90d → " + a.simulated + " sim → " + a.both_windows + " oba okna +.";
+      { label: "Wallets", xTitle: "Wallets", yTitle: "Step", color: "#6ea8fe" }
+    );
+    const ns = s.funnel_nonsport;
+    $("funnel-ns").textContent = ns.unique + " unique → " + ns.history_pass + " with 60d → " +
+      ns.simulated + " simulated → " + ns.both_windows + " both windows positive.";
+    const a = s.funnel_all_time;
+    $("funnel-all").textContent = a.unique + " unique → " + a.history_90d + " with 90d → " +
+      a.simulated + " simulated → " + a.both_windows + " both windows positive (thin politics).";
   }
 
   function farmCell(f) {
@@ -228,33 +159,38 @@
   }
 
   function renderVeto(s) {
-    if (!$("cg-rows")) return;
     $("cg-rows").innerHTML = (s.copygrade_indexed || []).map(function (r) {
-      return "<tr><td>" + r.username + "</td><td>" + (r.source || "") + "</td><td>" + r.score +
-        "</td><td>" + (r.label || "") + "</td><td>" + farmCell(r.farming) + "</td><td>" + money(r.edge_real) + "</td></tr>";
+      const tone = (r.score || 0) < 50 ? "bad" : (r.score || 0) < 70 ? "warn" : "info";
+      return "<tr><td><span class='dot " + tone + "'></span>" + r.username +
+        "</td><td>" + (r.source || "") + "</td><td>" + r.score + "</td><td>" + (r.label || "") +
+        "</td><td>" + farmCell(r.farming) + "</td><td>" + money(r.edge_real) + "</td></tr>";
     }).join("");
     $("cg-lab").innerHTML = (s.copygrade_shortlist_lab || []).map(function (r) {
       return "<tr><td>" + r.username + "</td><td>" + Math.round(r.history_days) + "</td><td>" + r.tpd +
         "</td><td>" + money(r.w60) + "</td><td>" + money(r.w90) + "</td><td>" +
-        (r.candle ? "tak" : "nie") + "</td><td>" + (r.top_market || "—") + "</td></tr>";
+        (r.candle ? "yes " + r.updown : "no") + "</td><td>" + (r.top_market || "—") + "</td></tr>";
     }).join("");
   }
 
   function renderLists(s) {
-    const bans = s.do_not_copy || [];
-    $("ban-list").innerHTML = bans.map(function (r) {
-      return "<li><b>" + r.name + "</b> — " + r.why + "</li>";
+    $("ban-rows").innerHTML = (s.do_not_copy || []).map(function (r) {
+      return "<tr><td><span class='dot bad'></span>" + r.name + "</td><td>" + r.why + "</td></tr>";
+    }).join("");
+    $("watch-rows").innerHTML = (s.watch_not_enable || []).map(function (r) {
+      return "<tr><td>" + r.name + "</td><td>" + r.domain + "</td><td>" + r.history_days +
+        "</td><td>" + money(r.w60) + " / " + money(r.w90) + "</td><td>" + r.why_not_yet + "</td></tr>";
     }).join("");
   }
 
   function renderLive(s) {
     const live = s.live || {};
-    if ($("live-reason")) $("live-reason").textContent = live.reason || "";
-    if ($("live-eval")) $("live-eval").textContent = live.eval_counter || "";
+    $("live-reason").textContent = live.reason || "";
+    $("live-eval").textContent = live.eval_counter || "";
+    $("live-sl-old").textContent = live.balance_sl_old != null ? "$" + live.balance_sl_old : "—";
+    $("live-sl-new").textContent = live.balance_sl_if_reenabled != null ? "$" + live.balance_sl_if_reenabled : "—";
   }
 
   function renderDocs(s) {
-    if (!$("doc-rows")) return;
     $("doc-rows").innerHTML = (s.handoffs || []).map(function (h) {
       const href = "./docs/" + h.path.replace(/^docs\//, "");
       return "<tr><td>" + h.date + "</td><td>" + h.title + "</td><td><a href='" + href + "'>" + h.path + "</a></td></tr>";
@@ -263,40 +199,117 @@
 
   function notesKey() { return "copy-lab-ops-notes"; }
   function cmdKey() { return "copy-lab-ops-commands"; }
+
   function readLocal(key) {
     try { return JSON.parse(localStorage.getItem(key) || "[]"); } catch (e) { return []; }
   }
-  function writeLocal(key, rows) { localStorage.setItem(key, JSON.stringify(rows)); }
+  function writeLocal(key, rows) {
+    localStorage.setItem(key, JSON.stringify(rows));
+  }
+
   function renderNotes() {
-    if (!$("notes")) return;
     const rows = readLocal(notesKey());
     $("notes").innerHTML = rows.slice().reverse().map(function (n) {
-      return "<div class='note'>" + (n.text || "") + "</div>";
-    }).join("");
+      return "<div class='note'><time>" + n.at + "</time> · " + (n.who || "local") +
+        "<div>" + n.text + "</div></div>";
+    }).join("") || "<p class='lead'>No notes yet.</p>";
   }
+
   async function persistNote(row) {
     const rows = readLocal(notesKey());
     rows.push(row);
     writeLocal(notesKey(), rows);
+    if (state.db && state.role === "owner") {
+      await state.db.collection("ops").doc("notes").collection("items").add(row);
+    }
     renderNotes();
   }
-  async function persistCmd() {}
-  function bindLog() {
-    if ($("btn-code")) $("btn-code").onclick = tryPageCode;
-    if ($("page-code")) {
-      $("page-code").addEventListener("keydown", function (ev) {
-        if (ev.key === "Enter") tryPageCode();
-      });
-    }
-    if ($("btn-note")) {
-      $("btn-note").onclick = function () {
-        const text = ($("note-text").value || "").trim();
-        if (text) persistNote({ at: new Date().toISOString(), text: text });
-      };
+
+  async function persistCmd(row) {
+    const rows = readLocal(cmdKey());
+    rows.push(row);
+    writeLocal(cmdKey(), rows);
+    if (state.db && state.role === "owner") {
+      await state.db.collection("ops").doc("commands").collection("items").add(row);
     }
   }
 
-  function renderRemote() {}
+  function bindLog() {
+    $("btn-note").onclick = function () {
+      const text = ($("note-text").value || "").trim();
+      if (!text) return;
+      $("note-text").value = "";
+      persistNote({ at: new Date().toISOString(), who: (state.user && state.user.email) || "local", text: text });
+    };
+    $("btn-cmd").onclick = function () {
+      persistCmd({
+        at: new Date().toISOString(),
+        who: (state.user && state.user.email) || "local",
+        cmd: "run_weekly_screen",
+      });
+      persistNote({
+        at: new Date().toISOString(),
+        who: (state.user && state.user.email) || "local",
+        text: "Queued command: run_weekly_screen (lab only — not enable_copy).",
+      });
+    };
+  }
+
+  function renderPick(s) {
+    const p = s.solution || {};
+    $("pick-lead").textContent = p.summary || "";
+    $("pick-name").textContent = (p.name || "—") + " · " + (p.domain || "");
+    $("pick-why").textContent = p.why || "";
+    $("pick-addr").textContent = "Adres do wklejenia w PolyCop: " + (p.address || "");
+    const caps = s.caps_if_enabled_later || {};
+    const rows = [
+      ["Wallets Active", "1 (tylko ten). Reszta Paused."],
+      ["Fixed / Max trade / Max Yes-No / Max market", "$" + (caps.fixed_usd || 5)],
+      ["Ignore below", "$" + (caps.ignore_below_usd || 20)],
+      ["Total spend", "$" + (caps.total_spend_usd || 15)],
+      ["Balance SL", "$" + (caps.balance_sl_usd || 31) + " — stary $42 jest zły"],
+      ["Turn On All Copy", "NIE"],
+    ];
+    $("pick-caps").innerHTML = rows.map(function (r) {
+      return "<tr><td>" + r[0] + "</td><td>" + r[1] + "</td></tr>";
+    }).join("");
+  }
+
+  function moneyPlain(n) {
+    if (n == null || Number.isNaN(n)) return "—";
+    return (n < 0 ? "−$" : "+$") + Math.abs(n).toFixed(1);
+  }
+
+  async function renderHunt() {
+    try {
+      const h = await (await fetch("./data/hunt.json?t=" + Date.now())).json();
+      $("hunt-status").textContent = (h.status || "?") + " · checked " + (h.checked || 0) +
+        " · " + (h.updated_at || "");
+      $("hunt-rows").innerHTML = (h.candidates || []).map(function (r) {
+        const cg = r.copygrade || {};
+        return "<tr><td>" + r.score + "</td><td>" + r.username + "</td><td>" + r.cat +
+          "</td><td>" + Math.round(r.history_days) + "</td><td>" + moneyPlain(r.w60) +
+          "</td><td>" + moneyPlain(r.w90) + "</td><td>" + r.conc + "</td><td>" +
+          (cg.label || cg.status || "—") + "</td></tr>";
+      }).join("") || "<tr><td colspan='8'>Jeszcze nic — hunt leci.</td></tr>";
+      $("hunt-log").textContent = (h.log || []).slice(-25).join("\n");
+    } catch (e) {
+      $("hunt-status").textContent = "Hunt jeszcze nie zapisał pliku (startuję).";
+    }
+  }
+
+  async function renderRemote() {
+    try {
+      const r = await (await fetch("./data/remote.json?t=" + Date.now())).json();
+      if (r.url) {
+        $("live-reason").textContent = (state.snap.live && state.snap.live.reason) || "";
+        const extra = document.getElementById("remote-url");
+        if (extra) extra.innerHTML = "Zdalnie: <a href='" + r.url + "/ops/'>" + r.url + "/ops/</a>";
+        const lan = document.getElementById("how-lan");
+        if (lan && r.lan) lan.textContent = r.lan;
+      }
+    } catch (e) { /* no tunnel file yet */ }
+  }
 
   function renderAll() {
     const s = state.snap;
@@ -310,49 +323,57 @@
     renderDocs(s);
     renderNotes();
     renderHunt();
-    renderResearch(s);
-    renderFunnel(s);
+    renderRemote();
+    const p = page();
+    if (p === "funnel") renderFunnel(s);
+    if (p === "research") renderResearch(s);
+    if (p === "hunt") renderHunt();
   }
 
   async function bootFirebase() {
     const cfg = window.OPS_CONFIG && window.OPS_CONFIG.firebase;
-    if (!cfg || !cfg.apiKey || !window.firebase) return false;
+    if (!cfg || !cfg.apiKey) return false;
     firebase.initializeApp(cfg);
-    $("btn-google").hidden = false;
+    state.db = firebase.firestore();
     $("btn-google").onclick = function () {
-      firebase.auth().signInWithPopup(new firebase.auth.GoogleAuthProvider());
+      const provider = new firebase.auth.GoogleAuthProvider();
+      firebase.auth().signInWithPopup(provider);
     };
     firebase.auth().onAuthStateChanged(function (user) {
-      if (!user) return;
-      const role = roleOf(user.email);
-      if (!role) {
-        showGate("To Google (" + user.email + ") nie jest na liście. Trzeba damianbiniarz@gmail.com.");
+      if (!user) {
+        showGate("Sign in with the allowlisted Google account.");
         return;
       }
-      unlockSession();
+      const role = roleOf(user.email);
+      if (!role) {
+        showGate("Signed in as " + user.email + " — not on the allowlist. Add the email to firebase-config.js owners/viewers.");
+        return;
+      }
       state.user = user;
       state.role = role;
       showApp();
-      renderAll();
     });
     return true;
   }
 
   async function main() {
-    bindLog();
     window.addEventListener("hashchange", setRoute);
+    setRoute();
+    bindLog();
     const snap = await (await fetch("./data/snapshot.json")).json();
     state.snap = snap;
-    await bootFirebase();
-    if (unlocked()) {
-      state.role = state.role || "owner";
+    await loadConfig();
+    const hasFb = await bootFirebase();
+    if (!hasFb) {
+      // Remote tunnel / LAN must work before Firebase exists.
+      state.role = "local";
       showApp();
-      renderAll();
-    } else {
-      showGate("Hasło strony (nie hasło Gmail).");
     }
+    renderAll();
     setInterval(function () {
-      if (unlocked()) renderHunt();
+      renderHunt();
+      renderHuntPulse();
+      renderRemote();
     }, 15000);
   }
 
