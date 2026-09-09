@@ -18,7 +18,7 @@
     <header class="top">
       <div>
         <h1>Copy Lab ops</h1>
-        <div class="sub">Research, stance, live memory. PolyCop is the only executor.</div>
+        <div class="sub">Tablica labu. Nie handluje. Copy tylko w Telegramie @PolyCop_BOT.</div>
       </div>
       <div>
         <div class="who" id="who"></div>
@@ -39,22 +39,34 @@
     </header>
 
     <section data-view="now">
+      <div class="callout">
+        <h2>Co to jest</h2>
+        <p>Jedna tablica: cash, kogo kopiować, i czy hunt znalazł kogoś lepszego. <strong>Ta strona nic nie kupuje.</strong> Zlecenia tylko w <code>@PolyCop_BOT</code>.</p>
+        <p>Konsola Firebase (Hello Damian, lista projektów) to <strong>nie</strong> ten lab — to zaplecze Google pod przyszły login. Tu nie klikasz na co dzień.</p>
+      </div>
+      <h2>Co jest co</h2>
+      <table>
+        <thead><tr><th>Zakładka</th><th>Po co</th></tr></thead>
+        <tbody>
+          <tr><td>Teraz</td><td>Cash, werdykt, ten opis.</td></tr>
+          <tr><td>Rozwiązanie</td><td>Jeden portfel do PolyCop (Antblack) + limity $5 / SL $31.</td></tr>
+          <tr><td>Hunt</td><td>Wyszukiwanie 24/7. Odświeża się samo, bez Twojego Maca.</td></tr>
+          <tr><td>Research / Lejek / CopyGrade</td><td>Skąd wziął się Antblack i kogo odrzuciliśmy.</td></tr>
+          <tr><td>Ban / watch</td><td>Kogo nigdy nie wklejać (invorser, świece 5m, Avoid).</td></tr>
+          <tr><td>Live</td><td>Ostatnia strata na żywo (−$13.58). Copy jest off.</td></tr>
+        </tbody>
+      </table>
       <div class="stats">
-        <div class="stat"><b id="s-cash">—</b><span>Cash (truth)</span></div>
-        <div class="stat bad"><b id="s-live">—</b><span>Last live session</span></div>
-        <div class="stat"><b id="s-enable">1</b><span>Gdy włączysz PolyCop — tylu</span></div>
-        <div class="stat"><b id="s-sims">—</b><span>Isolated $5 sims</span></div>
+        <div class="stat"><b id="s-cash">—</b><span>Cash</span></div>
+        <div class="stat bad"><b id="s-live">—</b><span>Ostatnia sesja live</span></div>
+        <div class="stat"><b id="s-enable">1</b><span>Portfeli Active, jeśli włączysz</span></div>
+        <div class="stat"><b id="s-sims">—</b><span>Simy $5 w labie</span></div>
       </div>
       <div class="callout danger">
-        <h2 id="verdict-title">Verdict</h2>
+        <h2 id="verdict-title">Werdykt</h2>
         <p id="verdict-body"></p>
       </div>
-      <h2>What this system is</h2>
-      <p class="lead">Discover on public boards and CopyGrade. Hard-gate 60–90d history and no 5-minute candles. Lab-replay at our $5 caps. Veto Avoid/farm. Execute later in PolyCop only. Live cash is the only truth.</p>
-      <table>
-        <thead><tr><th>Layer</th><th>Job</th><th>Not</th></tr></thead>
-        <tbody id="sys-rows"></tbody>
-      </table>
+      <p class="lead" id="hunt-pulse">Hunt: ładuję status…</p>
     </section>
 
     <section data-view="pick" class="hidden">

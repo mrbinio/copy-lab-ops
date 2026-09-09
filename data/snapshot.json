@@ -456,6 +456,11 @@
   ],
   "handoffs": [
     {
+      "title": "Ops 24/7 hunt + what-is-what",
+      "date": "2026-09-09",
+      "path": "docs/HANDOFF-OPS-24-7.md"
+    },
+    {
       "title": "PolyCop pick + GitHub share",
       "date": "2026-09-09",
       "path": "docs/HANDOFF-GITHUB-POLYCOP-2026-09-09.md"

@@ -105,17 +105,21 @@
     $("s-live").textContent = money(s.last_live_pnl_usd, 2);
     $("s-sims").textContent = String((s.universe || {}).total_isolated_sims || 76);
     $("verdict-body").textContent = s.verdict;
-    const sys = s.system || {};
-    const rows = [
-      ["Discover", (sys.discover || []).join("; "), "Not a second copy bot"],
-      ["Gates", (sys.gates || []).join("; "), "Not top of the board this week"],
-      ["Lab", sys.lab, "Not the leader’s own PnL"],
-      ["Veto", sys.veto, "Not a go-live"],
-      ["Execute", sys.execute, "Not dashboard −$10"],
-    ];
-    $("sys-rows").innerHTML = rows.map(function (r) {
-      return "<tr><td>" + r[0] + "</td><td>" + r[1] + "</td><td>" + r[2] + "</td></tr>";
-    }).join("");
+    renderHuntPulse();
+  }
+
+  async function renderHuntPulse() {
+    const el = $("hunt-pulse");
+    if (!el) return;
+    try {
+      const h = await (await fetch("./data/hunt.json?t=" + Date.now())).json();
+      const when = h.updated_at ? String(h.updated_at).replace("T", " ").slice(0, 19) + " UTC" : "?";
+      const cand = h.pick && h.pick.username ? h.pick.username : "brak lepszego niż Antblack";
+      el.textContent = "Hunt 24/7: " + (h.status || "?") + " · ost. przebieg " + when +
+        " · skan " + (h.checked || 0) + " · kandydat: " + cand;
+    } catch (e) {
+      el.textContent = "Hunt: jeszcze nie zapisał przebiegu.";
+    }
   }
 
   function renderResearch(s) {
@@ -368,6 +372,7 @@
     renderAll();
     setInterval(function () {
       renderHunt();
+      renderHuntPulse();
       renderRemote();
     }, 15000);
   }
