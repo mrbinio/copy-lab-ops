@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="pl">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -8,315 +8,211 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="./dash-2208.css" />
+  <link rel="stylesheet" href="./dash-2222.css" />
 </head>
 <body>
   <div id="gate" class="gate">
-    <p class="stamp">BUILD 22:08 UTC</p>
+    <p class="stamp">BUILD 22:22 UTC</p>
     <h1>Copy Lab</h1>
-    <p class="lede">Remote board. Does not trade. Password from chat until Google is on.</p>
+    <p class="lede" data-i18n="gate.lede"></p>
     <p id="gate-msg" class="msg"></p>
-    <button class="btn primary" id="btn-google" type="button" hidden>Continue with Google</button>
-    <label class="lbl" for="page-code">Page password</label>
+    <button class="btn primary" id="btn-google" type="button" hidden data-i18n="gate.google"></button>
+    <label class="lbl" for="page-code" data-i18n="gate.pass"></label>
     <input id="page-code" type="password" autocomplete="current-password" />
-    <button class="btn primary" id="btn-code" type="button">Open</button>
+    <button class="btn primary" id="btn-code" type="button" data-i18n="gate.open"></button>
   </div>
 
-  <div id="app" class="app hidden" hidden>
-    <aside class="rail">
-      <p class="brand">Copy Lab</p>
-      <p class="brand-sub">PolyCop only · does not trade</p>
-      <nav class="tabs" aria-label="Sections">
-        <button type="button" class="tab on" data-tab="board" id="tab-board">Board</button>
-        <button type="button" class="tab" data-tab="guide" id="tab-guide">Instrukcja / Guide</button>
-      </nav>
-      <div class="rail-box">
-        <p class="rail-k">Copy</p>
-        <p class="rail-v off">OFF</p>
-        <p class="rail-k">Your cash in PolyCop</p>
-        <p class="rail-v" id="rail-cash">—</p>
-        <p class="rail-k">Hunt</p>
-        <p class="rail-v live"><span class="pulse" aria-hidden="true"></span><span id="hunt-pulse">—</span></p>
-        <p class="who" id="who"></p>
+  <div id="app" class="hidden" hidden>
+    <header class="top">
+      <div>
+        <p class="brand">Copy Lab</p>
+        <p class="brand-sub" data-i18n="top.sub"></p>
       </div>
-    </aside>
+      <nav class="nav" aria-label="Sections">
+        <button type="button" class="on" data-view="do" data-i18n="nav.do"></button>
+        <button type="button" data-view="sim" data-i18n="nav.sim"></button>
+        <button type="button" data-view="money" data-i18n="nav.money"></button>
+        <button type="button" data-view="how" data-i18n="nav.how"></button>
+      </nav>
+      <div class="lang" role="group" aria-label="Language">
+        <button type="button" id="lang-pl" data-lang="pl">PL</button>
+        <button type="button" id="lang-en" data-lang="en">EN</button>
+      </div>
+      <p class="who" id="who"></p>
+    </header>
 
     <div class="canvas">
-      <div id="view-board">
-
-        <section class="hero">
-          <p class="num">01</p>
+      <section id="view-do">
+        <div class="hero">
           <div>
-            <p class="kicker">Now / teraz</p>
-            <h1>Keep copy <em>off</em>. Hunt is already looking.</h1>
-            <p class="hero-pl">Teraz nic nie włączasz. Hunt szuka nowego portfela. Kolejny krok jest niżej — nie „Turn On All Copy”.</p>
+            <p class="kicker" data-i18n="do.kicker"></p>
+            <h1 data-i18n="do.title"></h1>
+            <p data-i18n="do.lead"></p>
+            <p style="margin-top:1rem">
+              <button class="btn ghost jump" type="button" data-view="sim" data-i18n="do.jump"></button>
+            </p>
           </div>
-        </section>
+          <aside class="status">
+            <p class="kicker" data-i18n="do.copy"></p>
+            <p class="off">OFF</p>
+            <p class="kicker" data-i18n="do.cash"></p>
+            <p class="cash" id="s-cash">—</p>
+            <p class="muted"><span class="pulse"></span><span id="hunt-pulse">—</span></p>
+          </aside>
+        </div>
+        <div class="steps">
+          <article class="on">
+            <p class="n">01</p>
+            <h3 data-i18n="do.s1t"></h3>
+            <p data-i18n="do.s1"></p>
+          </article>
+          <article>
+            <p class="n">02</p>
+            <h3 data-i18n="do.s2t"></h3>
+            <p data-i18n="do.s2"></p>
+          </article>
+          <article>
+            <p class="n">03</p>
+            <h3 data-i18n="do.s3t"></h3>
+            <p data-i18n="do.s3"></p>
+          </article>
+        </div>
+        <p class="muted" data-i18n="do.warn"></p>
+      </section>
 
-        <ol class="roadmap">
-          <li class="on">
-            <span>Now</span>
-            <b>Copy OFF.</b> Hunt twice an hour. You do nothing in Telegram.
-            <i>Teraz: bot wyłączony. Szukamy. Ty nie klikasz w PolyCop.</i>
-          </li>
-          <li>
-            <span>Next</span>
-            <b>A wallet clears the gates</b> (90d + both lab windows + conc ≤0.45 + CopyGrade not Avoid). Lab posts one address on this page.
-            <i>Następne: znajdzie się jeden portfel, który przejdzie sity. Lab wstawi adres tutaj.</i>
-          </li>
-          <li>
-            <span>Then</span>
-            <b>You paste that one wallet</b> in @PolyCop_BOT. Everyone else Paused.
-            <i>Potem: wklejasz ten jeden adres. Reszta Paused.</i>
-          </li>
-          <li>
-            <span>Last</span>
-            <b>Turn On Copy</b> — never Turn On All Copy. Not today.
-            <i>Na końcu: tylko Turn On Copy. Nigdy All. Dziś tego nie ma.</i>
-          </li>
-        </ol>
-
-        <section class="block">
-          <header class="block-h">
-            <p class="num">02</p>
-            <div>
-              <h2>Where the money is</h2>
-              <p>Skąd te pieniądze / whose cash this is</p>
-            </div>
-          </header>
-          <div class="money-grid">
-            <article>
-              <p class="kicker">Whose</p>
-              <h3>Yours. In PolyCop, not on this site.</h3>
-              <p>To Twoje USDC w portfelu handlowym PolyCop (Telegram <b>@PolyCop_BOT</b>, wallet W1). Ta strona, GitHub i hunt <b>nie trzymają</b> kasy i nic nie wpłacają.</p>
-              <p class="en">This is your USDC in the PolyCop trading wallet. The board is a scoreboard, not a bank.</p>
-            </article>
-            <article>
-              <p class="kicker">How it got to ~$39</p>
-              <h3>Seed ~$53 → invorser night → $39.08 left</h3>
-              <p>Start ~<b>$53</b>. Noc 21–22 Aug 2026: copy <b>invorser</b> (LoL / CS / Dota). Saldo <b>$52.66 → $39.08</b>, strata <b>−$13.58</b>. Balance SL wyłączył copy.</p>
-              <p class="en">The −$13.58 is that live session, not a lab number. Old SL $42 is stale; if copy returns, SL is $31.</p>
-            </article>
-            <article>
-              <p class="kicker">The $15 and $31</p>
-              <h3>Planned caps — not extra cash</h3>
-              <p><b>$15</b> = ile wolno mieć w rynku, <b>jeśli</b> kiedyś włączysz jednego. <b>$31</b> = nowy stop na saldzie. To nie są pieniądze „gdzie indziej”. To limity na resztę stacku ~$39.</p>
-              <p class="en">$15 spend / $31 stop are rules for later. They do not move money today.</p>
-            </article>
-          </div>
-          <div class="kpis" aria-label="Money">
-            <div><p class="kpi" id="s-cash">—</p><p class="lbl">Cash now (PolyCop W1)</p></div>
-            <div><p class="kpi bad" id="s-live">—</p><p class="lbl">Invorser night (the hole)</p></div>
-            <div><p class="kpi" id="s-spend">$15</p><p class="lbl">Max in market if enabled later</p></div>
-            <div><p class="kpi" id="s-sl">$31</p><p class="lbl">New balance stop (not $42)</p></div>
-          </div>
-        </section>
-
-        <section class="block">
-          <header class="block-h">
-            <p class="num">03</p>
-            <div>
-              <h2>Who sets the wallets in PolyCop</h2>
-              <p>Kto ustawia portfele w bocie — nie „Turn On All Copy”</p>
-            </div>
-          </header>
-          <div class="who-grid">
-            <article>
-              <p class="kicker">Lab (Cursor)</p>
-              <h3>Writes the roster here</h3>
-              <p>Ja przygotowuję <b>jeden</b> adres, capy i SL na tej stronie. Hunt tylko dostarcza nazwy. Z tej sesji <b>nie da się kliknąć Telegrama</b> — PolyCop nie ma API.</p>
-              <p class="en">The lab prepares one Active wallet. Hunt never enables copy.</p>
-            </article>
-            <article>
-              <p class="kicker">You</p>
-              <h3>Paste the card. One tap later.</h3>
-              <p>Nie budujesz listy od zera. Bierzesz kartkę z dołu Board. Gdy bramki przejdą: wklejasz <b>jeden</b> portfel, reszta Paused, klikasz <b>Turn On Copy</b>.</p>
-              <p class="en"><b>Never Turn On All Copy</b> — that turns every wallet on (invorser). Your tap is Turn On Copy, and not today.</p>
-            </article>
-            <article class="warn">
-              <p class="kicker">Not next</p>
-              <h3>Do not press All Copy</h3>
-              <p>All Copy = cała stara lista naraz. Tak poszła strata −$13.58. Drugiego bota (FrenFlow / Poly Syncer / PolyTrackers) nie dodajemy.</p>
-            </article>
-          </div>
-        </section>
-
-        <section class="block">
-          <header class="block-h">
-            <p class="num">04</p>
-            <div>
-              <h2>Three paths</h2>
-              <p>Trzy opcje — tylko pierwsza jest na dziś</p>
-            </div>
-          </header>
+      <section id="view-sim" class="hidden" hidden>
+        <div class="section">
+          <h2 data-i18n="sim.title"></h2>
+          <p class="lead" data-i18n="sim.lead"></p>
           <div class="paths">
             <article class="path on">
-              <p class="kicker">1 · Today</p>
-              <h3>Hunt, stay off</h3>
+              <p class="kicker" data-i18n="sim.p1k"></p>
+              <h3 data-i18n="sim.p1t"></h3>
               <p id="pred-a"></p>
             </article>
             <article class="path">
-              <p class="kicker">2 · Later, maybe</p>
-              <h3>Antblack tennis</h3>
+              <p class="kicker" data-i18n="sim.p2k"></p>
+              <h3 data-i18n="sim.p2t"></h3>
               <p id="pred-b"></p>
             </article>
             <article class="path no">
-              <p class="kicker">3 · Never</p>
-              <h3>Chase the fat sim</h3>
+              <p class="kicker" data-i18n="sim.p3k"></p>
+              <h3 data-i18n="sim.p3t"></h3>
               <p id="pred-c"></p>
             </article>
           </div>
-        </section>
-
-        <section class="block">
-          <header class="block-h">
-            <p class="num">05</p>
-            <div>
-              <h2>Charts — how to read them</h2>
-              <p>Wykresy po ludzku: pytanie, obraz, co z tego wynika</p>
-            </div>
-          </header>
+        </div>
+        <div class="section">
+          <h2 data-i18n="sim.charts"></h2>
+          <p class="lead" data-i18n="sim.chartsLead"></p>
           <div class="charts">
             <figure>
-              <p class="kicker">Chart A</p>
-              <h3>How many names die before copy?</h3>
-              <p class="ask">PL: Ile portfeli oglądamy i na którym filtrze odpadają. Im krótszy ostatni słupek, tym mniej ludzi nadaje się do kopiowania.</p>
-              <p class="ask en">EN: Each bar is a count of wallets. We start with the whole month board, then drop anyone too new, then only simulate a slice, then keep those in profit on both 60d and 90d.</p>
-              <canvas id="chart-funnel" height="200"></canvas>
+              <p class="kicker">A</p>
+              <h3 data-i18n="sim.aTitle"></h3>
+              <p class="ask" data-i18n="sim.aAsk"></p>
+              <canvas id="chart-funnel" height="210"></canvas>
               <p class="readout" id="read-funnel">—</p>
             </figure>
             <figure>
-              <p class="kicker">Chart B</p>
-              <h3>If you copied them at $5, what did 90 days pay?</h3>
-              <p class="ask">PL: To <b>nie są</b> Twoje prawdziwe zyski. To symulacja lab: copy $5, ignore poniżej $20, spend $15. <b>Żółty</b> = WAIT (jeszcze nie włączamy). <b>Szary</b> = odrzut, nawet jak słupek jest wysoki.</p>
-              <p class="ask en">EN: Tall grey is a trap (one event, 5-min candles, or CopyGrade Avoid). Yellow is the only colour we would even discuss.</p>
-              <canvas id="chart-pnl" height="200"></canvas>
+              <p class="kicker">B</p>
+              <h3 data-i18n="sim.bTitle"></h3>
+              <p class="ask" data-i18n="sim.bAsk"></p>
+              <canvas id="chart-pnl" height="210"></canvas>
               <p class="readout" id="read-pnl">—</p>
             </figure>
             <figure>
-              <p class="kicker">Chart C</p>
-              <h3>Did they win on one event, or a real book?</h3>
-              <p class="ask">PL: Jaki % ich P&amp;L siedzi w <b>jednym</b> rynku. Powyżej <b>0.45 (45%)</b> = loteria na jednym evencie (mundial, jeden mecz, jeden GTA). Tego nie kopiujemy. Niebieski = rozłożone.</p>
-              <p class="ask en">EN: 0.00 = spread across many markets. 1.00 = everything from one market. Red bars are over the 0.45 cutoff.</p>
-              <canvas id="chart-conc" height="200"></canvas>
+              <p class="kicker">C</p>
+              <h3 data-i18n="sim.cTitle"></h3>
+              <p class="ask" data-i18n="sim.cAsk"></p>
+              <canvas id="chart-conc" height="210"></canvas>
               <p class="readout" id="read-conc">—</p>
             </figure>
           </div>
-        </section>
-
-        <section class="block">
-          <header class="block-h">
-            <p class="num">06</p>
-            <div>
-              <h2>Hunt field</h2>
-              <p id="hunt-plain">WAIT = almost. NO = reject. Copy still off.</p>
-            </div>
-          </header>
+        </div>
+        <div class="section">
+          <h2 data-i18n="sim.table"></h2>
+          <p class="lead" id="hunt-plain"></p>
           <div class="table-wrap">
             <table class="cmp">
               <thead>
                 <tr>
-                  <th>Call</th><th>Wallet</th><th>60d</th><th>90d</th><th>Days</th><th>Conc</th><th>Why</th>
+                  <th data-i18n="sim.thCall"></th>
+                  <th data-i18n="sim.thWallet"></th>
+                  <th>60d</th>
+                  <th>90d</th>
+                  <th data-i18n="sim.thDays"></th>
+                  <th>Conc</th>
+                  <th data-i18n="sim.thWhy"></th>
                 </tr>
               </thead>
               <tbody id="field-body"></tbody>
             </table>
           </div>
-        </section>
+        </div>
+      </section>
 
-        <section class="block settings">
-          <header class="block-h">
-            <p class="num">07</p>
-            <div>
-              <h2>Paste card — only if path 2, later</h2>
-              <p>Kartka do PolyCop. Lab ją wypełnia. Ty nie wciskasz All Copy.</p>
-            </div>
-          </header>
-          <div id="override-box"></div>
-          <h3 class="subh">Do not paste</h3>
-          <ul class="ban" id="ban-list"></ul>
-        </section>
-      </div>
+      <section id="view-money" class="hidden" hidden>
+        <div class="section">
+          <h2 data-i18n="money.title"></h2>
+          <p class="lead" data-i18n="money.lead"></p>
+          <div class="kpis">
+            <div><p class="kpi" id="m-cash">—</p><p class="lbl" data-i18n="money.cash"></p></div>
+            <div><p class="kpi bad" id="s-live">—</p><p class="lbl" data-i18n="money.hole"></p></div>
+            <div><p class="kpi">$15</p><p class="lbl" data-i18n="money.spend"></p></div>
+            <div><p class="kpi">$31</p><p class="lbl" data-i18n="money.sl"></p></div>
+          </div>
+          <div class="cards">
+            <article>
+              <p class="kicker" data-i18n="money.k1"></p>
+              <h3 data-i18n="money.t1"></h3>
+              <p data-i18n="money.p1"></p>
+            </article>
+            <article>
+              <p class="kicker" data-i18n="money.k2"></p>
+              <h3 data-i18n="money.t2"></h3>
+              <p data-i18n="money.p2"></p>
+            </article>
+            <article>
+              <p class="kicker" data-i18n="money.k3"></p>
+              <h3 data-i18n="money.t3"></h3>
+              <p data-i18n="money.p3"></p>
+            </article>
+          </div>
+        </div>
+      </section>
 
-      <div id="view-guide" class="guide hidden" hidden>
-        <article class="guide-col">
-          <h2>Instrukcja (PL)</h2>
-
-          <h3>Co to jest</h3>
-          <p>Zdalna tablica. <b>Nie kupuje i nie sprzedaje.</b> Copy tylko w Telegramie <b>@PolyCop_BOT</b>. Bez drugiego bota.</p>
-
-          <h3>Skąd pieniądze</h3>
-          <p>To <b>Twoje USDC</b> w portfelu PolyCop W1. Strona nic nie trzyma. Start było ~$53. Noc 21–22 Aug 2026 copy <b>invorser</b> (esport) zjechał <b>$52.66 → $39.08</b> (−$13.58). To jest „dziura”. $15 i $31 na tablicy to limity na później, nie nowa kasa.</p>
-
-          <h3>Kto ustawia portfele w PolyCop</h3>
-          <p><b>Lab (ja, Cursor)</b> przygotowuje jeden adres + capy tutaj. <b>Hunt</b> tylko szuka nazw, nigdy nie włącza copy. <b>Ty</b> nie składasz listy od zera i <b>nie</b> wciskasz Turn On All Copy (to włącza wszystkich — tak spalił się invorser). Gdy sity przejdą: wklejasz ten jeden portfel, reszta Paused, klikasz <b>Turn On Copy</b>. Z tej sesji nie da się kliknąć Telegrama — nie ma API.</p>
-
-          <h3>Co będzie następne</h3>
-          <ol>
-            <li><b>Teraz:</b> copy OFF. Hunt co :20 i :50 UTC.</li>
-            <li><b>Następne:</b> portfel z 90d + 60d/90d na plusie + conc ≤0.45 + CopyGrade nie Avoid. Lab wstawia kartkę.</li>
-            <li><b>Potem:</b> Ty wklejasz jeden adres w @PolyCop_BOT.</li>
-            <li><b>Na końcu:</b> Turn On Copy. Nie All. Dziś tego nie ma.</li>
-          </ol>
-
-          <h3>Wykresy</h3>
-          <ul>
-            <li><b>A</b> — ile nazw odpada na filtrach. Krótki ostatni słupek = prawie nikt nie nadaje się do copy.</li>
-            <li><b>B</b> — symulowany 90d przy copy $5. Żółty = WAIT. Szary wysoki = pułapka.</li>
-            <li><b>C</b> — czy zysk jest z jednego eventa. &gt;0.45 = nie kopiujemy.</li>
-          </ul>
-
-          <h3>Jak lab ocenia</h3>
-          <p>Copy $5, ignore &lt;$20, spend $15. Sit: 60d i 90d na plusie, conc ≤0.45, nie świece BTC 5 min, CopyGrade nie Avoid, track ≥90 dni.</p>
-
-          <h3>Odświeżanie</h3>
-          <p>Hunt: GitHub :20 i :50 UTC (Mac off). Otwarta strona: co 15 s. Cash: przy publikacji snapshotu.</p>
-
-          <p>Docs: <a href="https://github.com/mrbinio/polymarket-copy-lab">github.com/mrbinio/polymarket-copy-lab</a></p>
-        </article>
-        <article class="guide-col">
-          <h2>Guide (EN)</h2>
-
-          <h3>What this is</h3>
-          <p>Remote board. <b>Does not trade.</b> Copy only in <b>@PolyCop_BOT</b>. No second bot.</p>
-
-          <h3>Where the money is</h3>
-          <p><b>Your USDC</b> in PolyCop W1. This site holds nothing. Seed ~$53. 21–22 Aug 2026 <b>invorser</b> esports: <b>$52.66 → $39.08</b> (−$13.58). That is the hole. $15 / $31 are later caps, not extra cash.</p>
-
-          <h3>Who sets PolyCop wallets</h3>
-          <p><b>Lab (Cursor)</b> writes one address + caps here. <b>Hunt</b> only searches; never enables. <b>You</b> do not rebuild the list and do <b>not</b> press Turn On All Copy (that enables everyone — invorser). When gates pass: paste that one wallet, pause the rest, press <b>Turn On Copy</b>. This session cannot click Telegram — no API.</p>
-
-          <h3>What happens next</h3>
-          <ol>
-            <li><b>Now:</b> copy OFF. Hunt at :20 and :50 UTC.</li>
-            <li><b>Next:</b> a wallet with 90d + both windows green + conc ≤0.45 + CopyGrade not Avoid. Lab posts the card.</li>
-            <li><b>Then:</b> you paste one address in @PolyCop_BOT.</li>
-            <li><b>Last:</b> Turn On Copy. Not All. Not today.</li>
-          </ol>
-
-          <h3>Charts</h3>
-          <ul>
-            <li><b>A</b> — how many names die at each filter. Tiny last bar = almost nobody is copyable.</li>
-            <li><b>B</b> — 90d lab P&amp;L at $5 copy. Yellow = WAIT. Tall grey = trap.</li>
-            <li><b>C</b> — share of P&amp;L in one market. &gt;0.45 = do not copy.</li>
-          </ul>
-
-          <h3>Lab gates</h3>
-          <p>$5 copy, ignore &lt;$20, spend $15. Both 60d and 90d profit, conc ≤0.45, no 5-min BTC candles, CopyGrade not Avoid, prefer ≥90d track.</p>
-
-          <h3>Refresh</h3>
-          <p>Hunt: GitHub :20 and :50 UTC (Mac off). Open page: every 15s. Cash: when a snapshot is published.</p>
-
-          <p>Docs: <a href="https://github.com/mrbinio/polymarket-copy-lab">github.com/mrbinio/polymarket-copy-lab</a></p>
-        </article>
-      </div>
+      <section id="view-how" class="hidden" hidden>
+        <div class="section">
+          <h2 data-i18n="how.title"></h2>
+          <p class="lead" data-i18n="how.lead"></p>
+          <article class="faq">
+            <h3 data-i18n="how.q1"></h3>
+            <p data-i18n="how.a1"></p>
+            <h3 data-i18n="how.q2"></h3>
+            <p data-i18n="how.a2"></p>
+            <h3 data-i18n="how.q3"></h3>
+            <p data-i18n="how.a3"></p>
+            <h3 data-i18n="how.q4"></h3>
+            <p data-i18n="how.a4"></p>
+            <h3 data-i18n="how.q5"></h3>
+            <p data-i18n="how.a5"></p>
+          </article>
+          <div class="section">
+            <h2 data-i18n="how.card"></h2>
+            <p class="lead" data-i18n="how.cardLead"></p>
+            <div id="override-box"></div>
+            <h3 class="kicker" style="margin-top:1.2rem" data-i18n="how.ban"></h3>
+            <ul class="ban" id="ban-list"></ul>
+          </div>
+        </div>
+      </section>
     </div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
-  <script src="./access-2208.js"></script>
-  <script src="./dash-2208.js"></script>
+  <script src="./access-2222.js"></script>
+  <script src="./dash-2222.js"></script>
 </body>
 </html>
