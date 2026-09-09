@@ -1,204 +1,141 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="pl">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Copy Lab — ops</title>
+  <title>Copy Lab</title>
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
-  <div id="gate" class="auth-gate hidden" hidden>
-    <h1>Copy Lab ops</h1>
-    <p class="lead">Auth-only. Google sign-in. This console does not place trades.</p>
-    <p id="gate-msg" class="lead"></p>
-    <button class="btn" id="btn-google" type="button">Sign in with Google</button>
+  <div id="gate" class="auth-gate">
+    <h1>Copy Lab</h1>
+    <p class="gate-lead">To nie jest handel. To tablica: kogo wkleić w PolyCop i kogo hunt właśnie znalazł. Wejście tylko dla Damiana (potem Mitch).</p>
+    <p id="gate-msg" class="gate-lead"></p>
+    <label class="lbl" for="page-code">Hasło strony</label>
+    <input id="page-code" type="password" autocomplete="current-password" placeholder="hasło z czatu" />
+    <button class="btn primary" id="btn-code" type="button">Wejdź</button>
+    <button class="btn" id="btn-google" type="button" hidden>Wejdź przez Google</button>
   </div>
 
   <div id="app" class="shell hidden" hidden>
     <header class="top">
       <div>
-        <h1>Copy Lab ops</h1>
-        <div class="sub">Tablica labu. Nie handluje. Copy tylko w Telegramie @PolyCop_BOT.</div>
+        <p class="kicker">Copy Lab · nie handluje</p>
+        <h1>Co robić z $39</h1>
+        <p class="sub">Copy włączasz tylko Ty, w Telegramie <b>@PolyCop_BOT</b>. Tu tylko decyzja i hunt 24/7.</p>
       </div>
-      <div>
-        <div class="who" id="who"></div>
-        <nav>
-          <a href="#now" data-page="now">Teraz</a>
-          <a href="#pick" data-page="pick">Rozwiązanie</a>
-          <a href="#hunt" data-page="hunt">Hunt</a>
-          <a href="#research" data-page="research">Research</a>
-          <a href="#funnel" data-page="funnel">Lejek</a>
-          <a href="#veto" data-page="veto">CopyGrade</a>
-          <a href="#lists" data-page="lists">Ban / watch</a>
-          <a href="#live" data-page="live">Live</a>
-          <a href="#how" data-page="how">Jak oglądać</a>
-          <a href="#docs" data-page="docs">Handoffs</a>
-          <a href="#log" data-page="log">Log</a>
-        </nav>
-      </div>
+      <div class="who" id="who"></div>
     </header>
 
-    <section data-view="now">
-      <div class="callout">
-        <h2>Co to jest</h2>
-        <p>Jedna tablica: cash, kogo kopiować, i czy hunt znalazł kogoś lepszego. <strong>Ta strona nic nie kupuje.</strong> Zlecenia tylko w <code>@PolyCop_BOT</code>.</p>
-        <p>Konsola Firebase (Hello Damian, lista projektów) to <strong>nie</strong> ten lab — to zaplecze Google pod przyszły login. Tu nie klikasz na co dzień.</p>
+    <section class="card money">
+      <p class="kicker">1 · Pieniądze <span class="hint">ile USDC jest naprawdę na koncie PolyCop</span></p>
+      <div class="bigrow">
+        <div>
+          <p class="num" id="s-cash">—</p>
+          <p class="lbl">Cash teraz</p>
+          <p class="hint">To jedyna prawda. Nie sim, nie dashboard −$10.</p>
+        </div>
+        <div>
+          <p class="num bad" id="s-live">—</p>
+          <p class="lbl">Ostatnia sesja live</p>
+          <p class="hint">Strata na <b>invorser</b> (esport). Dlatego copy jest <b>wyłączony</b>.</p>
+        </div>
       </div>
-      <h2>Co jest co</h2>
-      <table>
-        <thead><tr><th>Zakładka</th><th>Po co</th></tr></thead>
-        <tbody>
-          <tr><td>Teraz</td><td>Cash, werdykt, ten opis.</td></tr>
-          <tr><td>Rozwiązanie</td><td>Jeden portfel do PolyCop (Antblack) + limity $5 / SL $31.</td></tr>
-          <tr><td>Hunt</td><td>Wyszukiwanie 24/7. Odświeża się samo, bez Twojego Maca.</td></tr>
-          <tr><td>Research / Lejek / CopyGrade</td><td>Skąd wziął się Antblack i kogo odrzuciliśmy.</td></tr>
-          <tr><td>Ban / watch</td><td>Kogo nigdy nie wklejać (invorser, świece 5m, Avoid).</td></tr>
-          <tr><td>Live</td><td>Ostatnia strata na żywo (−$13.58). Copy jest off.</td></tr>
-        </tbody>
-      </table>
-      <div class="stats">
-        <div class="stat"><b id="s-cash">—</b><span>Cash</span></div>
-        <div class="stat bad"><b id="s-live">—</b><span>Ostatnia sesja live</span></div>
-        <div class="stat"><b id="s-enable">1</b><span>Portfeli Active, jeśli włączysz</span></div>
-        <div class="stat"><b id="s-sims">—</b><span>Simy $5 w labie</span></div>
-      </div>
-      <div class="callout danger">
-        <h2 id="verdict-title">Werdykt</h2>
-        <p id="verdict-body"></p>
-      </div>
-      <p class="lead" id="hunt-pulse">Hunt: ładuję status…</p>
     </section>
 
-    <section data-view="pick" class="hidden">
-      <h2>Rozwiązanie (gdy włączysz PolyCop ręcznie)</h2>
-      <p class="lead" id="pick-lead"></p>
-      <div class="callout">
-        <h2 id="pick-name">—</h2>
-        <p id="pick-why"></p>
-      </div>
-      <table>
-        <thead><tr><th>W PolyCop ustaw</th><th>Wartość</th></tr></thead>
+    <section class="card pick">
+      <p class="kicker">2 · Rozwiązanie <span class="hint">jeden portfel, nie lista ośmiu nazw</span></p>
+      <h2 id="hero-name">—</h2>
+      <p class="lead" id="hero-why"></p>
+      <p class="addr" id="hero-addr"></p>
+      <p class="hint" id="hero-meaning"></p>
+      <table class="plain">
+        <thead><tr><th>W PolyCop ustaw</th><th>Co to znaczy</th></tr></thead>
         <tbody id="pick-caps"></tbody>
       </table>
-      <p class="lead" id="pick-addr"></p>
     </section>
 
-    <section data-view="hunt" class="hidden">
-      <h2>Hunt — kolejne portfele (nie Top 8)</h2>
-      <p class="lead" id="hunt-status">Ładuję…</p>
-      <table>
-        <thead><tr><th>Score</th><th>Name</th><th>Cat</th><th>Days</th><th>60d</th><th>90d</th><th>Conc</th><th>CopyGrade</th></tr></thead>
-        <tbody id="hunt-rows"></tbody>
-      </table>
-      <h3>Log</h3>
-      <pre id="hunt-log" style="white-space:pre-wrap;font-size:12px;color:#8b909c"></pre>
+    <section class="card hunt">
+      <p class="kicker">3 · Hunt 24/7 <span class="hint">szuka kogoś lepszego niż Antblack; strona sama się nadpisuje</span></p>
+      <p class="status" id="hunt-pulse">Ładuję hunt…</p>
+      <p class="lead" id="hunt-plain"></p>
+      <div id="hunt-cards"></div>
+      <details>
+        <summary>Log skanowania (surowy)</summary>
+        <pre id="hunt-log"></pre>
+      </details>
     </section>
 
-    <section data-view="how" class="hidden">
-      <h2>Zdalnie</h2>
-      <p class="lead">To samo Wi‑Fi <strong>nie</strong> jest zdalnym dostępem. Tunel na Macu pada, gdy Mac śpi.</p>
-      <p class="lead">Ta strona stoi na internecie: <a href="https://mrbinio.github.io/copy-lab-ops/">https://mrbinio.github.io/copy-lab-ops/</a> — Mac może być wyłączony. Docs dla Mitcha: prywatne <a href="https://github.com/mrbinio/polymarket-copy-lab">github.com/mrbinio/polymarket-copy-lab</a>.</p>
-      <p class="caption">Pełny tekst: docs/JAK-ZDALNIE.md i docs/POLYCOP-PICK.md</p>
+    <section class="card">
+      <p class="kicker">4 · Tego nie wklejaj</p>
+      <p class="hint">Invorser spalił kasę. Weasel ma 60d = $0. PoppyG to świece Bitcoin 5 min. CopyGrade Avoid = farm.</p>
+      <ul class="ban" id="ban-list"></ul>
     </section>
 
-    <section data-view="research" class="hidden">
-      <h2>60/90d conclusion</h2>
-      <p class="lead" id="research-lead"></p>
-      <h2>Why the previous spoon was wrong</h2>
-      <p class="lead">Weaseloftheweek was a 30d scout recycle. Under a 60d window that wallet copies $0 at spend $15. Top 8 fails CopyGrade Avoid/farm. CopyGrade #1 (PoppyG) is Bitcoin 5-minute candles — PolyCop latency cannot take that edge.</p>
-      <h2>Concentration (share of |sim PnL| in the top market)</h2>
-      <div class="chart-wrap"><canvas id="chart-conc" height="320"></canvas></div>
-      <p class="caption">Source: isolated $5 copier, settled copies · lab replay 9 Sep 2026. Below ~0.40 and ≥5 markets is the bar. Only Antblack is clearly under it among the “passers”.</p>
-      <h2>MONTH sport passers (lab only — not a go-live)</h2>
-      <table>
-        <thead><tr><th>Name</th><th>Days</th><th>60d</th><th>90d</th><th>Copies</th></tr></thead>
-        <tbody id="sport-passers"></tbody>
-      </table>
-    </section>
-
-    <section data-view="funnel" class="hidden">
-      <h2>MONTH + Merlin</h2>
-      <div class="chart-wrap"><canvas id="chart-funnel" height="260"></canvas></div>
-      <p class="caption">Source: data-api.polymarket.com/v1/leaderboard + merlin.trade/api/leaderboard · 9 Sep 2026. Unique wallets. First 40 sims were PnL-sorted (sports-biased).</p>
-      <div class="grid2">
-        <div class="panel">
-          <h3>Non-sport MONTH (stratified)</h3>
-          <p id="funnel-ns"></p>
-        </div>
-        <div class="panel">
-          <h3>ALL-time mid-tier (ranks 51–150)</h3>
-          <p id="funnel-all"></p>
-        </div>
-      </div>
-    </section>
-
-    <section data-view="veto" class="hidden">
-      <h2>CopyGrade vs old roster / lab passers</h2>
-      <p class="lead">Independent HTTP grade. CopyGrade score is unvalidated vs forward copier returns — used as veto, not as a spoon.</p>
-      <table>
-        <thead><tr><th>Name</th><th>Source</th><th>Score</th><th>Label</th><th>Farm</th><th>Real edge</th></tr></thead>
-        <tbody id="cg-rows"></tbody>
-      </table>
-      <h2>Their Sep 2026 shortlist, replayed at our caps</h2>
-      <table>
-        <thead><tr><th>Name</th><th>Days</th><th>tpd</th><th>60d</th><th>90d</th><th>Candle</th><th>Top market</th></tr></thead>
-        <tbody id="cg-lab"></tbody>
-      </table>
-    </section>
-
-    <section data-view="lists" class="hidden">
-      <h2>Do not copy</h2>
-      <table>
-        <thead><tr><th>Name</th><th>Why</th></tr></thead>
-        <tbody id="ban-rows"></tbody>
-      </table>
-      <h2>Watch only (not Active, not this week)</h2>
-      <table>
-        <thead><tr><th>Name</th><th>Domain</th><th>Days</th><th>60d / 90d</th><th>Open question</th></tr></thead>
-        <tbody id="watch-rows"></tbody>
-      </table>
-    </section>
-
-    <section data-view="live" class="hidden">
-      <div class="callout danger">
-        <h2>Copy is paused</h2>
-        <p id="live-reason"></p>
-      </div>
-      <p class="lead" id="remote-url"></p>
-      <div class="stats">
-        <div class="stat"><b id="live-copy">PAUSED</b><span>PolyCop copy</span></div>
-        <div class="stat"><b id="live-sl-old">—</b><span>Old Balance SL (stale)</span></div>
-        <div class="stat"><b id="live-sl-new">—</b><span>SL if ever re-enabled</span></div>
-        <div class="stat"><b>PolyCop</b><span>Only executor</span></div>
-      </div>
-      <p class="lead" id="live-eval"></p>
-      <p class="lead">This page cannot Turn On All Copy. Caps if a later enable is agreed: Fixed $5, Max Yes/No $5, ignore &lt; $20, spend $15, one wallet.</p>
-    </section>
-
-    <section data-view="docs" class="hidden">
-      <h2>Handoffs (Mitch-style)</h2>
-      <p class="lead">Every research pass and ops change gets a markdown handoff: summary, why, numbers, changelog, next decision.</p>
-      <table>
-        <thead><tr><th>Date</th><th>Title</th><th>File</th></tr></thead>
-        <tbody id="doc-rows"></tbody>
-      </table>
-      <p class="caption">On the Mac, full files live in <code>docs/</code>. After GitHub is private, Mitch can read them as a pull collaborator without this console.</p>
-    </section>
-
-    <section data-view="log" class="hidden">
-      <h2>Conclusions log</h2>
-      <p class="lead">Owner can append. Viewers read. Commands never include enable_copy.</p>
-      <textarea id="note-text" placeholder="Conclusion / next action…"></textarea>
-      <p><button class="btn" id="btn-note" type="button">Append note</button>
-         <button class="btn" id="btn-cmd" type="button">Queue weekly screen</button></p>
-      <div id="notes"></div>
-    </section>
+    <details class="more">
+      <summary>Więcej liczb (research, lejek, CopyGrade)</summary>
+      <section data-view="research">
+        <h2>Skąd Antblack</h2>
+        <p class="lead" id="research-lead"></p>
+        <div class="chart-wrap"><canvas id="chart-conc" height="280"></canvas></div>
+        <p class="caption">Udział |PnL| w jednym rynku. Poniżej ~0.40 = nie jednorynkowy fortel.</p>
+        <table>
+          <thead><tr><th>Name</th><th>Dni</th><th>60d</th><th>90d</th><th>Kopie</th></tr></thead>
+          <tbody id="sport-passers"></tbody>
+        </table>
+      </section>
+      <section data-view="funnel">
+        <h2>Lejek</h2>
+        <div class="chart-wrap"><canvas id="chart-funnel" height="220"></canvas></div>
+        <p id="funnel-ns" class="hint"></p>
+        <p id="funnel-all" class="hint"></p>
+      </section>
+      <section data-view="veto">
+        <h2>CopyGrade</h2>
+        <table>
+          <thead><tr><th>Name</th><th>Źródło</th><th>Score</th><th>Label</th><th>Farm</th><th>Edge</th></tr></thead>
+          <tbody id="cg-rows"></tbody>
+        </table>
+        <table>
+          <thead><tr><th>Name</th><th>Dni</th><th>tpd</th><th>60d</th><th>90d</th><th>Świeca</th><th>Top rynek</th></tr></thead>
+          <tbody id="cg-lab"></tbody>
+        </table>
+      </section>
+      <section data-view="docs">
+        <h2>Handoffs</h2>
+        <table>
+          <thead><tr><th>Data</th><th>Tytuł</th><th>Plik</th></tr></thead>
+          <tbody id="doc-rows"></tbody>
+        </table>
+      </section>
+      <p class="hint" id="live-reason"></p>
+      <p class="hint" id="live-eval"></p>
+      <p class="hint" id="s-sims" hidden></p>
+      <span id="live-sl-old" hidden></span>
+      <span id="live-sl-new" hidden></span>
+      <span id="s-enable" hidden></span>
+      <div id="watch-rows" hidden></div>
+      <div id="ban-rows" hidden></div>
+      <div id="hunt-status" hidden></div>
+      <div id="hunt-rows" hidden></div>
+      <div id="pick-lead" hidden></div>
+      <div id="pick-name" hidden></div>
+      <div id="pick-why" hidden></div>
+      <div id="pick-addr" hidden></div>
+      <div id="verdict-body" hidden></div>
+      <div id="notes" hidden></div>
+      <textarea id="note-text" hidden></textarea>
+      <button id="btn-note" hidden type="button"></button>
+      <button id="btn-cmd" hidden type="button"></button>
+      <p id="remote-url" hidden></p>
+    </details>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+  <script src="./access-config.js"></script>
   <script src="./app.js"></script>
 </body>
 </html>
