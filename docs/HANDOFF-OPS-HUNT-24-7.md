@@ -38,4 +38,6 @@ Copy stays off. Watch the pulse: `HUNT DZIAŁA` means the loop is up.
 
 ```
 2026-09-10  12:28 UTC  Hunt 24/7 loop on GitHub Actions. Pause 10 min. Copy off.
+2026-09-10  12:30 UTC  Merged PR #1 to main (2d16c89). Dispatched run 34477140792.
+2026-09-10  12:35 UTC  Board copy 24/7 published (BUILD 12:28). Pulse running.
 ```

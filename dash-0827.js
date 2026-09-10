@@ -148,7 +148,9 @@
       "hunt.line": "Hunt 24/7 na GitHubie. Ostatni bieg: {n} nowych nazw. CZEKAJ = prawie. NIE = odrzut. Hunt nie włącza bota.",
       "hunt.missing": "Brak pliku huntu",
       "hunt.running": "HUNT DZIAŁA · ",
+      "hunt.runningSince": "HUNT DZIAŁA od {t} · ",
       "hunt.last": "ostatni hunt ",
+      "hunt.lastDone": "ostatni skończony ",
       "cap.active": "Aktywne portfele",
       "journal.title": "Dziennik huntu",
       "journal.lead": "Ostatni bieg sitka. Hunt nic nie włącza. Czerwone = odrzut. Żółte = prawie, nadal off.",
@@ -322,7 +324,9 @@
       "hunt.line": "Hunt 24/7 on GitHub. Last run: {n} new names. WAIT = almost. NO = reject. Hunt never enables the bot.",
       "hunt.missing": "Hunt file missing",
       "hunt.running": "HUNT RUNNING · ",
+      "hunt.runningSince": "HUNT RUNNING since {t} · ",
       "hunt.last": "last hunt ",
+      "hunt.lastDone": "last finished ",
       "cap.active": "Active wallets",
       "journal.title": "Hunt log",
       "journal.lead": "Last sieve run. Hunt never enables copy. Red = reject. Yellow = almost, still off.",
@@ -959,12 +963,17 @@
       const h = await (await fetch("./data/hunt.json?t=" + Date.now())).json();
       state.hunt = h;
       let pulse = "";
+      let lastKey = "hunt.last";
       try {
         const p = await (await fetch("./data/pulse.json?t=" + Date.now())).json();
-        if (p.hunt === "running") pulse = t("hunt.running");
+        if (p.hunt === "running") {
+          const since = p.updated_at ? String(p.updated_at).replace("T", " ").slice(11, 16) + " UTC" : "";
+          pulse = since ? fmt("hunt.runningSince", { t: since }) : t("hunt.running");
+          lastKey = "hunt.lastDone";
+        }
       } catch (e) { /* optional */ }
       const when = h.updated_at ? String(h.updated_at).replace("T", " ").slice(0, 16) + " UTC" : "?";
-      $("hunt-pulse").textContent = pulse + t("hunt.last") + when;
+      $("hunt-pulse").textContent = pulse + t(lastKey) + when;
       $("hunt-plain").textContent = fmt("hunt.line", { n: h.checked || 0 });
     } catch (e) {
       $("hunt-pulse").textContent = t("hunt.missing");
