@@ -38,4 +38,5 @@ Copy stays off. Same WAIT bar as this morning.
 
 ```
 2026-09-10  08:27 UTC  Header logout / switch account. Stamp BUILD 08:27.
+2026-09-10  08:32 UTC  Published full UI to mrbinio/copy-lab-ops (b385589). Live stamp BUILD 08:27.
 ```
