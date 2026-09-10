@@ -129,7 +129,7 @@
       "top_market": "Will T1 win LoL Worlds 2025?",
       "candle": 0.0,
       "copygrade": {
-        "status": "rate_limit"
+        "status": "not_indexed"
       },
       "score": -54.1
     },
@@ -168,5 +168,5 @@
     },
     "score": -41.4
   },
-  "updated_at": "2026-09-10T12:57:04.617751+00:00"
+  "updated_at": "2026-09-10T13:15:01.246708+00:00"
 }
