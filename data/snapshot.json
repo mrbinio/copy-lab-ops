@@ -1,10 +1,10 @@
 {
-  "generated_at": "2026-09-09T17:38:28.512652+00:00",
+  "generated_at": "2026-09-09T19:08:14.046243+00:00",
   "as_of": "2026-09-09",
   "cash_usd": 39.08,
   "last_live_pnl_usd": -13.58,
-  "stance": "solution_antblack_when_you_enable_polycop",
-  "verdict": "Gdy w\u0142\u0105czysz PolyCop r\u0119cznie: 1 wallet Antblack (tenis). Hunt leci dalej po kim\u015b z d\u0142u\u017cszym trackiem 90d+. CopyGrade #1 i Top 8 odpadaj\u0105.",
+  "stance": "copy_off_compare_the_field",
+  "verdict": "The biggest lab numbers are not copyable: Gabriell +$70 (one GTA event), Bromsloy +$53 (5-minute candles), Jittz +$51 (World Cup cluster), gambamaster +$24 (CopyGrade Avoid). Antblack fails the fewest gates and still only has 76 days of history. Spending $15 of $39 now is a guess.",
   "system": {
     "discover": [
       "Polymarket Data API category leaderboards MONTH+ALL",
@@ -20,7 +20,7 @@
     ],
     "lab": "isolated $5 copy, ignore <$20, spend $15, require 60d and 90d sim>0, >=6 copies, max yes/no $5, top market <40% |pnl|",
     "veto": "CopyGrade Avoid / severe farming / negative real edge",
-    "execute": "PolyCop only \u2014 never FrenFlow/Poly Syncer/PolyTrackers as a second bot",
+    "execute": "PolyCop only — never FrenFlow/Poly Syncer/PolyTrackers as a second bot",
     "truth": "live cash vs baseline"
   },
   "universe": {
@@ -52,7 +52,7 @@
   "do_not_copy": [
     {
       "name": "invorser",
-      "why": "Live \u2212$13.58 esport stack"
+      "why": "Live −$13.58 esport stack"
     },
     {
       "name": "Weaseloftheweek",
@@ -60,7 +60,7 @@
     },
     {
       "name": "disputequant",
-      "why": "CopyGrade 40 Avoid, real edge \u221256%"
+      "why": "CopyGrade 40 Avoid, real edge −56%"
     },
     {
       "name": "0xwise",
@@ -72,7 +72,7 @@
     },
     {
       "name": "gambamaster",
-      "why": "Lab +$24/60d but CopyGrade Avoid real edge \u2212100%"
+      "why": "Lab +$24/60d but CopyGrade Avoid real edge −100%"
     },
     {
       "name": "PoppyG",
@@ -92,7 +92,7 @@
     },
     {
       "name": "Lucas1tb",
-      "why": "11d / high tpd \u2014 never a 60d name"
+      "why": "11d / high tpd — never a 60d name"
     }
   ],
   "watch_not_enable": [
@@ -396,8 +396,8 @@
   ],
   "live": {
     "copy": "paused",
-    "reason": "Balance SL 21\u201322 Aug 2026. Almost all fills were invorser esport. Do not Turn On All Copy.",
-    "eval_counter": "stale \u2014 dashboard may still show baseline $52.66; cash ~$39.08 is truth",
+    "reason": "Balance SL 21–22 Aug 2026. Almost all fills were invorser esport. Do not Turn On All Copy.",
+    "eval_counter": "stale — dashboard may still show baseline $52.66; cash ~$39.08 is truth",
     "balance_sl_old": 42,
     "balance_sl_if_reenabled": 31,
     "executor": "PolyCop only"
@@ -436,7 +436,7 @@
     {
       "name": "gambamaster",
       "share": 0.53,
-      "note": "World Cup; CopyGrade \u2212100%"
+      "note": "World Cup; CopyGrade −100%"
     },
     {
       "name": "jacky00",
@@ -455,6 +455,11 @@
     }
   ],
   "handoffs": [
+    {
+      "title": "Decision board (English compare-the-field)",
+      "date": "2026-09-09",
+      "path": "docs/HANDOFF-OPS-DECISION-BOARD.md"
+    },
     {
       "title": "Ops 24/7 hunt + what-is-what",
       "date": "2026-09-09",
@@ -548,7 +553,156 @@
     "markets": 13,
     "concentration": 0.11,
     "copygrade": "64 caution, farming watch, real edge +23%",
-    "summary": "Jedyny z przebadanych, kt\u00f3ry ma 60d i 90d na plusie, 13 rynk\u00f3w (nie jeden mundial), nie jest esportem, nie jest \u015bwiec\u0105 5m, i CopyGrade nie m\u00f3wi Avoid. 76 dni to kr\u00f3tko \u2014 dlatego hunt leci dalej. To jest \u0142y\u017cka na $39, nie lista o\u015bmiu nazw.",
-    "why": "Weasel 60d=$0. invorser spali\u0142 sesj\u0119. gambamaster lab +$24 ale CopyGrade Avoid \u2212100%. PoppyG to Bitcoin 5m. Antblack: tenis, conc. 0.11, 14 kopii. W PolyCop: tylko on Active. Hunt na zak\u0142adce Hunt szuka 90d+ nast\u0119pcy."
+    "summary": "Jedyny z przebadanych, który ma 60d i 90d na plusie, 13 rynków (nie jeden mundial), nie jest esportem, nie jest świecą 5m, i CopyGrade nie mówi Avoid. 76 dni to krótko — dlatego hunt leci dalej. To jest łyżka na $39, nie lista ośmiu nazw.",
+    "why": "Weasel 60d=$0. invorser spalił sesję. gambamaster lab +$24 ale CopyGrade Avoid −100%. PoppyG to Bitcoin 5m. Antblack: tenis, conc. 0.11, 14 kopii. W PolyCop: Antblack i 86shin, oba Paused. Copy off. Hunt szuka 90d+ następcy."
+  },
+  "board": {
+    "copy_state": "COPY OFF",
+    "live_line": "invorser esports, Aug 21–22. Cash is truth. Dashboard −$10 is not.",
+    "headline": "Do not enable copy.",
+    "why": "The biggest lab numbers are not copyable: Gabriell +$70 (one GTA event), Bromsloy +$53 (5-minute candles), Jittz +$51 (World Cup cluster), gambamaster +$24 (CopyGrade Avoid). Antblack fails the fewest gates and still only has 76 days of history. Spending $15 of $39 now is a guess.",
+    "change": "Change the call only if a WAIT row also has ≥90 days, both windows green, concentration ≤0.45, and CopyGrade not Avoid. Hunt adds rows every hour. It does not auto-pick a wallet.",
+    "override": {
+      "name": "Antblack",
+      "address": "0x9c68e5a4b3004bf6ac9d6735a33ffb5f983a247a",
+      "note": "Least-bad paste if you ignore WAIT. Not a go-live. 76d tennis, not Avoid, not candles."
+    },
+    "options": [
+      {
+        "name": "Antblack",
+        "address": "0x9c68e5a4b3004bf6ac9d6735a33ffb5f983a247a",
+        "domain": "Tennis",
+        "source": "lab 60/90",
+        "call": "wait",
+        "w60": 17.0,
+        "w90": 9.2,
+        "days": 76,
+        "conc": 0.11,
+        "copies": 14,
+        "copygrade": "64 caution",
+        "meaning": "Fails the fewest gates: 13 tennis markets, concentration 0.11, CopyGrade not Avoid. Still WAIT because 76 days is a short sample and 90-day lab (+$9) is weaker than 60-day (+$17). Enabling this spends $15 of $39 on a track that has not lived through a full season.",
+        "why_short": "Fewest gates failed. Track too short; 90d weaker than 60d."
+      },
+      {
+        "name": "86shin",
+        "address": "0x1cfc6f041b5b8dad3c14b867be8482a69d45b8e0",
+        "domain": "Politics (Thai election)",
+        "source": "ALL-time mid-tier",
+        "call": "wait",
+        "w60": 9.3,
+        "w90": 9.3,
+        "days": 220,
+        "conc": null,
+        "copies": null,
+        "copygrade": "—",
+        "meaning": "In PolyCop NY, Paused. Longer track than Antblack, thinner copier sample, one election theme. Do not split a $39 stack. Copy stays off.",
+        "why_short": "Longer track, thin sample, one election theme. Do not split the $39."
+      },
+      {
+        "name": "Jittz",
+        "address": "0xd47107e357c4688bffc76504541f5280760bedf8",
+        "domain": "Sports · World Cup dates",
+        "source": "lab 60/90",
+        "call": "reject",
+        "w60": 15.05,
+        "w90": 50.89,
+        "days": 85,
+        "conc": 0.35,
+        "copies": 10,
+        "copygrade": "—",
+        "meaning": "90-day lab (+$50.89) beats Antblack. Rejected because the profit sits in a World Cup date cluster, not a repeatable $5 book. Copying this is betting the next tournament prints the same way.",
+        "why_short": "90d +$51 is a World Cup date cluster, not a repeatable $5 book."
+      },
+      {
+        "name": "gambamaster",
+        "address": "0x9ee8bbc36d378af72e5f6b8e2ea2eb67c05a89de",
+        "domain": "Sports · World Cup",
+        "source": "lab 60/90 + CopyGrade veto",
+        "call": "reject",
+        "w60": 23.85,
+        "w90": 38.04,
+        "days": 81,
+        "conc": 0.53,
+        "copies": 9,
+        "copygrade": "37 Avoid",
+        "meaning": "Lab likes the filter more than Antblack. CopyGrade says a follower is not paid (Avoid, −100% real edge) and one World Cup theme is 53% of |PnL|. Tool veto wins over the sim.",
+        "why_short": "Lab beats Antblack; CopyGrade Avoid (−100% real edge) vetoes it."
+      },
+      {
+        "name": "Gabriell11",
+        "address": "0xf9db42cd8186e1547c85bb80f2616af109c88dc1",
+        "domain": "Culture · GTA VI views",
+        "source": "non-sport lab",
+        "call": "reject",
+        "w60": 70.35,
+        "w90": 70.35,
+        "days": 130,
+        "conc": 0.48,
+        "copies": 9,
+        "copygrade": "cluster",
+        "meaning": "Largest non-sport sim on the screen. Same GTA view-count family as other culture names. That is one event, not a strategy. Do not paste.",
+        "why_short": "Largest non-sport sim. One GTA view-count event, not a strategy."
+      },
+      {
+        "name": "Bromsloy142515",
+        "address": "0xdbf642e200cfcfcf79d1a9095b86297e2ed012ca",
+        "domain": "Bitcoin 5-minute Up or Down",
+        "source": "non-sport lab",
+        "call": "reject",
+        "w60": 53.15,
+        "w90": 53.15,
+        "days": 522,
+        "conc": 1.0,
+        "copies": 29,
+        "copygrade": "candles",
+        "meaning": "Longest track and a fat sim. 100% 5-minute crypto candles. CopyGrade #1 (PoppyG) fails the same way. A $5 copier on candles is how you churn the $39.",
+        "why_short": "Fat long-track sim is 100% 5-minute Bitcoin candles."
+      },
+      {
+        "name": "0x760f1063",
+        "address": "0x760f1063f9f07d5125de802b16775a967b7f326a",
+        "domain": "Sports · World Cup dates",
+        "source": "lab 60/90",
+        "call": "reject",
+        "w60": 8.5,
+        "w90": 25.85,
+        "days": 105,
+        "conc": null,
+        "copies": 6,
+        "copygrade": "64 / ~0 edge",
+        "meaning": "Clears 90 days and CopyGrade caution. Same World Cup date cluster as Jittz. Real edge is near zero. Not a diversifier.",
+        "why_short": "Clears 90d; same World Cup cluster as Jittz. Real edge ~0."
+      },
+      {
+        "name": "martingaleking",
+        "address": "0x52f5efdfb8759d4b9be1fbe63f80401474445e8a",
+        "domain": "NBA",
+        "source": "lab 60/90 + CopyGrade veto",
+        "call": "reject",
+        "w60": 14.15,
+        "w90": 16.19,
+        "days": 139,
+        "conc": 0.34,
+        "copies": 12,
+        "copygrade": "40 Avoid",
+        "meaning": "Both windows green, longer than Antblack. CopyGrade Avoid. Independent tool says the copier loses.",
+        "why_short": "Both windows green. CopyGrade Avoid (−42%)."
+      },
+      {
+        "name": "PoppyG",
+        "address": "0x5b7fc994c653072b721669229ea2bed937065fea",
+        "domain": "Bitcoin 5-minute candles",
+        "source": "CopyGrade #1 shortlist replay",
+        "call": "reject",
+        "w60": 0.0,
+        "w90": 0.0,
+        "days": 185,
+        "conc": 0.81,
+        "copies": null,
+        "copygrade": "95 candles",
+        "meaning": "Highest CopyGrade score in the Sep 2026 'best to copy' list. Lab at $5 / ignore <$20 pays $0 because the book is 5-minute candles. Rankings are not a $39 strategy.",
+        "why_short": "CopyGrade #1. Lab pays $0 — 81% 5-minute candles."
+      }
+    ]
   }
 }

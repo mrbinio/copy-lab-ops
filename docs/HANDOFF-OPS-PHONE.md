@@ -18,4 +18,5 @@ Copy stays off.
 
 ```
 2026-09-10  08:38 UTC  Phone header: full-width swipe nav, 44px logout. Stamp BUILD 08:38.
+2026-09-10  08:42 UTC  Published to mrbinio/copy-lab-ops (26d6848). Live stamp BUILD 08:38.
 ```
