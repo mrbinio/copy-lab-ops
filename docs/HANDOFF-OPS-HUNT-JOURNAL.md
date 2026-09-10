@@ -44,4 +44,5 @@ Copy stays off. Next hunt at :20 / :50 UTC rewrites the tape. Enable only if a W
 
 ```
 2026-09-10  08:12 UTC  Hunt journal on Co robić. PolyCop card lists Antblack + 86shin, both Paused.
+2026-09-10  08:26 UTC  Published full UI to mrbinio/copy-lab-ops (5a3e90e). Live stamp BUILD 08:12.
 ```

@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="./dash-0812.css" />
+  <link rel="stylesheet" href="./dash-0827.css" />
 </head>
 <body>
   <div id="gate" class="gate">
@@ -16,7 +16,7 @@
       <button type="button" data-lang="pl">PL</button>
       <button type="button" data-lang="en">EN</button>
     </div>
-    <p class="stamp">BUILD 08:12 UTC</p>
+    <p class="stamp">BUILD 08:27 UTC</p>
     <h1>Copy Lab</h1>
     <p class="lede" data-i18n="gate.lede"></p>
     <p id="gate-msg" class="msg"></p>
@@ -45,7 +45,10 @@
         <button type="button" id="lang-pl" data-lang="pl">PL</button>
         <button type="button" id="lang-en" data-lang="en">EN</button>
       </div>
-      <p class="who" id="who"></p>
+      <div class="who-box">
+        <p class="who" id="who"></p>
+        <button type="button" class="btn ghost who-out" id="btn-out" data-i18n="who.out"></button>
+      </div>
     </header>
 
     <div class="canvas">
@@ -281,7 +284,7 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
-  <script src="./access-0812.js"></script>
-  <script src="./dash-0812.js"></script>
+  <script src="./access-0827.js"></script>
+  <script src="./dash-0827.js"></script>
 </body>
 </html>
