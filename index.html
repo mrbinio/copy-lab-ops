@@ -8,15 +8,21 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="./dash-2124.css" />
+  <link rel="stylesheet" href="./dash-0645.css" />
 </head>
 <body>
   <div id="gate" class="gate">
-    <p class="stamp">BUILD 21:24 UTC</p>
+    <div class="lang gate-lang" role="group" aria-label="Language">
+      <button type="button" data-lang="pl">PL</button>
+      <button type="button" data-lang="en">EN</button>
+    </div>
+    <p class="stamp">BUILD 06:45 UTC</p>
     <h1>Copy Lab</h1>
     <p class="lede" data-i18n="gate.lede"></p>
     <p id="gate-msg" class="msg"></p>
     <button class="btn primary" id="btn-google" type="button" hidden data-i18n="gate.google"></button>
+    <label class="lbl" for="page-email" data-i18n="gate.email"></label>
+    <input id="page-email" type="email" autocomplete="username" />
     <label class="lbl" for="page-code" data-i18n="gate.pass"></label>
     <input id="page-code" type="password" autocomplete="current-password" />
     <button class="btn primary" id="btn-code" type="button" data-i18n="gate.open"></button>
@@ -268,7 +274,7 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
-  <script src="./access-2124.js"></script>
-  <script src="./dash-2124.js"></script>
+  <script src="./access-0645.js"></script>
+  <script src="./dash-0645.js"></script>
 </body>
 </html>

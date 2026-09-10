@@ -39,4 +39,5 @@ Cash ~$39.08. Hole −$13.58. Antblack still in PolyCop NY, Paused.
 
 ```
 2026-09-09  21:24 UTC  Market radar on Co robić. Click → sim filter. Hunt writes lanes[].
+2026-09-09  21:35 UTC  Published full UI to mrbinio/copy-lab-ops (5fbe7b7). Live stamp BUILD 21:24.
 ```
