@@ -1,7 +1,7 @@
 {
   "status": "done",
   "goal": "Find one specialist a $39 stack can copy at $5 after 60/90d, not Top 8.",
-  "checked": 997,
+  "checked": 990,
   "log": [
     "LB POLITICS ALL off=150 n=50",
     "LB POLITICS ALL off=200 n=50",
@@ -42,22 +42,21 @@
     "scanned 360, queued 30",
     "scanned 375, queued 30",
     "scanned 405, queued 30",
+    "scanned 435, queued 30",
     "scanned 450, queued 30",
+    "scanned 465, queued 35",
     "scanned 480, queued 36",
+    "scanned 510, queued 36",
     "scanned 525, queued 36",
     "scanned 555, queued 36",
-    "scanned 630, queued 36",
-    "scanned 645, queued 36",
+    "scanned 615, queued 36",
     "scanned 660, queued 36",
     "scanned 690, queued 36",
     "scanned 705, queued 36",
-    "scanned 720, queued 36",
-    "scanned 735, queued 36",
-    "scanned 780, queued 36",
-    "scanned 795, queued 36",
-    "scanned 810, queued 36",
-    "scanned 825, queued 36",
-    "scanned 945, queued 36",
+    "scanned 870, queued 36",
+    "scanned 885, queued 36",
+    "scanned 930, queued 36",
+    "scanned 975, queued 36",
     "simming 36",
     "0x411A2D42fefF12 POLITICS   d=612 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "ExhaustedBoyBill POLITICS   d=551 60=+0.0 90=+0.0 conc=1.0 cg=None",
@@ -111,7 +110,7 @@
       "top_market": "Will Bitcoin outperform Gold in March 2026?",
       "candle": 0.0,
       "copygrade": {
-        "status": "rate_limit"
+        "status": "not_indexed"
       },
       "score": -55.1
     },
@@ -146,9 +145,9 @@
     "top_market": "Will Bitcoin outperform Gold in March 2026?",
     "candle": 0.0,
     "copygrade": {
-      "status": "rate_limit"
+      "status": "not_indexed"
     },
     "score": -55.1
   },
-  "updated_at": "2026-09-10T19:54:36.635691+00:00"
+  "updated_at": "2026-09-10T20:12:29.976621+00:00"
 }
