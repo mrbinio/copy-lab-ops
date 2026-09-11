@@ -153,48 +153,83 @@ input[type="email"] {
 }
 .hero-title {
   position: relative;
-  max-width: 18ch;
+  max-width: 16ch;
 }
-.hero-line {
-  display: block;
-  overflow: hidden;
+.hero-mask {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
 }
 .hero-word {
+  display: inline-flex;
+  flex-wrap: nowrap;
+}
+.hero-glyph {
   display: inline-block;
   overflow: hidden;
-  vertical-align: bottom;
-  margin-right: 0.28em;
+  line-height: 1.02;
 }
-.hero-word:last-child { margin-right: 0; }
-.hero-word > span {
+.hero-glyph-i {
   display: block;
-  transform: translateY(108%) rotate(2.4deg);
-  opacity: 0;
+  transform: translate3d(0, 118%, 0);
+  will-change: transform;
 }
-.hero-title.is-on .hero-word > span {
-  animation: titleReveal 0.95s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-  animation-delay: var(--d, 0s);
+.hero-title.in .hero-glyph-i {
+  animation: titleUp 0.92s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
-.hero-line-end {
+.hero-gap {
+  display: inline-block;
+  width: 0.28em;
+}
+.hero-mask-end {
   color: var(--red);
-  text-shadow: 0 0 42px rgba(255, 93, 93, 0.28);
+  position: relative;
+  padding-bottom: 0.7rem;
+  margin-bottom: 0.15rem;
 }
-.hero-title.is-on::after {
+.hero-mask-end::after {
   content: "";
-  display: block;
-  width: min(7.5rem, 42%);
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: min(7.4rem, 55%);
   height: 1px;
-  margin-top: 0.9rem;
-  background: linear-gradient(90deg, var(--red), transparent);
+  background: var(--red);
   transform: scaleX(0);
-  transform-origin: left;
-  animation: titleRule 0.7s 0.55s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  transform-origin: 0 50%;
 }
-@keyframes titleReveal {
-  to { transform: translateY(0) rotate(0); opacity: 1; }
+.hero-title.in .hero-mask-end::after {
+  animation: titleRule 0.65s cubic-bezier(0.16, 1, 0.3, 1) 1.45s forwards;
+}
+.hero-scan {
+  position: absolute;
+  top: 0.08em;
+  bottom: 0.55rem;
+  left: 0;
+  width: 2px;
+  background: var(--red);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+.hero-title.in .hero-scan {
+  animation: titleScan 1.85s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+.hero-title.is-static .hero-glyph-i { transform: none; }
+.hero-title.is-static .hero-mask-end::after { transform: scaleX(1); }
+.hero-title.is-static .hero-scan { display: none; }
+@keyframes titleUp {
+  from { transform: translate3d(0, 118%, 0); }
+  to { transform: translate3d(0, 0, 0); }
 }
 @keyframes titleRule {
+  from { transform: scaleX(0); }
   to { transform: scaleX(1); }
+}
+@keyframes titleScan {
+  0% { left: 0; opacity: 1; }
+  78% { opacity: 1; }
+  100% { left: calc(100% - 2px); opacity: 0; }
 }
 .hero p { margin: 0; max-width: 36rem; color: var(--dim); font-size: 1rem; }
 .kicker {
@@ -223,6 +258,7 @@ input[type="email"] {
   color: var(--red);
 }
 .status .cash { margin: 0; font-size: 1.3rem; font-weight: 650; }
+.status .cash-src { margin: 0.15rem 0 0; font-size: 0.72rem; }
 .pulse {
   display: inline-block;
   width: 0.5rem;
@@ -516,6 +552,7 @@ figure { margin: 0; }
 }
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; }
-  .hero-word > span { transform: none !important; opacity: 1 !important; }
-  .hero-title::after { transform: none !important; }
+  .hero-glyph-i { transform: none !important; }
+  .hero-mask-end::after { transform: scaleX(1) !important; }
+  .hero-scan { display: none !important; }
 }

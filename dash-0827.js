@@ -28,6 +28,8 @@
       "do.jumpPoly": "Kartka PolyCop →",
       "do.copy": "Copy w PolyCop",
       "do.cash": "Twoje USDC w bocie",
+      "do.cashSrc": "Polymarket · {when}",
+      "do.cashSrcLab": "wpis labu · {when}",
       "do.s1t": "Teraz",
       "do.s1": "Copy OFF. Hunt szuka 24/7 na GitHubie (~10 min między biegami). Ty nic nie robisz.",
       "do.s2t": "Następne",
@@ -235,6 +237,8 @@
       "do.jumpPoly": "PolyCop card →",
       "do.copy": "Copy in PolyCop",
       "do.cash": "Your USDC in the bot",
+      "do.cashSrc": "Polymarket · {when}",
+      "do.cashSrcLab": "lab stamp · {when}",
       "do.s1t": "Now",
       "do.s1": "Copy OFF. Hunt searches 24/7 on GitHub (~10 min between runs). You do nothing.",
       "do.s2t": "Next",
@@ -543,42 +547,70 @@
     return null;
   }
 
+  let heroTimers = [];
+
+  function stopHeroTitle() {
+    heroTimers.forEach(function (id) { clearTimeout(id); });
+    heroTimers = [];
+  }
+
   function paintHeroTitle() {
     const el = $("do-title");
     if (!el) return;
+    const app = $("app");
+    if (app && (app.hidden || app.classList.contains("hidden"))) return;
     const text = t("do.title");
     el.setAttribute("aria-label", text);
-    if (el.getAttribute("data-painted") === text && el.querySelector(".hero-word")) return;
+    if (el.getAttribute("data-painted") === text && el.querySelector(".hero-glyph")) return;
+    stopHeroTitle();
     el.setAttribute("data-painted", text);
     const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (reduce) {
-      el.className = "hero-title";
-      el.textContent = text;
-      return;
-    }
     const raw = text.replace(/\.$/, "").trim();
     const bits = raw.split(/\s+/);
     const last = (bits.pop() || "") + ".";
     const first = bits.join(" ");
-    el.className = "hero-title";
+    el.className = "hero-title" + (reduce ? " is-static" : "");
     el.textContent = "";
-    function addLine(str, extra, delay0) {
-      const ln = document.createElement("span");
-      ln.className = "hero-line" + (extra ? " " + extra : "");
-      str.split(/\s+/).forEach(function (w, i) {
-        const wrap = document.createElement("span");
-        wrap.className = "hero-word";
-        wrap.style.setProperty("--d", (delay0 + i * 0.08) + "s");
-        const inner = document.createElement("span");
-        inner.textContent = w;
-        wrap.appendChild(inner);
-        ln.appendChild(wrap);
+    let n = 0;
+    function addLine(str, extra) {
+      const mask = document.createElement("span");
+      mask.className = "hero-mask" + (extra ? " " + extra : "");
+      mask.setAttribute("aria-hidden", "true");
+      str.split(/(\s+)/).forEach(function (chunk) {
+        if (!chunk) return;
+        if (/^\s+$/.test(chunk)) {
+          const gap = document.createElement("span");
+          gap.className = "hero-gap";
+          mask.appendChild(gap);
+          n += 1;
+          return;
+        }
+        const word = document.createElement("span");
+        word.className = "hero-word";
+        Array.from(chunk).forEach(function (ch) {
+          const g = document.createElement("span");
+          g.className = "hero-glyph";
+          const inner = document.createElement("span");
+          inner.className = "hero-glyph-i";
+          inner.textContent = ch;
+          inner.style.animationDelay = (0.1 + n * 0.07) + "s";
+          g.appendChild(inner);
+          word.appendChild(g);
+          n += 1;
+        });
+        mask.appendChild(word);
       });
-      el.appendChild(ln);
+      el.appendChild(mask);
     }
-    if (first) addLine(first, "", 0.04);
-    addLine(last, "hero-line-end", first ? 0.22 : 0.04);
-    requestAnimationFrame(function () { el.classList.add("is-on"); });
+    if (first) addLine(first, "");
+    addLine(last, "hero-mask-end");
+    if (reduce) return;
+    const scan = document.createElement("span");
+    scan.className = "hero-scan";
+    scan.setAttribute("aria-hidden", "true");
+    el.appendChild(scan);
+    void el.offsetWidth;
+    el.classList.add("in");
   }
 
   function applyLang() {
@@ -600,6 +632,7 @@
   }
 
   function showView(name) {
+    const prev = viewFromHash();
     const view = VIEWS.indexOf(name) !== -1 ? name : "do";
     VIEWS.forEach(function (id) {
       const el = $("view-" + id);
@@ -618,6 +651,11 @@
         if (charts[id] && typeof charts[id].resize === "function") charts[id].resize();
       });
       if (spot.chart && typeof spot.chart.resize === "function") spot.chart.resize();
+    }
+    if (view === "do" && prev !== "do") {
+      const title = $("do-title");
+      if (title) title.removeAttribute("data-painted");
+      paintHeroTitle();
     }
   }
 
@@ -1694,6 +1732,11 @@
     const cash = usd(s.cash_usd);
     if ($("s-cash")) $("s-cash").textContent = cash;
     if ($("m-cash")) $("m-cash").textContent = cash;
+    const when = String(s.cash_as_of || s.generated_at || "").replace("T", " ").slice(0, 16);
+    const srcKey = s.cash_source === "polymarket" ? "do.cashSrc" : "do.cashSrcLab";
+    const srcLine = when ? t(srcKey).replace("{when}", when + " UTC") : "";
+    if ($("s-cash-src")) $("s-cash-src").textContent = srcLine;
+    if ($("m-cash-src")) $("m-cash-src").textContent = srcLine;
     $("s-live").textContent = money(s.last_live_pnl_usd, 2);
     renderBans(s);
     renderOverride(s);

@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="./dash-0827.css?v=1020" />
+  <link rel="stylesheet" href="./dash-0827.css?v=1105" />
 </head>
 <body>
   <div id="gate" class="gate">
@@ -16,7 +16,7 @@
       <button type="button" data-lang="pl">PL</button>
       <button type="button" data-lang="en">EN</button>
     </div>
-    <p class="stamp">BUILD 10:20 UTC</p>
+    <p class="stamp">BUILD 11:05 UTC</p>
     <h1>Copy Lab</h1>
     <p class="lede" data-i18n="gate.lede"></p>
     <p id="gate-msg" class="msg"></p>
@@ -68,6 +68,7 @@
             <p class="off">OFF</p>
             <p class="kicker" data-i18n="do.cash"></p>
             <p class="cash" id="s-cash">—</p>
+            <p class="muted cash-src" id="s-cash-src"></p>
             <p class="muted"><span class="pulse"></span><span id="hunt-pulse">—</span></p>
           </aside>
         </div>
@@ -255,7 +256,7 @@
           <h2 data-i18n="money.title"></h2>
           <p class="lead" data-i18n="money.lead"></p>
           <div class="kpis">
-            <div><p class="kpi" id="m-cash">—</p><p class="lbl" data-i18n="money.cash"></p></div>
+            <div><p class="kpi" id="m-cash">—</p><p class="lbl" data-i18n="money.cash"></p><p class="muted cash-src" id="m-cash-src"></p></div>
             <div><p class="kpi bad" id="s-live">—</p><p class="lbl" data-i18n="money.hole"></p></div>
             <div><p class="kpi">$15</p><p class="lbl" data-i18n="money.spend"></p></div>
             <div><p class="kpi">$31</p><p class="lbl" data-i18n="money.sl"></p></div>
@@ -318,6 +319,6 @@
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
   <script src="./access-0827.js"></script>
-  <script src="./dash-0827.js?v=1020"></script>
+  <script src="./dash-0827.js?v=1105"></script>
 </body>
 </html>
