@@ -31,28 +31,27 @@
     "LB ECONOMICS MONTH off=100 n=50",
     "LB ECONOMICS MONTH off=150 n=50",
     "new wallets to scan: 1048",
-    "scanned 30, queued 9",
-    "scanned 45, queued 10",
-    "scanned 60, queued 12",
+    "scanned 45, queued 12",
     "scanned 90, queued 12",
     "scanned 105, queued 12",
     "scanned 150, queued 12",
     "scanned 165, queued 14",
+    "scanned 240, queued 24",
     "scanned 270, queued 24",
+    "scanned 285, queued 24",
     "scanned 300, queued 24",
     "scanned 315, queued 24",
+    "scanned 330, queued 24",
     "scanned 345, queued 24",
-    "scanned 360, queued 24",
+    "scanned 375, queued 30",
+    "scanned 405, queued 30",
     "scanned 420, queued 30",
-    "scanned 435, queued 30",
-    "scanned 450, queued 30",
     "scanned 465, queued 30",
     "scanned 480, queued 30",
-    "scanned 525, queued 30",
-    "scanned 540, queued 36",
     "scanned 555, queued 36",
     "scanned 570, queued 36",
-    "scanned 600, queued 36",
+    "scanned 585, queued 36",
+    "scanned 630, queued 36",
     "scanned 645, queued 36",
     "scanned 660, queued 36",
     "scanned 690, queued 36",
@@ -182,14 +181,14 @@
       "history_days": 152.3,
       "w60": 3.45,
       "w90": 3.93,
-      "copies": 3,
+      "copies": 0,
       "conc": 1.0,
       "top_market": null,
       "candle": 0.0,
       "copygrade": {
         "status": "rate_limit"
       },
-      "score": -57.0
+      "score": -60.0
     }
   ],
   "pick": {
@@ -209,5 +208,5 @@
     },
     "score": -13.5
   },
-  "updated_at": "2026-09-11T21:07:57.715821+00:00"
+  "updated_at": "2026-09-11T21:25:54.866724+00:00"
 }
