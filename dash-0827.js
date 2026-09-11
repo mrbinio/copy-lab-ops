@@ -38,6 +38,10 @@
       "do.briefVerb": "NIE WŁĄCZAJ",
       "do.briefWait": "Najcieplejszy tor: {lane} ({name}, 60/90 {w60} / {w90}). To WAIT w labie, nie kupno. Patrz w Symulacji. W Telegramie nic nie klikasz. Antblack i 86shin zostają Paused.",
       "do.briefNone": "Żaden tor nie przeszedł sitów. Dziś nic nie włączasz i nic nie dokupujesz. Crypto-świece zostają NIE.",
+      "do.pathK": "Najbliższa ścieżka",
+      "do.nextK": "Hunt teraz szuka",
+      "do.solClaude": "Claude z taśmy huntu. Nie włącza copy.",
+      "do.solLab": "Z liczb huntu. Claude bez klucza — ten sam werdykt z sitów.",
       "do.warn": "Turn On All Copy włącza całą starą listę. Tak poszła strata −$13.58 na invorserze.",
       "lane.title": "Rynki teraz",
       "lane.lead": "Który tor ma edge, a który jest martwy. Hunt przepisuje taśmę w pętli 24/7. Klik otwiera nazwy w Symulacji. Copy sam się nie przełącza.",
@@ -155,6 +159,8 @@
       "how.a5": "Gdy WAIT ma też ≥90 dni, zysk w 60d i 90d, conc ≤ 0.45, CopyGrade nie Avoid. Dziś tego nie ma.",
       "how.q6": "Skąd żywe ceny krypto?",
       "how.a6": "Z Binance, w Twojej przeglądarce. Wybierasz krypto i zakres. GitHub ich nie serwuje. Strona nic nie kupuje. To nie sygnał do copy.",
+      "how.q7": "Co robi Claude?",
+      "how.a7": "Po każdym huncie czyta taśmę i pisze najbliższą ścieżkę $5 / $15 plus gdzie szukać dalej. Nie włącza copy. Sity zostają sitem.",
       "how.card": "Kartka do PolyCop (na później)",
       "how.cardLead": "Lab ją wypełnia. Nie wciskasz All Copy.",
       "how.ban": "Tego nie wklejasz",
@@ -234,6 +240,10 @@
       "do.briefVerb": "DO NOT ENABLE",
       "do.briefWait": "Warmest lane: {lane} ({name}, 60/90 {w60} / {w90}). That is WAIT in the lab, not a buy. Look in Simulation. Do nothing in Telegram. Antblack and 86shin stay Paused.",
       "do.briefNone": "No lane cleared the gates. Do not enable and do not add cash. Candle crypto stays NO.",
+      "do.pathK": "Closest path",
+      "do.nextK": "Hunt is searching",
+      "do.solClaude": "Claude from the hunt tape. Does not enable copy.",
+      "do.solLab": "From hunt numbers. No Claude key — same gate verdict.",
       "do.warn": "Turn On All Copy enables the whole old list. That is how invorser lost −$13.58.",
       "lane.title": "Markets now",
       "lane.lead": "Which book has an edge and which is dead. Hunt rewrites the tape in a 24/7 loop. Click opens names in Simulation. Copy does not switch itself.",
@@ -351,6 +361,8 @@
       "how.a5": "When WAIT also has ≥90 days, both windows green, conc ≤ 0.45, CopyGrade not Avoid. Not today.",
       "how.q6": "Where do the live crypto prices come from?",
       "how.a6": "From Binance, in your browser. You pick the coin and the range. GitHub does not serve them. The page does not trade. This is not a signal to enable copy.",
+      "how.q7": "What does Claude do?",
+      "how.a7": "After each hunt it reads the tape and writes the closest $5 / $15 path plus where to search next. It does not enable copy. The gates stay the gates.",
       "how.card": "PolyCop paste card (later)",
       "how.cardLead": "The lab fills it. Do not press All Copy.",
       "how.ban": "Do not paste",
@@ -396,7 +408,7 @@
   };
 
   const charts = {};
-  const state = { snap: null, user: null, role: null, hunt: null, lang: "pl", lane: null, gateKey: null };
+  const state = { snap: null, user: null, role: null, hunt: null, solutions: null, lang: "pl", lane: null, gateKey: null };
   const LANE_ORDER = ["tennis", "finance", "politics", "crypto", "culture", "cluster", "nba", "tech", "sports"];
   const VIEWS = ["do", "sim", "poly", "money", "how"];
   const SPOT_FALLBACK = [
@@ -793,8 +805,23 @@
   function renderBrief(s, rows) {
     const verb = $("do-brief-verb");
     const body = $("do-brief-body");
+    const path = $("do-brief-path");
+    const next = $("do-brief-next");
+    const src = $("do-brief-src");
     if (!verb || !body) return;
     verb.textContent = t("do.briefVerb");
+    const sol = state.solutions || {};
+    const lang = state.lang === "en" ? "en" : "pl";
+    if (sol.now_pl || sol.now_en) {
+      body.textContent = sol[lang === "en" ? "now_en" : "now_pl"] || sol.now_pl || "";
+      if (path) path.textContent = sol[lang === "en" ? "path_en" : "path_pl"] || sol.path_pl || "";
+      if (next) next.textContent = sol[lang === "en" ? "hunt_next_en" : "hunt_next_pl"] || sol.hunt_next_pl || "";
+      if (src) src.textContent = sol.source === "claude" ? t("do.solClaude") : t("do.solLab");
+      return;
+    }
+    if (path) path.textContent = "—";
+    if (next) next.textContent = "—";
+    if (src) src.textContent = t("do.solLab");
     const top = pickBriefLane(buildLanes(s, rows));
     if (!top || !top.best) {
       body.textContent = t("do.briefNone");
@@ -1555,6 +1582,9 @@
       const when = h.updated_at ? String(h.updated_at).replace("T", " ").slice(0, 16) + " UTC" : "?";
       $("hunt-pulse").textContent = pulse + t(lastKey) + when;
       $("hunt-plain").textContent = fmt("hunt.line", { n: h.checked || 0 });
+      try {
+        state.solutions = await (await fetch("./data/solutions.json?t=" + Date.now())).json();
+      } catch (e2) { state.solutions = null; }
     } catch (e) {
       $("hunt-pulse").textContent = t("hunt.missing");
     }
