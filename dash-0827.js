@@ -551,6 +551,7 @@
       btn.classList.toggle("on", btn.getAttribute("data-view") === view);
     });
     try { history.replaceState(null, "", "#" + view); } catch (e) { /* ignore */ }
+    try { window.scrollTo(0, 0); } catch (e) { /* ignore */ }
     if (view === "sim" || view === "do") {
       Object.keys(charts).forEach(function (id) {
         if (charts[id] && typeof charts[id].resize === "function") charts[id].resize();
@@ -590,31 +591,35 @@
   }
 
   async function tryPageCode() {
-    const email = (($("page-email") && $("page-email").value) || "").trim().toLowerCase();
-    const typed = ($("page-code").value || "").trim();
-    const expect = (window.OPS_CONFIG && window.OPS_CONFIG.pageCodeSha256) || "";
-    const role = roleOf(email);
-    if (!email) {
-      showGate("", "gate.needEmail");
-      return;
+    try {
+      const email = (($("page-email") && $("page-email").value) || "").trim().toLowerCase();
+      const typed = ($("page-code").value || "").trim();
+      const expect = (window.OPS_CONFIG && window.OPS_CONFIG.pageCodeSha256) || "";
+      const role = roleOf(email);
+      if (!email) {
+        showGate("", "gate.needEmail");
+        return;
+      }
+      if (!role) {
+        showGate("", "gate.unknown");
+        return;
+      }
+      if (!typed || !expect) {
+        showGate("", "gate.needPass");
+        return;
+      }
+      const hex = await sha256hex(typed);
+      if (hex !== expect) {
+        showGate("", "gate.wrong");
+        return;
+      }
+      unlockSession(email, role);
+      applySessionUser(email, role);
+      showApp();
+      await renderAll();
+    } catch (e) {
+      showGate(String((e && e.message) || e));
     }
-    if (!role) {
-      showGate("", "gate.unknown");
-      return;
-    }
-    if (!typed || !expect) {
-      showGate("", "gate.needPass");
-      return;
-    }
-    const hex = await sha256hex(typed);
-    if (hex !== expect) {
-      showGate("", "gate.wrong");
-      return;
-    }
-    unlockSession(email, role);
-    applySessionUser(email, role);
-    showApp();
-    renderAll();
   }
 
   function firebaseReady() {
@@ -1659,24 +1664,25 @@
       }
     } catch (e) { /* optional */ }
     state.snap = await (await fetch("./data/snapshot.json?t=" + Date.now())).json();
-    const hasFb = await bootFirebase();
+    await bootFirebase();
     const host = location.hostname;
     if ((host === "127.0.0.1" || host === "localhost") &&
         new URLSearchParams(location.search).get("lab") === "1") {
       unlockSession("damianbiniarz@gmail.com", "owner");
       applySessionUser("damianbiniarz@gmail.com", "owner");
     }
+    if (sessionStorage.getItem("copy-lab-ok") === "1" && (!sessionEmail() || !sessionRole())) {
+      lockSession();
+    }
     if (unlocked()) {
       applySessionUser(sessionEmail(), sessionRole());
       showApp();
-      renderAll();
-    } else if (!hasFb) {
-      showGate("", "gate.noGoogle");
+      renderAll().catch(function (err) { showGate(String(err)); });
     } else {
       showGate("");
     }
     setInterval(function () {
-      if (unlocked()) renderAll();
+      if (unlocked()) renderAll().catch(function () { /* keep last paint */ });
     }, 15000);
   }
 
