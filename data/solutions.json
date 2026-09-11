@@ -7,14 +7,13 @@
   "now_pl": "Żaden tor nie przeszedł sitów do włączenia. $39 zostaje. Najbliższa ścieżka to hunt pod książkę $5 / $15, nie dokupowanie i nie All Copy.",
   "now_en": "No lane cleared the gates. Leave the $39. Closest path is hunt for a $5 / $15 book, not more cash and not All Copy.",
   "path_pl": "Najbliżej: cassino (FINANCE). Brakuje: jeden event (conc 1.00); za mało filli (4). Patrz w Symulacji. W Telegramie nic nie klikasz.",
-  "path_en": "Closest: cassino (FINANCE). Missing: one event (conc 1.00); too few fills (4). Look in Simulation. Do nothing in Telegram.",
+  "path_en": "Closest: cassino (FINANCE). Missing: jeden event (conc 1.00); za mało filli (4). Look in Simulation. Do nothing in Telegram.",
   "hunt_next_pl": "Następny bieg: głębiej SPORTS (offset 250/300), potem POLITICS, FINANCE. Pomijamy Top 8, świece 5 min, esport, conc=1.0 jako pick.",
   "hunt_next_en": "Next run: deeper SPORTS (offset 250/300), then POLITICS, FINANCE. Skip Top 8, 5-min candles, esports, conc=1.0 picks.",
   "closest": {
     "name": "cassino",
     "lane": "FINANCE",
-    "missing": "jeden event (conc 1.00); za mało filli (4)",
-    "missing_en": "one event (conc 1.00); too few fills (4)"
+    "missing": "jeden event (conc 1.00); za mało filli (4)"
   },
   "next_cats": [
     "SPORTS",
@@ -36,15 +35,15 @@
     "erdog · SPORTS · jeden event / veto"
   ],
   "dead_en": [
-    "cassino · FINANCE · one event / veto",
-    "SSCCAAMM · TECH · one event / veto",
-    "erdog · SPORTS · one event / veto"
+    "cassino · FINANCE · jeden event / veto",
+    "SSCCAAMM · TECH · jeden event / veto",
+    "erdog · SPORTS · jeden event / veto"
   ],
-  "updated_at": "2026-09-11T10:11:10.477618+00:00",
-  "hunt_updated_at": "2026-09-11T10:01:37.682277+00:00",
+  "updated_at": "2026-09-11T07:48:10.849750+00:00",
+  "hunt_updated_at": "2026-09-11T07:35:55.739172+00:00",
   "x_source": "off",
   "x_model": null,
   "x_pl": "Filtr X czeka na secret XAI_API_KEY. Claude/liczby bez zmian. Copy off.",
   "x_en": "X filter waiting for XAI_API_KEY. Claude/numbers unchanged. Copy off.",
-  "x_updated_at": "2026-09-11T10:11:10.589243+00:00"
+  "x_updated_at": "2026-09-11T08:53:33.256747+00:00"
 }
