@@ -1,7 +1,7 @@
 {
   "status": "done",
   "goal": "Find one specialist a $39 stack can copy at $5 after 60/90d, not Top 8.",
-  "checked": 992,
+  "checked": 999,
   "log": [
     "LB POLITICS ALL off=150 n=50",
     "LB POLITICS ALL off=200 n=50",
@@ -62,7 +62,6 @@
     "scanned 855, queued 36",
     "scanned 870, queued 36",
     "scanned 960, queued 36",
-    "scanned 975, queued 36",
     "simming 36",
     "Brokie           POLITICS   d=263 60=+0.0 90=+15.4 conc=1.0 cg=None",
     "0x411A2D42fefF12 POLITICS   d=612 60=+0.0 90=+0.0 conc=1.0 cg=None",
@@ -189,5 +188,5 @@
     },
     "score": -26.5
   },
-  "updated_at": "2026-09-11T08:48:43.275037+00:00"
+  "updated_at": "2026-09-11T09:06:54.301840+00:00"
 }
