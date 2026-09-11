@@ -79,7 +79,7 @@
     "1walrus          FINANCE    d=110 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "7sevndragon      FINANCE    d=250 60=+0.0 90=+17.6 conc=0.62 cg=None",
     "Snoorrason       FINANCE    d=100 60=+0.0 90=+0.0 conc=1.0 cg=None",
-    "debased          FINANCE    d=85 60=+0.0 90=+0.0 conc=1.0 cg=None",
+    "debased          FINANCE    d=85 60=+0.0 90=+0.0 conc=1.0 cg=Avoid",
     "cassino          FINANCE    d=187 60=+3.5 90=+3.5 conc=1.0 cg=None",
     "flow-trader-at-o FINANCE    d=197 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "baws             SPORTS     d=147 60=+10.7 90=+8.5 conc=0.35 cg=None",
@@ -183,5 +183,5 @@
     },
     "score": 22.5
   },
-  "updated_at": "2026-09-11T06:04:15.930003+00:00"
+  "updated_at": "2026-09-11T06:22:36.101058+00:00"
 }
