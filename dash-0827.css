@@ -197,7 +197,7 @@ input[type="email"] {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 1rem;
-  margin: 0 0 1.6rem;
+  margin: 0 0 0.85rem;
 }
 .steps article, .cards article, .path, figure, .table-wrap, .faq, .money-note {
   background: var(--card);
@@ -214,6 +214,22 @@ input[type="email"] {
 .steps h3, .cards h3, .path h3, figure h3 { margin: 0 0 0.4rem; font-size: 1.05rem; letter-spacing: -0.03em; }
 .steps p, .cards p, .path p, .faq p, .money-note p { margin: 0; color: var(--dim); }
 .steps article.on { border-color: rgba(216, 255, 74, 0.45); }
+.brief {
+  background: var(--card);
+  border: 1px solid rgba(255, 93, 93, 0.45);
+  border-radius: 18px;
+  padding: 1.15rem 1.25rem 1.25rem;
+  margin: 0 0 1.4rem;
+}
+.brief .kicker { margin: 0 0 0.35rem; }
+.brief-verb {
+  margin: 0 0 0.4rem;
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  color: var(--red);
+}
+.brief p:last-child { margin: 0; color: var(--ink); max-width: 46rem; }
 .jump { margin-top: 0.2rem; margin-right: 0.45rem; }
 
 .section { margin: 2.2rem 0 0; }

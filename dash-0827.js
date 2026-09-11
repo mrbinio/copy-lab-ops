@@ -34,6 +34,10 @@
       "do.s2": "Lab znajdzie jeden portfel z 90 dniami historii, zyskiem w 60d i 90d, bez jednego eventa. Adres pojawi się tutaj.",
       "do.s3t": "Potem",
       "do.s3": "Wklejasz ten jeden adres w @PolyCop_BOT. Reszta Paused. Klikasz Turn On Copy — nie All Copy.",
+      "do.briefK": "Co robić dziś",
+      "do.briefVerb": "NIE WŁĄCZAJ",
+      "do.briefWait": "Najcieplejszy tor: {lane} ({name}, 60/90 {w60} / {w90}). To WAIT w labie, nie kupno. Patrz w Symulacji. W Telegramie nic nie klikasz. Antblack i 86shin zostają Paused.",
+      "do.briefNone": "Żaden tor nie przeszedł sitów. Dziś nic nie włączasz i nic nie dokupujesz. Crypto-świece zostają NIE.",
       "do.warn": "Turn On All Copy włącza całą starą listę. Tak poszła strata −$13.58 na invorserze.",
       "lane.title": "Rynki teraz",
       "lane.lead": "Który tor ma edge, a który jest martwy. Hunt przepisuje taśmę w pętli 24/7. Klik otwiera nazwy w Symulacji. Copy sam się nie przełącza.",
@@ -226,6 +230,10 @@
       "do.s2": "Lab finds one wallet with 90 days, profit in 60d and 90d, not one event. The address appears here.",
       "do.s3t": "Then",
       "do.s3": "Paste that one address in @PolyCop_BOT. Everyone else Paused. Press Turn On Copy — not All Copy.",
+      "do.briefK": "What to do today",
+      "do.briefVerb": "DO NOT ENABLE",
+      "do.briefWait": "Warmest lane: {lane} ({name}, 60/90 {w60} / {w90}). That is WAIT in the lab, not a buy. Look in Simulation. Do nothing in Telegram. Antblack and 86shin stay Paused.",
+      "do.briefNone": "No lane cleared the gates. Do not enable and do not add cash. Candle crypto stays NO.",
       "do.warn": "Turn On All Copy enables the whole old list. That is how invorser lost −$13.58.",
       "lane.title": "Markets now",
       "lane.lead": "Which book has an edge and which is dead. Hunt rewrites the tape in a 24/7 loop. Click opens names in Simulation. Copy does not switch itself.",
@@ -762,6 +770,36 @@
         why: why,
         move: move
       };
+    });
+  }
+
+  function pickBriefLane(lanes) {
+    const waits = lanes.filter(function (l) { return l.tone === "wait" && l.best; });
+    const hunt = waits.filter(function (l) { return l.best.source === "hunt"; });
+    const pool = hunt.length ? hunt : waits;
+    pool.sort(function (a, b) {
+      const d90 = (Number(b.best.w90) || 0) - (Number(a.best.w90) || 0);
+      if (d90) return d90;
+      return (Number(b.best.w60) || 0) - (Number(a.best.w60) || 0);
+    });
+    return pool[0] || null;
+  }
+
+  function renderBrief(s, rows) {
+    const verb = $("do-brief-verb");
+    const body = $("do-brief-body");
+    if (!verb || !body) return;
+    verb.textContent = t("do.briefVerb");
+    const top = pickBriefLane(buildLanes(s, rows));
+    if (!top || !top.best) {
+      body.textContent = t("do.briefNone");
+      return;
+    }
+    body.textContent = fmt("do.briefWait", {
+      lane: t("lane." + top.id),
+      name: top.best.name || "—",
+      w60: money(top.best.w60),
+      w90: money(top.best.w90)
     });
   }
 
@@ -1517,6 +1555,20 @@
     }
   }
 
+  function paintHuntViews(s) {
+    renderJournal();
+    const rows = fieldRows(s, state.hunt);
+    renderLanes(s, rows);
+    renderBrief(s, rows);
+    const shown = state.lane
+      ? rows.filter(function (r) { return rowLane(r) === state.lane; })
+      : rows;
+    if ($("field-body")) $("field-body").innerHTML = shown.map(rowHtml).join("");
+    renderPredict(s, state.hunt);
+    renderCharts(s, shown);
+    renderChartReads(s, shown);
+  }
+
   async function renderAll() {
     const s = state.snap;
     if (!s) return;
@@ -1527,17 +1579,9 @@
     $("s-live").textContent = money(s.last_live_pnl_usd, 2);
     renderBans(s);
     renderOverride(s);
+    if (state.hunt) paintHuntViews(s);
     await loadHunt();
-    renderJournal();
-    const rows = fieldRows(s, state.hunt);
-    renderLanes(s, rows);
-    const shown = state.lane
-      ? rows.filter(function (r) { return rowLane(r) === state.lane; })
-      : rows;
-    $("field-body").innerHTML = shown.map(rowHtml).join("");
-    renderPredict(s, state.hunt);
-    renderCharts(s, shown);
-    renderChartReads(s, shown);
+    paintHuntViews(s);
     paintSpot();
     if (viewFromHash() === "sim" || viewFromHash() === "do") {
       Object.keys(charts).forEach(function (id) {
