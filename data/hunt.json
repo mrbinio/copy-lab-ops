@@ -1,7 +1,7 @@
 {
   "status": "done",
   "goal": "Find one specialist a $39 stack can copy at $5 after 60/90d, not Top 8.",
-  "checked": 1043,
+  "checked": 1046,
   "log": [
     "plan cats=SPORTS,POLITICS,FINANCE,CULTURE,TECH,ECONOMICS extra={\"SPORTS\":[250,300]} x_skip=",
     "LB SPORTS ALL off=150 n=50",
@@ -30,43 +30,44 @@
     "LB ECONOMICS ALL off=200 n=50",
     "LB ECONOMICS MONTH off=100 n=50",
     "LB ECONOMICS MONTH off=150 n=50",
-    "new wallets to scan: 1043",
-    "scanned 45, queued 10",
+    "new wallets to scan: 1046",
     "scanned 60, queued 12",
     "scanned 90, queued 12",
     "scanned 105, queued 12",
     "scanned 150, queued 12",
     "scanned 165, queued 14",
     "scanned 210, queued 24",
+    "scanned 225, queued 24",
     "scanned 240, queued 24",
     "scanned 255, queued 24",
+    "scanned 270, queued 24",
+    "scanned 285, queued 24",
     "scanned 300, queued 24",
     "scanned 330, queued 24",
+    "scanned 345, queued 24",
     "scanned 375, queued 30",
-    "scanned 390, queued 30",
     "scanned 420, queued 30",
     "scanned 435, queued 30",
-    "scanned 480, queued 30",
+    "scanned 465, queued 30",
     "scanned 510, queued 30",
-    "scanned 540, queued 36",
+    "scanned 525, queued 30",
+    "scanned 540, queued 35",
+    "scanned 555, queued 36",
     "scanned 570, queued 36",
-    "scanned 585, queued 36",
     "scanned 600, queued 36",
     "scanned 630, queued 36",
+    "scanned 645, queued 36",
+    "scanned 660, queued 36",
     "scanned 675, queued 36",
     "scanned 690, queued 36",
-    "scanned 735, queued 36",
+    "scanned 705, queued 36",
     "scanned 765, queued 36",
-    "scanned 780, queued 36",
-    "scanned 795, queued 36",
     "scanned 810, queued 36",
-    "scanned 825, queued 36",
-    "scanned 855, queued 36",
-    "scanned 870, queued 36",
-    "scanned 915, queued 36",
+    "scanned 840, queued 36",
+    "scanned 900, queued 36",
     "scanned 930, queued 36",
     "scanned 945, queued 36",
-    "scanned 1005, queued 36",
+    "scanned 1020, queued 36",
     "simming 36",
     "Brokie           POLITICS   d=263 60=+0.0 90=+15.4 conc=1.0 cg=Avoid",
     "0x411A2D42fefF12 POLITICS   d=612 60=+0.0 90=+0.0 conc=1.0 cg=None",
@@ -87,7 +88,7 @@
     "unwillingly-publ TECH       d=1043 60=+0.0 90=+9.3 conc=1.0 cg=None",
     "ScarletRot       TECH       d=363 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "Snoorrason       FINANCE    d=100 60=+0.0 90=+0.0 conc=1.0 cg=None",
-    "debased          FINANCE    d=86 60=+0.0 90=+0.0 conc=1.0 cg=Avoid",
+    "debased          FINANCE    d=86 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "cassino          FINANCE    d=187 60=+3.5 90=+3.5 conc=1.0 cg=None",
     "flow-trader-at-o FINANCE    d=197 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "ticktocktoe      FINANCE    d=654 60=+0.0 90=+0.0 conc=0.67 cg=None",
@@ -120,7 +121,7 @@
       "top_market": "Will Bitcoin hit $100k by Friday?",
       "candle": 0.0,
       "copygrade": {
-        "status": "not_indexed"
+        "status": "rate_limit"
       },
       "score": -13.5
     },
@@ -154,7 +155,7 @@
       "top_market": "Will Bitcoin outperform Gold in March 2026?",
       "candle": 0.0,
       "copygrade": {
-        "status": "not_indexed"
+        "status": "rate_limit"
       },
       "score": -55.1
     },
@@ -171,7 +172,7 @@
       "top_market": "Will Donald Trump win the 2024 US Presidential Election?",
       "candle": 0.14,
       "copygrade": {
-        "status": "not_indexed"
+        "status": "rate_limit"
       },
       "score": -56.1
     }
@@ -189,9 +190,9 @@
     "top_market": "Will Bitcoin hit $100k by Friday?",
     "candle": 0.0,
     "copygrade": {
-      "status": "not_indexed"
+      "status": "rate_limit"
     },
     "score": -13.5
   },
-  "updated_at": "2026-09-11T18:45:24.570989+00:00"
+  "updated_at": "2026-09-11T19:03:19.191373+00:00"
 }
