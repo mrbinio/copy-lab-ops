@@ -466,7 +466,7 @@
       "path": "docs/HANDOFF-GITHUB-POLYCOP-2026-09-09.md"
     },
     {
-      "title": "PolyCop — one wallet",
+      "title": "PolyCop \u2014 one wallet",
       "date": "2026-09-09",
       "path": "docs/POLYCOP-PICK.md"
     },
@@ -550,5 +550,10 @@
     "copygrade": "64 caution, farming watch, real edge +23%",
     "summary": "Jedyny z przebadanych, kt\u00f3ry ma 60d i 90d na plusie, 13 rynk\u00f3w (nie jeden mundial), nie jest esportem, nie jest \u015bwiec\u0105 5m, i CopyGrade nie m\u00f3wi Avoid. 76 dni to kr\u00f3tko \u2014 dlatego hunt leci dalej. To jest \u0142y\u017cka na $39, nie lista o\u015bmiu nazw.",
     "why": "Weasel 60d=$0. invorser spali\u0142 sesj\u0119. gambamaster lab +$24 ale CopyGrade Avoid \u2212100%. PoppyG to Bitcoin 5m. Antblack: tenis, conc. 0.11, 14 kopii. W PolyCop: tylko on Active. Hunt na zak\u0142adce Hunt szuka 90d+ nast\u0119pcy."
-  }
+  },
+  "cash_stamp_usd": 39.08,
+  "cash_stamp_at": "2026-09-09T17:38:28.512652+00:00",
+  "positions_usd": 0.0,
+  "cash_as_of": "2026-09-11T16:23:11.857093+00:00",
+  "cash_source": "polymarket"
 }
