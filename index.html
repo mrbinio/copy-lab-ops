@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="./dash-0827.css?v=0637" />
+  <link rel="stylesheet" href="./dash-0827.css?v=0648" />
 </head>
 <body>
   <div id="gate" class="gate">
@@ -16,7 +16,7 @@
       <button type="button" data-lang="pl">PL</button>
       <button type="button" data-lang="en">EN</button>
     </div>
-    <p class="stamp">BUILD 06:37 UTC</p>
+    <p class="stamp">BUILD 06:48 UTC</p>
     <h1>Copy Lab</h1>
     <p class="lede" data-i18n="gate.lede"></p>
     <p id="gate-msg" class="msg"></p>
@@ -98,9 +98,14 @@
         <div class="section">
           <h2 data-i18n="spot.title"></h2>
           <p class="lead" data-i18n="spot.lead"></p>
+          <div class="spot-bar">
+            <label class="lbl" for="spot-pick" data-i18n="spot.pick"></label>
+            <select id="spot-pick"></select>
+          </div>
           <div class="spot-tick" id="spot-tick"></div>
           <p class="muted" id="spot-feed">—</p>
           <div class="spot-chart-wrap">
+            <div class="spot-range" id="spot-range" role="tablist"></div>
             <h3 id="spot-chart-title">BTC</h3>
             <canvas id="chart-spot" height="220"></canvas>
           </div>
@@ -297,6 +302,6 @@
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
   <script src="./access-0827.js"></script>
-  <script src="./dash-0827.js?v=0637"></script>
+  <script src="./dash-0827.js?v=0648"></script>
 </body>
 </html>

@@ -58,12 +58,19 @@
       "lane.tech": "Tech",
       "lane.sports": "Sport · reszta",
       "spot.title": "Ceny spot",
-      "spot.lead": "BTC, ETH i SOL z Binance. Wykres idzie, dopóki ta karta jest otwarta. To nie sygnał do copy. Świece 5 min zostają NIE.",
+      "spot.lead": "Wybierz krypto i zakres. Ceny z Binance, dopóki karta jest otwarta. To nie sygnał do copy. Świece 5 min zostają NIE.",
       "spot.live": "na żywo",
       "spot.poll": "co 3 sekundy",
       "spot.off": "brak feedu — odśwież kartę",
-      "spot.chart": "{name} · ostatnie 3 godz.",
+      "spot.chart": "{name} · {range}",
       "spot.chg": "{pct} · 24 godz.",
+      "spot.pick": "Krypto",
+      "spot.pickPh": "Wybierz z listy",
+      "spot.range.h1": "1 godz.",
+      "spot.range.h3": "3 godz.",
+      "spot.range.w1": "tydzień",
+      "spot.range.m1": "miesiąc",
+      "spot.range.y1": "rok",
       "res.title": "Jakie rozwiązania badamy",
       "res.lead": "Hunt nie zamyka się na jednego maskota. Copy zostaje off.",
       "res.nowK": "Teraz",
@@ -143,7 +150,7 @@
       "how.q5": "Kiedy w ogóle włączamy?",
       "how.a5": "Gdy WAIT ma też ≥90 dni, zysk w 60d i 90d, conc ≤ 0.45, CopyGrade nie Avoid. Dziś tego nie ma.",
       "how.q6": "Skąd żywe ceny krypto?",
-      "how.a6": "Z Binance, w Twojej przeglądarce. GitHub ich nie serwuje. Strona nic nie kupuje. To nie sygnał do copy.",
+      "how.a6": "Z Binance, w Twojej przeglądarce. Wybierasz krypto i zakres. GitHub ich nie serwuje. Strona nic nie kupuje. To nie sygnał do copy.",
       "how.card": "Kartka do PolyCop (na później)",
       "how.cardLead": "Lab ją wypełnia. Nie wciskasz All Copy.",
       "how.ban": "Tego nie wklejasz",
@@ -243,12 +250,19 @@
       "lane.tech": "Tech",
       "lane.sports": "Sports · other",
       "spot.title": "Spot prices",
-      "spot.lead": "BTC, ETH and SOL from Binance. The chart keeps moving while this tab is open. Not a copy signal. 5-min candles stay NO.",
+      "spot.lead": "Pick a coin and a range. Binance prices while this tab is open. Not a copy signal. 5-min candles stay NO.",
       "spot.live": "live",
       "spot.poll": "every 3 seconds",
       "spot.off": "no feed — refresh the tab",
-      "spot.chart": "{name} · last 3 hours",
+      "spot.chart": "{name} · {range}",
       "spot.chg": "{pct} · 24h",
+      "spot.pick": "Coin",
+      "spot.pickPh": "Choose from the list",
+      "spot.range.h1": "1 hour",
+      "spot.range.h3": "3 hours",
+      "spot.range.w1": "week",
+      "spot.range.m1": "month",
+      "spot.range.y1": "year",
       "res.title": "What we are researching",
       "res.lead": "Hunt is not one locked mascot. Copy stays off.",
       "res.nowK": "Now",
@@ -328,7 +342,7 @@
       "how.q5": "When do we enable?",
       "how.a5": "When WAIT also has ≥90 days, both windows green, conc ≤ 0.45, CopyGrade not Avoid. Not today.",
       "how.q6": "Where do the live crypto prices come from?",
-      "how.a6": "From Binance, in your browser. GitHub does not serve them. The page does not trade. This is not a signal to enable copy.",
+      "how.a6": "From Binance, in your browser. You pick the coin and the range. GitHub does not serve them. The page does not trade. This is not a signal to enable copy.",
       "how.card": "PolyCop paste card (later)",
       "how.cardLead": "The lab fills it. Do not press All Copy.",
       "how.ban": "Do not paste",
@@ -377,15 +391,38 @@
   const state = { snap: null, user: null, role: null, hunt: null, lang: "pl", lane: null, gateKey: null };
   const LANE_ORDER = ["tennis", "finance", "politics", "crypto", "culture", "cluster", "nba", "tech", "sports"];
   const VIEWS = ["do", "sim", "poly", "money", "how"];
-  const SPOT_PAIRS = [
+  const SPOT_FALLBACK = [
     { sym: "BTCUSDT", lab: "BTC", gecko: "bitcoin" },
     { sym: "ETHUSDT", lab: "ETH", gecko: "ethereum" },
-    { sym: "SOLUSDT", lab: "SOL", gecko: "solana" }
+    { sym: "SOLUSDT", lab: "SOL", gecko: "solana" },
+    { sym: "XRPUSDT", lab: "XRP", gecko: "ripple" },
+    { sym: "BNBUSDT", lab: "BNB", gecko: "binancecoin" },
+    { sym: "DOGEUSDT", lab: "DOGE", gecko: "dogecoin" },
+    { sym: "ADAUSDT", lab: "ADA", gecko: "cardano" },
+    { sym: "AVAXUSDT", lab: "AVAX", gecko: "avalanche-2" },
+    { sym: "LINKUSDT", lab: "LINK", gecko: "chainlink" },
+    { sym: "DOTUSDT", lab: "DOT", gecko: "polkadot" },
+    { sym: "LTCUSDT", lab: "LTC", gecko: "litecoin" },
+    { sym: "TONUSDT", lab: "TON", gecko: "the-open-network" },
+    { sym: "SUIUSDT", lab: "SUI", gecko: "sui" },
+    { sym: "UNIUSDT", lab: "UNI", gecko: "uniswap" }
+  ];
+  const SPOT_GECKO = {};
+  SPOT_FALLBACK.forEach(function (p) { if (p.gecko) SPOT_GECKO[p.sym] = p.gecko; });
+  const SPOT_RANGES = [
+    { id: "h1", interval: "1m", limit: 60, bucket: 60 * 1000 },
+    { id: "h3", interval: "1m", limit: 180, bucket: 60 * 1000 },
+    { id: "w1", interval: "1h", limit: 168, bucket: 60 * 60 * 1000 },
+    { id: "m1", interval: "4h", limit: 186, bucket: 4 * 60 * 60 * 1000 },
+    { id: "y1", interval: "1d", limit: 365, bucket: 24 * 60 * 60 * 1000 }
   ];
   const spot = {
     started: false,
     mode: "",
     vis: false,
+    range: "h3",
+    watch: SPOT_FALLBACK.slice(0, 3),
+    catalog: SPOT_FALLBACK.slice(),
     sym: "BTCUSDT",
     px: {},
     chg: {},
@@ -877,22 +914,101 @@
   function fmtSpotPx(n) {
     if (n == null || Number.isNaN(Number(n))) return "—";
     const v = Number(n);
-    const d = v >= 100 ? 2 : v >= 1 ? 3 : 4;
+    const d = v >= 100 ? 2 : v >= 1 ? 3 : v >= 0.01 ? 4 : 6;
     return "$" + v.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
   }
 
+  function labFromSym(sym) {
+    return String(sym || "").replace(/USDT$/, "") || "BTC";
+  }
+
   function spotLab(sym) {
-    const row = SPOT_PAIRS.filter(function (p) { return p.sym === sym; })[0];
-    return (row && row.lab) || "BTC";
+    const row = spot.watch.filter(function (p) { return p.sym === sym; })[0]
+      || spot.catalog.filter(function (p) { return p.sym === sym; })[0];
+    return (row && row.lab) || labFromSym(sym);
+  }
+
+  function spotRangeCfg() {
+    return SPOT_RANGES.filter(function (r) { return r.id === spot.range; })[0] || SPOT_RANGES[1];
+  }
+
+  function saveSpot() {
+    try {
+      localStorage.setItem("copy-lab-spot", JSON.stringify({
+        watch: spot.watch,
+        sym: spot.sym,
+        range: spot.range
+      }));
+    } catch (e) { /* ignore */ }
+  }
+
+  function loadSpotPrefs() {
+    try {
+      const raw = JSON.parse(localStorage.getItem("copy-lab-spot") || "null");
+      if (!raw) return;
+      if (Array.isArray(raw.watch) && raw.watch.length) {
+        spot.watch = raw.watch.slice(0, 6).map(function (p) {
+          const s = String(p.sym || "").toUpperCase();
+          return { sym: s, lab: p.lab || labFromSym(s) };
+        }).filter(function (p) { return /USDT$/.test(p.sym); });
+      }
+      if (raw.sym && /USDT$/.test(String(raw.sym))) spot.sym = String(raw.sym).toUpperCase();
+      if (SPOT_RANGES.some(function (r) { return r.id === raw.range; })) spot.range = raw.range;
+      if (spot.watch.length && !spot.watch.some(function (p) { return p.sym === spot.sym; })) {
+        spot.sym = spot.watch[0].sym;
+      }
+    } catch (e) { /* ignore */ }
+  }
+
+  function paintSpotRange() {
+    const bar = $("spot-range");
+    if (!bar) return;
+    if (!bar.querySelector("[data-range]")) {
+      bar.innerHTML = SPOT_RANGES.map(function (r) {
+        return "<button type='button' data-range='" + r.id + "'></button>";
+      }).join("");
+      bar.querySelectorAll("[data-range]").forEach(function (btn) {
+        btn.onclick = function () { pickSpotRange(btn.getAttribute("data-range")); };
+      });
+    }
+    bar.querySelectorAll("[data-range]").forEach(function (btn) {
+      const id = btn.getAttribute("data-range");
+      btn.textContent = t("spot.range." + id);
+      btn.classList.toggle("on", id === spot.range);
+    });
+  }
+
+  function paintSpotPick() {
+    const sel = $("spot-pick");
+    if (!sel) return;
+    const want = (spot.catalog && spot.catalog.length) ? spot.catalog : SPOT_FALLBACK;
+    if (sel.getAttribute("data-n") !== String(want.length)) {
+      sel.innerHTML = "<option value=''>" + esc(t("spot.pickPh")) + "</option>" +
+        want.map(function (c) {
+          return "<option value='" + esc(c.sym) + "'>" + esc(c.lab) + "</option>";
+        }).join("");
+      sel.setAttribute("data-n", String(want.length));
+      sel.onchange = function () {
+        const v = sel.value;
+        if (v) addSpot(v);
+        sel.value = "";
+      };
+    } else if (sel.options.length) {
+      sel.options[0].textContent = t("spot.pickPh");
+    }
   }
 
   function paintSpot() {
     const box = $("spot-tick");
     if (!box) return;
-    if (!box.querySelector("[data-sym]")) {
-      box.innerHTML = SPOT_PAIRS.map(function (c) {
+    paintSpotRange();
+    paintSpotPick();
+    const key = spot.watch.map(function (c) { return c.sym; }).join(",");
+    if (box.getAttribute("data-watch") !== key) {
+      box.setAttribute("data-watch", key);
+      box.innerHTML = spot.watch.map(function (c) {
         return "<button type='button' class='spot-card' data-sym='" + c.sym +
-          "'><p class='kicker'>" + c.lab + "</p>" +
+          "'><p class='kicker'>" + esc(c.lab) + "</p>" +
           "<p class='spot-px'>—</p>" +
           "<p class='spot-chg'>—</p></button>";
       }).join("");
@@ -900,7 +1016,7 @@
         btn.onclick = function () { pickSpot(btn.getAttribute("data-sym")); };
       });
     }
-    SPOT_PAIRS.forEach(function (c) {
+    spot.watch.forEach(function (c) {
       const btn = box.querySelector("[data-sym='" + c.sym + "']");
       if (!btn) return;
       btn.classList.toggle("on", spot.sym === c.sym);
@@ -924,14 +1040,24 @@
         : t("spot.off");
     }
     const title = $("spot-chart-title");
-    if (title) title.textContent = fmt("spot.chart", { name: spotLab(spot.sym) });
+    if (title) {
+      title.textContent = fmt("spot.chart", {
+        name: spotLab(spot.sym),
+        range: t("spot.range." + spot.range)
+      });
+    }
+  }
+
+  function spotTimeLabel(ms) {
+    const iso = new Date(ms).toISOString();
+    if (spot.range === "y1") return iso.slice(0, 10);
+    if (spot.range === "m1" || spot.range === "w1") return iso.slice(5, 10) + " " + iso.slice(11, 13) + "h";
+    return iso.slice(11, 16);
   }
 
   function drawSpotChart() {
     if (!$("chart-spot") || !window.Chart) return;
-    const labels = spot.ts.map(function (ms) {
-      return new Date(ms).toISOString().slice(11, 16);
-    });
+    const labels = spot.ts.map(spotTimeLabel);
     if (spot.chart) {
       spot.chart.data.labels = labels;
       spot.chart.data.datasets[0].data = spot.vs.slice();
@@ -973,14 +1099,15 @@
 
   function pushSpotPoint(ms, px) {
     if (!px || Number.isNaN(px)) return;
-    const minute = Math.floor(ms / 60000) * 60000;
+    const cfg = spotRangeCfg();
+    const bucket = Math.floor(ms / cfg.bucket) * cfg.bucket;
     const last = spot.ts[spot.ts.length - 1];
-    if (last === minute) {
+    if (last === bucket) {
       spot.vs[spot.vs.length - 1] = px;
-    } else {
-      spot.ts.push(minute);
+    } else if (!last || bucket > last) {
+      spot.ts.push(bucket);
       spot.vs.push(px);
-      while (spot.ts.length > 180) {
+      while (spot.ts.length > cfg.limit) {
         spot.ts.shift();
         spot.vs.shift();
       }
@@ -1003,7 +1130,9 @@
   }
 
   async function loadKlines(sym) {
-    const q = "/api/v3/klines?symbol=" + encodeURIComponent(sym) + "&interval=1m&limit=180";
+    const cfg = spotRangeCfg();
+    const q = "/api/v3/klines?symbol=" + encodeURIComponent(sym) +
+      "&interval=" + cfg.interval + "&limit=" + cfg.limit;
     try {
       const rows = await fetchFirst([
         "https://api.binance.com" + q,
@@ -1018,6 +1147,36 @@
     }
   }
 
+  async function loadSpotCatalog() {
+    try {
+      const rows = await fetchFirst([
+        "https://api.binance.com/api/v3/ticker/24hr",
+        "https://data-api.binance.vision/api/v3/ticker/24hr"
+      ]);
+      const usdt = (rows || []).filter(function (r) {
+        const s = String(r.symbol || "");
+        if (!/USDT$/.test(s) || s.indexOf("_") !== -1) return false;
+        if (/(UP|DOWN|BULL|BEAR)USDT$/.test(s)) return false;
+        return Number(r.quoteVolume) > 0;
+      }).sort(function (a, b) {
+        return Number(b.quoteVolume) - Number(a.quoteVolume);
+      }).slice(0, 80);
+      const seen = {};
+      spot.catalog = usdt.map(function (r) {
+        seen[r.symbol] = true;
+        return { sym: r.symbol, lab: labFromSym(r.symbol) };
+      });
+      spot.watch.forEach(function (p) {
+        if (!seen[p.sym]) spot.catalog.unshift({ sym: p.sym, lab: p.lab || labFromSym(p.sym) });
+      });
+    } catch (e) {
+      spot.catalog = SPOT_FALLBACK.slice();
+    }
+    const sel = $("spot-pick");
+    if (sel) sel.removeAttribute("data-n");
+    paintSpotPick();
+  }
+
   function applySpotTicker(sym, px, openOrChg, isPct) {
     if (!px) return;
     spot.px[sym] = px;
@@ -1028,7 +1187,7 @@
   }
 
   async function restBinance() {
-    const symbols = encodeURIComponent(JSON.stringify(SPOT_PAIRS.map(function (p) { return p.sym; })));
+    const symbols = encodeURIComponent(JSON.stringify(spot.watch.map(function (p) { return p.sym; })));
     const q = "/api/v3/ticker/24hr?symbols=" + symbols;
     try {
       const rows = await fetchFirst([
@@ -1047,14 +1206,16 @@
   }
 
   async function restGecko() {
-    const ids = SPOT_PAIRS.map(function (p) { return p.gecko; }).join(",");
+    const pairs = spot.watch.filter(function (p) { return SPOT_GECKO[p.sym]; });
+    if (!pairs.length) return false;
+    const ids = pairs.map(function (p) { return SPOT_GECKO[p.sym]; }).join(",");
     try {
       const d = await fetchFirst([
         "https://api.coingecko.com/api/v3/simple/price?ids=" + ids +
           "&vs_currencies=usd&include_24hr_change=true"
       ]);
-      SPOT_PAIRS.forEach(function (p) {
-        const row = d[p.gecko] || {};
+      pairs.forEach(function (p) {
+        const row = d[SPOT_GECKO[p.sym]] || {};
         if (row.usd) applySpotTicker(p.sym, Number(row.usd), Number(row.usd_24h_change), true);
       });
       if (spot.mode !== "ws") spot.mode = "rest";
@@ -1094,7 +1255,7 @@
   function openSpotWs() {
     if (!spot.started) return;
     if (spot.ws && (spot.ws.readyState === 0 || spot.ws.readyState === 1)) return;
-    const streams = SPOT_PAIRS.map(function (p) {
+    const streams = spot.watch.map(function (p) {
       return p.sym.toLowerCase() + "@miniTicker";
     }).join("/");
     const hosts = [
@@ -1133,11 +1294,51 @@
     };
   }
 
+  function restartSpotWs() {
+    if (spot.ws) {
+      try { spot.ws.onclose = null; spot.ws.close(); } catch (e) { /* ignore */ }
+      spot.ws = null;
+    }
+    spot.retry = 0;
+    if (spot.started) openSpotWs();
+  }
+
   function pickSpot(sym) {
-    if (!sym || spot.sym === sym) return;
-    spot.sym = sym;
+    if (!sym) return;
+    if (spot.sym !== sym) {
+      spot.sym = sym;
+      saveSpot();
+      paintSpot();
+      loadKlines(sym);
+    } else {
+      paintSpot();
+    }
+  }
+
+  function pickSpotRange(id) {
+    if (!id || spot.range === id) return;
+    spot.range = id;
+    saveSpot();
     paintSpot();
-    loadKlines(sym);
+    loadKlines(spot.sym);
+  }
+
+  function addSpot(sym) {
+    const s = String(sym || "").toUpperCase();
+    if (!/USDT$/.test(s)) return;
+    const lab = labFromSym(s);
+    if (!spot.watch.some(function (p) { return p.sym === s; })) {
+      spot.watch.unshift({ sym: s, lab: lab });
+      while (spot.watch.length > 6) {
+        let i = spot.watch.length - 1;
+        while (i > 0 && spot.watch[i].sym === s) i--;
+        spot.watch.splice(i, 1);
+      }
+      restartSpotWs();
+      restBinance();
+    }
+    pickSpot(s);
+    saveSpot();
   }
 
   function stopSpot() {
@@ -1156,7 +1357,9 @@
   function startSpot() {
     if (spot.started) return;
     spot.started = true;
+    loadSpotPrefs();
     paintSpot();
+    loadSpotCatalog();
     loadKlines(spot.sym);
     restBinance().then(function () { openSpotWs(); });
     if (!spot.vis) {
