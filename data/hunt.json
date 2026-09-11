@@ -1,7 +1,7 @@
 {
   "status": "done",
   "goal": "Find one specialist a $39 stack can copy at $5 after 60/90d, not Top 8.",
-  "checked": 997,
+  "checked": 998,
   "log": [
     "LB POLITICS ALL off=150 n=50",
     "LB POLITICS ALL off=200 n=50",
@@ -27,7 +27,7 @@
     "LB ECONOMICS ALL off=200 n=50",
     "LB ECONOMICS MONTH off=100 n=50",
     "LB ECONOMICS MONTH off=150 n=50",
-    "new wallets to scan: 997",
+    "new wallets to scan: 998",
     "scanned 15, queued 6",
     "scanned 30, queued 6",
     "scanned 90, queued 6",
@@ -44,21 +44,28 @@
     "scanned 375, queued 30",
     "scanned 420, queued 30",
     "scanned 435, queued 30",
-    "scanned 450, queued 30",
-    "scanned 465, queued 33",
-    "scanned 480, queued 36",
+    "scanned 465, queued 32",
     "scanned 495, queued 36",
     "scanned 510, queued 36",
+    "scanned 525, queued 36",
+    "scanned 540, queued 36",
+    "scanned 555, queued 36",
+    "scanned 570, queued 36",
     "scanned 615, queued 36",
     "scanned 630, queued 36",
-    "scanned 660, queued 36",
-    "scanned 705, queued 36",
-    "scanned 720, queued 36",
+    "scanned 645, queued 36",
+    "scanned 690, queued 36",
+    "scanned 735, queued 36",
     "scanned 750, queued 36",
+    "scanned 765, queued 36",
+    "scanned 780, queued 36",
     "scanned 810, queued 36",
+    "scanned 840, queued 36",
+    "scanned 855, queued 36",
     "scanned 870, queued 36",
     "scanned 885, queued 36",
-    "scanned 900, queued 36",
+    "scanned 930, queued 36",
+    "scanned 945, queued 36",
     "simming 36",
     "0x411A2D42fefF12 POLITICS   d=612 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "ExhaustedBoyBill POLITICS   d=551 60=+0.0 90=+0.0 conc=1.0 cg=None",
@@ -78,12 +85,12 @@
     "fgrnkj           TECH       d=193 60=+0.0 90=+0.0 conc=0.44 cg=None",
     "George.Smiley    TECH       d=341 60=-5.0 90=+3.1 conc=0.73 cg=None",
     "Popopolly        TECH       d=157 60=+0.0 90=+0.0 conc=0.94 cg=None",
-    "1walrus          FINANCE    d=110 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "7sevndragon      FINANCE    d=250 60=+0.0 90=+17.6 conc=0.62 cg=None",
     "Snoorrason       FINANCE    d=100 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "debased          FINANCE    d=85 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "cassino          FINANCE    d=187 60=+3.5 90=+3.5 conc=1.0 cg=None",
     "flow-trader-at-o FINANCE    d=197 60=+0.0 90=+0.0 conc=1.0 cg=None",
+    "ticktocktoe      FINANCE    d=654 60=+0.0 90=+0.0 conc=0.67 cg=None",
     "BruceWayne77     SPORTS     d=81 60=+0.0 90=+6.9 conc=1.0 cg=None",
     "HongYunX         SPORTS     d=154 60=+4.6 90=+0.0 conc=1.0 cg=None",
     "erdog            SPORTS     d=111 60=+6.5 90=+2.7 conc=1.0 cg=None",
@@ -91,10 +98,10 @@
     "vjnn             SPORTS     d=242 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "trueblueaussie   SPORTS     d=76 60=+2.8 90=+4.3 conc=1.0 cg=None",
     "HNIC             ECONOMICS  d=166 60=+0.0 90=+0.0 conc=1.0 cg=None",
-    "SaylorMoon       ECONOMICS  d=113 60=+0.0 90=+11.6 conc=1.0 cg=None",
+    "SaylorMoon       ECONOMICS  d=113 60=+0.0 90=+11.6 conc=1.0 cg=Avoid",
     "torrest          ECONOMICS  d=109 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "user12449        ECONOMICS  d=142 60=+0.0 90=+0.0 conc=1.0 cg=None",
-    "SwissMiss        ECONOMICS  d=145 60=+0.0 90=+0.0 conc=1.0 cg=None",
+    "SwissMiss        ECONOMICS  d=145 60=+0.0 90=+0.0 conc=1.0 cg=Copy with caution",
     "0x4207c4f53b785c ECONOMICS  d=75 60=+0.0 90=+1.2 conc=1.0 cg=None",
     "hunt finished"
   ],
@@ -158,14 +165,14 @@
       "history_days": 75.6,
       "w60": 2.81,
       "w90": 4.26,
-      "copies": 4,
+      "copies": 0,
       "conc": 1.0,
       "top_market": "Will Morocco win on 2026-07-04?",
       "candle": 0.0,
       "copygrade": {
-        "status": "rate_limit"
+        "status": "not_indexed"
       },
-      "score": -60.1
+      "score": -64.2
     }
   ],
   "pick": {
@@ -185,5 +192,5 @@
     },
     "score": -55.1
   },
-  "updated_at": "2026-09-11T06:58:39.648833+00:00"
+  "updated_at": "2026-09-11T07:17:40.183862+00:00"
 }
