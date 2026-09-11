@@ -15,6 +15,7 @@
       "who.ro": "odczyt",
       "who.out": "Wyloguj / zmień konto",
       "gate.switched": "Sesja skasowana. Wpisz inny email z listy.",
+      "intro.skip": "Pomiń",
       "top.sub": "Tylko @PolyCop_BOT · strona nie handluje",
       "nav.do": "Co robić",
       "nav.sim": "Symulacja",
@@ -224,6 +225,7 @@
       "who.ro": "read only",
       "who.out": "Sign out / switch account",
       "gate.switched": "Signed out. Enter a different allowlisted email.",
+      "intro.skip": "Skip",
       "top.sub": "PolyCop only · this page does not trade",
       "nav.do": "What to do",
       "nav.sim": "Simulation",
@@ -519,6 +521,9 @@
     sessionStorage.removeItem("copy-lab-ok");
     sessionStorage.removeItem("copy-lab-email");
     sessionStorage.removeItem("copy-lab-role");
+    sessionStorage.removeItem("copy-lab-intro");
+    stopIntroTimer();
+    hideIntro();
     state.user = null;
     state.role = null;
     document.body.classList.remove("role-viewer");
@@ -548,15 +553,79 @@
   }
 
   let heroTimers = [];
+  let introTimer = 0;
 
   function stopHeroTitle() {
     heroTimers.forEach(function (id) { clearTimeout(id); });
     heroTimers = [];
   }
+  function stopIntroTimer() {
+    if (introTimer) clearTimeout(introTimer);
+    introTimer = 0;
+  }
+
+  function introOn() {
+    return document.body.classList.contains("intro-on");
+  }
+  function wantIntro() {
+    if (introOn()) return false;
+    try {
+      if (sessionStorage.getItem("copy-lab-intro") === "1") return false;
+    } catch (e) { /* ignore */ }
+    if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return false;
+    return true;
+  }
+  function markIntroDone() {
+    try { sessionStorage.setItem("copy-lab-intro", "1"); } catch (e) { /* ignore */ }
+  }
+  function hideIntro() {
+    const el = $("intro");
+    if (!el) return;
+    el.classList.remove("in", "out");
+    el.classList.add("hidden");
+    el.hidden = true;
+    document.body.classList.remove("intro-on");
+  }
+  function endIntro() {
+    const el = $("intro");
+    markIntroDone();
+    if (!el || el.hidden) {
+      document.body.classList.remove("intro-on");
+      const title = $("do-title");
+      if (title) title.removeAttribute("data-painted");
+      paintHeroTitle();
+      return;
+    }
+    el.classList.remove("in");
+    el.classList.add("out");
+    document.body.classList.remove("intro-on");
+    const title = $("do-title");
+    if (title) title.removeAttribute("data-painted");
+    paintHeroTitle();
+    stopIntroTimer();
+    introTimer = setTimeout(function () {
+      hideIntro();
+    }, 420);
+  }
+  function startIntro() {
+    const el = $("intro");
+    if (!el) {
+      paintHeroTitle();
+      return;
+    }
+    stopIntroTimer();
+    document.body.classList.add("intro-on");
+    el.hidden = false;
+    el.classList.remove("hidden", "out");
+    void el.offsetWidth;
+    el.classList.add("in");
+    introTimer = setTimeout(endIntro, 1550);
+  }
 
   function paintHeroTitle() {
     const el = $("do-title");
     if (!el) return;
+    if (introOn()) return;
     const app = $("app");
     if (app && (app.hidden || app.classList.contains("hidden"))) return;
     const text = t("do.title");
@@ -674,6 +743,7 @@
     const email = (state.user && state.user.email) || "";
     $("who").textContent = email + (state.role === "viewer" ? " · " + t("who.ro") : "");
     document.body.classList.toggle("role-viewer", state.role === "viewer");
+    if (wantIntro()) startIntro();
     applyLang();
     showView(viewFromHash());
     startSpot();
@@ -681,6 +751,8 @@
 
   function showGate(msg, key) {
     stopSpot();
+    stopIntroTimer();
+    hideIntro();
     $("app").classList.add("hidden");
     $("app").hidden = true;
     $("gate").classList.remove("hidden");
@@ -1791,6 +1863,10 @@
       });
     }
     if ($("btn-out")) $("btn-out").onclick = logout;
+    if ($("intro-skip")) $("intro-skip").onclick = function () {
+      stopIntroTimer();
+      endIntro();
+    };
     document.querySelectorAll("[data-view]").forEach(function (btn) {
       btn.onclick = function () { showView(btn.getAttribute("data-view")); };
     });
