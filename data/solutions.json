@@ -1,27 +1,27 @@
 {
   "enable": false,
-  "source": "claude",
-  "model": "claude-sonnet-4-5",
+  "source": "lab",
+  "model": null,
   "verb_pl": "NIE WŁĄCZAJ",
   "verb_en": "DO NOT ENABLE",
-  "now_pl": "Gotówka $39, dziura -$13.58 (invorser esports). Antblack (tenis, 76d) i 86shin (polityka tajska, cienki) na Pauzie — nie włączaj.",
-  "now_en": "Cash $39, hole -$13.58 (invorser esports). Antblack (tennis, 76d) and 86shin (politics-thai, thin) Paused — do not enable.",
-  "path_pl": "Polowanie. Żaden portfel nie przechodzi: golfpro2025 (conc 0.68 > 0.45), xeroror (2 kopie < 6), cassino (conc 1.0), SSCCAAMM (conc 1.0, świece 0.14). Ścieżka = szukaj dalej, nie wpłacaj, nie włączaj All Copy.",
-  "path_en": "Hunt. No wallet clears: golfpro2025 (conc 0.68 > 0.45), xeroror (2 copies < 6), cassino (conc 1.0), SSCCAAMM (conc 1.0, candle 0.14). Path = keep hunting, no deposit, no All Copy.",
-  "hunt_next_pl": "Następny cykl: CULTURE/ECONOMICS/FINANCE/TECH z offset +4 każda. Szukaj conc ≤0.45, ≥6 kopii <$15, 60d i 90d zysk, ≥90d historii, brak świec, nie rate_limit.",
-  "hunt_next_en": "Next cycle: CULTURE/ECONOMICS/FINANCE/TECH offset +4 each. Seek conc ≤0.45, ≥6 copies <$15, 60d & 90d profit, ≥90d history, no candles, not rate_limit.",
+  "now_pl": "Żaden tor nie przeszedł sitów do włączenia. $39 zostaje. Najbliższa ścieżka to hunt pod książkę $5 / $15, nie dokupowanie i nie All Copy.",
+  "now_en": "No lane cleared the gates. Leave the $39. Closest path is hunt for a $5 / $15 book, not more cash and not All Copy.",
+  "path_pl": "Najbliżej: xeroror (ECONOMICS). Brakuje: jeden event (conc 0.75); za mało filli (2). Patrz w Symulacji. W Telegramie nic nie klikasz.",
+  "path_en": "Closest: xeroror (ECONOMICS). Missing: jeden event (conc 0.75); za mało filli (2). Look in Simulation. Do nothing in Telegram.",
+  "hunt_next_pl": "Następny bieg: głębiej SPORTS (offset 250/300), potem POLITICS, FINANCE. Pomijamy Top 8, świece 5 min, esport, conc=1.0 jako pick.",
+  "hunt_next_en": "Next run: deeper SPORTS (offset 250/300), then POLITICS, FINANCE. Skip Top 8, 5-min candles, esports, conc=1.0 picks.",
   "closest": {
-    "name": "golfpro2025",
-    "lane": "CULTURE",
-    "missing": "conc 0.68 (need ≤0.45), only 5 copies (need ≥6)"
+    "name": "xeroror",
+    "lane": "ECONOMICS",
+    "missing": "jeden event (conc 0.75); za mało filli (2)"
   },
   "next_cats": [
-    "CULTURE",
-    "ECONOMICS",
-    "FINANCE",
-    "TECH",
+    "SPORTS",
     "POLITICS",
-    "SPORTS"
+    "FINANCE",
+    "CULTURE",
+    "TECH",
+    "ECONOMICS"
   ],
   "extra_offsets": {
     "SPORTS": [
@@ -30,23 +30,22 @@
     ]
   },
   "dead_pl": [
-    "golfpro2025 · CULTURE · jeden event / veto",
     "xeroror · ECONOMICS · jeden event / veto",
     "cassino · FINANCE · jeden event / veto",
     "SSCCAAMM · TECH · jeden event / veto"
   ],
   "dead_en": [
-    "golfpro2025 · CULTURE · jeden event / veto",
     "xeroror · ECONOMICS · jeden event / veto",
     "cassino · FINANCE · jeden event / veto",
     "SSCCAAMM · TECH · jeden event / veto"
   ],
-  "updated_at": "2026-09-11T15:36:35.081820+00:00",
-  "hunt_updated_at": "2026-09-11T15:36:19.733316+00:00",
+  "error": "http 404 claude-sonnet-4-20250514",
+  "updated_at": "2026-09-11T15:55:44.005051+00:00",
+  "hunt_updated_at": "2026-09-11T15:55:22.565232+00:00",
   "x_source": "error",
   "x_model": null,
   "x_error": "http 403 grok-4.6 {\"code\":\"permission-denied\",\"error\":\"Your newly created team doesn't have any credits or licenses yet. You can purchase those on https://conso",
   "x_pl": "Filtr X: błąd API. Zostają sity. Copy off.",
   "x_en": "X filter: API error. Gates stand. Copy off.",
-  "x_updated_at": "2026-09-11T15:36:35.237053+00:00"
+  "x_updated_at": "2026-09-11T15:55:44.171862+00:00"
 }
