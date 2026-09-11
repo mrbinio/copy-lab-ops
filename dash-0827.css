@@ -309,6 +309,48 @@ figure { margin: 0; }
 }
 .hunt-tape li.wait { border-color: rgba(255, 193, 74, 0.5); }
 .hunt-tape li.no { border-color: rgba(255, 93, 93, 0.35); }
+.spot-tick {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.85rem;
+}
+.spot-card {
+  display: block;
+  width: 100%;
+  text-align: left;
+  margin: 0;
+  padding: 1.05rem 1.1rem;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--card);
+  color: inherit;
+  cursor: pointer;
+}
+.spot-card .kicker { margin: 0; }
+.spot-card.on { outline: 2px solid #fff; }
+.spot-px {
+  margin: 0.2rem 0 0;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 1.32rem;
+  font-weight: 500;
+  letter-spacing: -0.03em;
+}
+.spot-chg { margin: 0.25rem 0 0; font-size: 0.84rem; color: var(--dim); }
+.spot-chg.up { color: var(--lime); }
+.spot-chg.down { color: var(--red); }
+#spot-feed { margin: 0.7rem 0 0; }
+.spot-chart-wrap {
+  margin-top: 1rem;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 1rem 1.15rem 0.7rem;
+}
+.spot-chart-wrap h3 {
+  margin: 0 0 0.7rem;
+  font-size: 1.02rem;
+  letter-spacing: -0.03em;
+}
 .roster .off-line { color: var(--red); font-weight: 700; margin: 0 0 0.6rem; }
 
 .table-wrap { overflow-x: auto; padding: 0; }
@@ -359,6 +401,9 @@ figure { margin: 0; }
   .who { max-width: 11rem; }
   .who-out { min-height: 44px; }
   .hero, .steps, .cards, .paths, .kpis, .lanes { grid-template-columns: 1fr; }
+  .spot-tick { gap: 0.5rem; }
+  .spot-card { padding: 0.75rem 0.65rem; }
+  .spot-px { font-size: 1.02rem; }
 }
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; }

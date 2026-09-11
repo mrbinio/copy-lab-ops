@@ -57,6 +57,13 @@
       "lane.nba": "NBA",
       "lane.tech": "Tech",
       "lane.sports": "Sport · reszta",
+      "spot.title": "Ceny spot",
+      "spot.lead": "BTC, ETH i SOL z Binance. Wykres idzie, dopóki ta karta jest otwarta. To nie sygnał do copy. Świece 5 min zostają NIE.",
+      "spot.live": "na żywo",
+      "spot.poll": "co 3 sekundy",
+      "spot.off": "brak feedu — odśwież kartę",
+      "spot.chart": "{name} · ostatnie 3 godz.",
+      "spot.chg": "{pct} · 24 godz.",
       "res.title": "Jakie rozwiązania badamy",
       "res.lead": "Hunt nie zamyka się na jednego maskota. Copy zostaje off.",
       "res.nowK": "Teraz",
@@ -135,6 +142,8 @@
       "how.a4": "Zakładka Symulacja: trzy ścieżki, trzy wykresy, tabela huntu. Odświeża się co 15 sekund. Hunt 24/7 na GitHubie.",
       "how.q5": "Kiedy w ogóle włączamy?",
       "how.a5": "Gdy WAIT ma też ≥90 dni, zysk w 60d i 90d, conc ≤ 0.45, CopyGrade nie Avoid. Dziś tego nie ma.",
+      "how.q6": "Skąd żywe ceny krypto?",
+      "how.a6": "Z Binance, w Twojej przeglądarce. GitHub ich nie serwuje. Strona nic nie kupuje. To nie sygnał do copy.",
       "how.card": "Kartka do PolyCop (na później)",
       "how.cardLead": "Lab ją wypełnia. Nie wciskasz All Copy.",
       "how.ban": "Tego nie wklejasz",
@@ -233,6 +242,13 @@
       "lane.nba": "NBA",
       "lane.tech": "Tech",
       "lane.sports": "Sports · other",
+      "spot.title": "Spot prices",
+      "spot.lead": "BTC, ETH and SOL from Binance. The chart keeps moving while this tab is open. Not a copy signal. 5-min candles stay NO.",
+      "spot.live": "live",
+      "spot.poll": "every 3 seconds",
+      "spot.off": "no feed — refresh the tab",
+      "spot.chart": "{name} · last 3 hours",
+      "spot.chg": "{pct} · 24h",
       "res.title": "What we are researching",
       "res.lead": "Hunt is not one locked mascot. Copy stays off.",
       "res.nowK": "Now",
@@ -311,6 +327,8 @@
       "how.a4": "The Simulation tab: three paths, three charts, hunt table. The open page refreshes every 15s. Hunt 24/7 on GitHub.",
       "how.q5": "When do we enable?",
       "how.a5": "When WAIT also has ≥90 days, both windows green, conc ≤ 0.45, CopyGrade not Avoid. Not today.",
+      "how.q6": "Where do the live crypto prices come from?",
+      "how.a6": "From Binance, in your browser. GitHub does not serve them. The page does not trade. This is not a signal to enable copy.",
       "how.card": "PolyCop paste card (later)",
       "how.cardLead": "The lab fills it. Do not press All Copy.",
       "how.ban": "Do not paste",
@@ -359,6 +377,25 @@
   const state = { snap: null, user: null, role: null, hunt: null, lang: "pl", lane: null, gateKey: null };
   const LANE_ORDER = ["tennis", "finance", "politics", "crypto", "culture", "cluster", "nba", "tech", "sports"];
   const VIEWS = ["do", "sim", "poly", "money", "how"];
+  const SPOT_PAIRS = [
+    { sym: "BTCUSDT", lab: "BTC", gecko: "bitcoin" },
+    { sym: "ETHUSDT", lab: "ETH", gecko: "ethereum" },
+    { sym: "SOLUSDT", lab: "SOL", gecko: "solana" }
+  ];
+  const spot = {
+    started: false,
+    mode: "",
+    vis: false,
+    sym: "BTCUSDT",
+    px: {},
+    chg: {},
+    ts: [],
+    vs: [],
+    ws: null,
+    poll: null,
+    retry: 0,
+    chart: null
+  };
 
   function $(id) { return document.getElementById(id); }
   function esc(s) {
@@ -469,10 +506,11 @@
       btn.classList.toggle("on", btn.getAttribute("data-view") === view);
     });
     try { history.replaceState(null, "", "#" + view); } catch (e) { /* ignore */ }
-    if (view === "sim") {
+    if (view === "sim" || view === "do") {
       Object.keys(charts).forEach(function (id) {
         if (charts[id] && typeof charts[id].resize === "function") charts[id].resize();
       });
+      if (spot.chart && typeof spot.chart.resize === "function") spot.chart.resize();
     }
   }
 
@@ -493,9 +531,11 @@
     document.body.classList.toggle("role-viewer", state.role === "viewer");
     applyLang();
     showView(viewFromHash());
+    startSpot();
   }
 
   function showGate(msg, key) {
+    stopSpot();
     $("app").classList.add("hidden");
     $("app").hidden = true;
     $("gate").classList.remove("hidden");
@@ -834,6 +874,286 @@
     if ($("pred-c")) $("pred-c").textContent = t("pred.c");
   }
 
+  function fmtSpotPx(n) {
+    if (n == null || Number.isNaN(Number(n))) return "—";
+    const v = Number(n);
+    const d = v >= 100 ? 2 : v >= 1 ? 3 : 4;
+    return "$" + v.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
+  }
+
+  function spotLab(sym) {
+    const row = SPOT_PAIRS.filter(function (p) { return p.sym === sym; })[0];
+    return (row && row.lab) || "BTC";
+  }
+
+  function paintSpot() {
+    const box = $("spot-tick");
+    if (!box) return;
+    box.innerHTML = SPOT_PAIRS.map(function (c) {
+      const px = spot.px[c.sym];
+      const chg = spot.chg[c.sym];
+      const cls = chg > 0 ? "up" : chg < 0 ? "down" : "";
+      const raw = chg == null || Number.isNaN(Number(chg)) ? null : Number(chg);
+      const pct = raw == null ? "—" : (raw > 0 ? "+" : "") + raw.toFixed(2) + "%";
+      return "<button type='button' class='spot-card" + (spot.sym === c.sym ? " on" : "") +
+        "' data-sym='" + c.sym + "'><p class='kicker'>" + c.lab + "</p>" +
+        "<p class='spot-px'>" + fmtSpotPx(px) + "</p>" +
+        "<p class='spot-chg " + cls + "'>" + fmt("spot.chg", { pct: pct }) + "</p></button>";
+    }).join("");
+    box.querySelectorAll("[data-sym]").forEach(function (btn) {
+      btn.onclick = function () { pickSpot(btn.getAttribute("data-sym")); };
+    });
+    const st = $("spot-feed");
+    if (st) {
+      st.textContent = spot.mode === "ws" ? t("spot.live")
+        : spot.mode === "rest" ? t("spot.poll")
+        : t("spot.off");
+    }
+    const title = $("spot-chart-title");
+    if (title) title.textContent = fmt("spot.chart", { name: spotLab(spot.sym) });
+  }
+
+  function drawSpotChart() {
+    if (!$("chart-spot") || !window.Chart) return;
+    const labels = spot.ts.map(function (ms) {
+      return new Date(ms).toISOString().slice(11, 16);
+    });
+    if (spot.chart) {
+      spot.chart.data.labels = labels;
+      spot.chart.data.datasets[0].data = spot.vs.slice();
+      spot.chart.update("none");
+      return;
+    }
+    Chart.defaults.color = "#b4b4b0";
+    Chart.defaults.borderColor = "#2a2a2e";
+    Chart.defaults.font.family = "Instrument Sans, Segoe UI, sans-serif";
+    spot.chart = new Chart($("chart-spot").getContext("2d"), {
+      type: "line",
+      data: {
+        labels: labels,
+        datasets: [{
+          data: spot.vs.slice(),
+          borderColor: "#d8ff4a",
+          backgroundColor: "rgba(216,255,74,0.08)",
+          fill: true,
+          pointRadius: 0,
+          borderWidth: 2,
+          tension: 0.2
+        }]
+      },
+      options: {
+        animation: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: {
+            ticks: { maxTicksLimit: 6, maxRotation: 0 },
+            grid: { display: false }
+          },
+          y: {
+            grid: { color: "rgba(255,255,255,0.06)" }
+          }
+        }
+      }
+    });
+  }
+
+  function pushSpotPoint(ms, px) {
+    if (!px || Number.isNaN(px)) return;
+    const minute = Math.floor(ms / 60000) * 60000;
+    const last = spot.ts[spot.ts.length - 1];
+    if (last === minute) {
+      spot.vs[spot.vs.length - 1] = px;
+    } else {
+      spot.ts.push(minute);
+      spot.vs.push(px);
+      while (spot.ts.length > 180) {
+        spot.ts.shift();
+        spot.vs.shift();
+      }
+    }
+    drawSpotChart();
+  }
+
+  async function fetchFirst(urls) {
+    let last = null;
+    for (let i = 0; i < urls.length; i++) {
+      try {
+        const r = await fetch(urls[i], { cache: "no-store" });
+        if (r.ok) return await r.json();
+        last = new Error("http " + r.status);
+      } catch (e) {
+        last = e;
+      }
+    }
+    throw last || new Error("fetch failed");
+  }
+
+  async function loadKlines(sym) {
+    const q = "/api/v3/klines?symbol=" + encodeURIComponent(sym) + "&interval=1m&limit=180";
+    try {
+      const rows = await fetchFirst([
+        "https://api.binance.com" + q,
+        "https://data-api.binance.vision" + q
+      ]);
+      spot.ts = rows.map(function (r) { return Number(r[0]); });
+      spot.vs = rows.map(function (r) { return Number(r[4]); });
+      drawSpotChart();
+    } catch (e) {
+      spot.ts = [];
+      spot.vs = [];
+    }
+  }
+
+  function applySpotTicker(sym, px, openOrChg, isPct) {
+    if (!px) return;
+    spot.px[sym] = px;
+    if (isPct) spot.chg[sym] = openOrChg;
+    else if (openOrChg) spot.chg[sym] = ((px - openOrChg) / openOrChg) * 100;
+    paintSpot();
+    if (sym === spot.sym) pushSpotPoint(Date.now(), px);
+  }
+
+  async function restBinance() {
+    const symbols = encodeURIComponent(JSON.stringify(SPOT_PAIRS.map(function (p) { return p.sym; })));
+    const q = "/api/v3/ticker/24hr?symbols=" + symbols;
+    try {
+      const rows = await fetchFirst([
+        "https://api.binance.com" + q,
+        "https://data-api.binance.vision" + q
+      ]);
+      (rows || []).forEach(function (r) {
+        applySpotTicker(r.symbol, Number(r.lastPrice), Number(r.priceChangePercent), true);
+      });
+      if (spot.mode !== "ws") spot.mode = "rest";
+      paintSpot();
+      return true;
+    } catch (e) {
+      return restGecko();
+    }
+  }
+
+  async function restGecko() {
+    const ids = SPOT_PAIRS.map(function (p) { return p.gecko; }).join(",");
+    try {
+      const d = await fetchFirst([
+        "https://api.coingecko.com/api/v3/simple/price?ids=" + ids +
+          "&vs_currencies=usd&include_24hr_change=true"
+      ]);
+      SPOT_PAIRS.forEach(function (p) {
+        const row = d[p.gecko] || {};
+        if (row.usd) applySpotTicker(p.sym, Number(row.usd), Number(row.usd_24h_change), true);
+      });
+      if (spot.mode !== "ws") spot.mode = "rest";
+      paintSpot();
+      return true;
+    } catch (e) {
+      if (spot.mode !== "ws") {
+        spot.mode = "";
+        paintSpot();
+      }
+      return false;
+    }
+  }
+
+  function startSpotPoll() {
+    if (spot.poll) return;
+    spot.poll = setInterval(function () {
+      if (spot.mode === "ws") return;
+      restBinance();
+    }, 3000);
+  }
+
+  function onSpotMsg(raw) {
+    let msg = raw;
+    try { msg = JSON.parse(raw); } catch (e) { return; }
+    const d = msg.data || msg;
+    if (!d || !d.s) return;
+    spot.mode = "ws";
+    spot.retry = 0;
+    if (spot.poll) {
+      clearInterval(spot.poll);
+      spot.poll = null;
+    }
+    applySpotTicker(d.s, Number(d.c), Number(d.o), false);
+  }
+
+  function openSpotWs() {
+    if (!spot.started) return;
+    if (spot.ws && (spot.ws.readyState === 0 || spot.ws.readyState === 1)) return;
+    const streams = SPOT_PAIRS.map(function (p) {
+      return p.sym.toLowerCase() + "@miniTicker";
+    }).join("/");
+    const hosts = [
+      "wss://stream.binance.com:9443/stream?streams=" + streams,
+      "wss://data-stream.binance.vision/stream?streams=" + streams
+    ];
+    const url = hosts[spot.retry % hosts.length];
+    let sock;
+    try { sock = new WebSocket(url); } catch (e) {
+      startSpotPoll();
+      restBinance();
+      return;
+    }
+    spot.ws = sock;
+    const hang = setTimeout(function () {
+      if (sock.readyState !== 1) {
+        startSpotPoll();
+        try { sock.close(); } catch (e) { /* ignore */ }
+      }
+    }, 4000);
+    sock.onmessage = function (ev) { onSpotMsg(ev.data); };
+    sock.onopen = function () {
+      clearTimeout(hang);
+      spot.retry = 0;
+    };
+    sock.onerror = function () { /* onclose retries */ };
+    sock.onclose = function () {
+      if (spot.ws === sock) spot.ws = null;
+      if (!spot.started) return;
+      if (spot.mode === "ws") spot.mode = "rest";
+      paintSpot();
+      startSpotPoll();
+      const wait = Math.min(15000, 1200 * Math.pow(1.6, Math.min(spot.retry, 6)));
+      spot.retry += 1;
+      setTimeout(openSpotWs, wait);
+    };
+  }
+
+  function pickSpot(sym) {
+    if (!sym || spot.sym === sym) return;
+    spot.sym = sym;
+    paintSpot();
+    loadKlines(sym);
+  }
+
+  function stopSpot() {
+    spot.started = false;
+    if (spot.ws) {
+      try { spot.ws.onclose = null; spot.ws.close(); } catch (e) { /* ignore */ }
+      spot.ws = null;
+    }
+    if (spot.poll) {
+      clearInterval(spot.poll);
+      spot.poll = null;
+    }
+    if (spot.mode === "ws") spot.mode = "";
+  }
+
+  function startSpot() {
+    if (spot.started) return;
+    spot.started = true;
+    paintSpot();
+    loadKlines(spot.sym);
+    restBinance().then(function () { openSpotWs(); });
+    if (!spot.vis) {
+      spot.vis = true;
+      document.addEventListener("visibilitychange", function () {
+        if (document.visibilityState !== "visible" || !spot.started) return;
+        if (!spot.ws || spot.ws.readyState !== 1) openSpotWs();
+      });
+    }
+  }
+
   function renderBans(s) {
     const onBoard = {};
     ((s.board || {}).options || []).forEach(function (r) { onBoard[(r.name || "").toLowerCase()] = true; });
@@ -1001,10 +1321,12 @@
     renderPredict(s, state.hunt);
     renderCharts(s, shown);
     renderChartReads(s, shown);
-    if (viewFromHash() === "sim") {
+    paintSpot();
+    if (viewFromHash() === "sim" || viewFromHash() === "do") {
       Object.keys(charts).forEach(function (id) {
         if (charts[id] && typeof charts[id].resize === "function") charts[id].resize();
       });
+      if (spot.chart && typeof spot.chart.resize === "function") spot.chart.resize();
     }
   }
 
