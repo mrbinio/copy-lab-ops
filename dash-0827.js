@@ -543,11 +543,50 @@
     return null;
   }
 
+  function paintHeroTitle() {
+    const el = $("do-title");
+    if (!el) return;
+    const text = t("do.title");
+    el.setAttribute("aria-label", text);
+    if (el.getAttribute("data-painted") === text && el.querySelector(".hero-word")) return;
+    el.setAttribute("data-painted", text);
+    const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduce) {
+      el.className = "hero-title";
+      el.textContent = text;
+      return;
+    }
+    const raw = text.replace(/\.$/, "").trim();
+    const bits = raw.split(/\s+/);
+    const last = (bits.pop() || "") + ".";
+    const first = bits.join(" ");
+    el.className = "hero-title";
+    el.textContent = "";
+    function addLine(str, extra, delay0) {
+      const ln = document.createElement("span");
+      ln.className = "hero-line" + (extra ? " " + extra : "");
+      str.split(/\s+/).forEach(function (w, i) {
+        const wrap = document.createElement("span");
+        wrap.className = "hero-word";
+        wrap.style.setProperty("--d", (delay0 + i * 0.08) + "s");
+        const inner = document.createElement("span");
+        inner.textContent = w;
+        wrap.appendChild(inner);
+        ln.appendChild(wrap);
+      });
+      el.appendChild(ln);
+    }
+    if (first) addLine(first, "", 0.04);
+    addLine(last, "hero-line-end", first ? 0.22 : 0.04);
+    requestAnimationFrame(function () { el.classList.add("is-on"); });
+  }
+
   function applyLang() {
     document.documentElement.lang = state.lang;
     document.querySelectorAll("[data-i18n]").forEach(function (el) {
       el.textContent = t(el.getAttribute("data-i18n"));
     });
+    paintHeroTitle();
     document.querySelectorAll(".lang button").forEach(function (btn) {
       btn.classList.toggle("on", btn.getAttribute("data-lang") === state.lang);
     });

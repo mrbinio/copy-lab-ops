@@ -143,12 +143,58 @@ input[type="email"] {
   align-items: stretch;
   margin-bottom: 2rem;
 }
-.hero h1 {
-  margin: 0.35rem 0 0.7rem;
-  font-size: clamp(1.7rem, 3.6vw, 2.65rem);
-  line-height: 1.12;
-  letter-spacing: -0.05em;
-  font-weight: 650;
+.hero h1,
+.hero-title {
+  margin: 0.45rem 0 0.85rem;
+  font-size: clamp(2.35rem, 6vw, 4.35rem);
+  line-height: 0.94;
+  letter-spacing: -0.06em;
+  font-weight: 700;
+}
+.hero-title {
+  position: relative;
+  max-width: 18ch;
+}
+.hero-line {
+  display: block;
+  overflow: hidden;
+}
+.hero-word {
+  display: inline-block;
+  overflow: hidden;
+  vertical-align: bottom;
+  margin-right: 0.28em;
+}
+.hero-word:last-child { margin-right: 0; }
+.hero-word > span {
+  display: block;
+  transform: translateY(108%) rotate(2.4deg);
+  opacity: 0;
+}
+.hero-title.is-on .hero-word > span {
+  animation: titleReveal 0.95s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation-delay: var(--d, 0s);
+}
+.hero-line-end {
+  color: var(--red);
+  text-shadow: 0 0 42px rgba(255, 93, 93, 0.28);
+}
+.hero-title.is-on::after {
+  content: "";
+  display: block;
+  width: min(7.5rem, 42%);
+  height: 1px;
+  margin-top: 0.9rem;
+  background: linear-gradient(90deg, var(--red), transparent);
+  transform: scaleX(0);
+  transform-origin: left;
+  animation: titleRule 0.7s 0.55s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+@keyframes titleReveal {
+  to { transform: translateY(0) rotate(0); opacity: 1; }
+}
+@keyframes titleRule {
+  to { transform: scaleX(1); }
 }
 .hero p { margin: 0; max-width: 36rem; color: var(--dim); font-size: 1rem; }
 .kicker {
@@ -470,4 +516,6 @@ figure { margin: 0; }
 }
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; }
+  .hero-word > span { transform: none !important; opacity: 1 !important; }
+  .hero-title::after { transform: none !important; }
 }
