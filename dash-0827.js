@@ -889,19 +889,33 @@
   function paintSpot() {
     const box = $("spot-tick");
     if (!box) return;
-    box.innerHTML = SPOT_PAIRS.map(function (c) {
+    if (!box.querySelector("[data-sym]")) {
+      box.innerHTML = SPOT_PAIRS.map(function (c) {
+        return "<button type='button' class='spot-card' data-sym='" + c.sym +
+          "'><p class='kicker'>" + c.lab + "</p>" +
+          "<p class='spot-px'>—</p>" +
+          "<p class='spot-chg'>—</p></button>";
+      }).join("");
+      box.querySelectorAll("[data-sym]").forEach(function (btn) {
+        btn.onclick = function () { pickSpot(btn.getAttribute("data-sym")); };
+      });
+    }
+    SPOT_PAIRS.forEach(function (c) {
+      const btn = box.querySelector("[data-sym='" + c.sym + "']");
+      if (!btn) return;
+      btn.classList.toggle("on", spot.sym === c.sym);
+      const pxEl = btn.querySelector(".spot-px");
+      const chgEl = btn.querySelector(".spot-chg");
       const px = spot.px[c.sym];
       const chg = spot.chg[c.sym];
-      const cls = chg > 0 ? "up" : chg < 0 ? "down" : "";
       const raw = chg == null || Number.isNaN(Number(chg)) ? null : Number(chg);
       const pct = raw == null ? "—" : (raw > 0 ? "+" : "") + raw.toFixed(2) + "%";
-      return "<button type='button' class='spot-card" + (spot.sym === c.sym ? " on" : "") +
-        "' data-sym='" + c.sym + "'><p class='kicker'>" + c.lab + "</p>" +
-        "<p class='spot-px'>" + fmtSpotPx(px) + "</p>" +
-        "<p class='spot-chg " + cls + "'>" + fmt("spot.chg", { pct: pct }) + "</p></button>";
-    }).join("");
-    box.querySelectorAll("[data-sym]").forEach(function (btn) {
-      btn.onclick = function () { pickSpot(btn.getAttribute("data-sym")); };
+      if (pxEl) pxEl.textContent = fmtSpotPx(px);
+      if (chgEl) {
+        chgEl.textContent = fmt("spot.chg", { pct: pct });
+        chgEl.classList.toggle("up", raw != null && raw > 0);
+        chgEl.classList.toggle("down", raw != null && raw < 0);
+      }
     });
     const st = $("spot-feed");
     if (st) {

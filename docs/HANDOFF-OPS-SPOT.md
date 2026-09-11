@@ -1,7 +1,7 @@
 # Copy Lab — live spot prices on the board (2026-09-11)
 
-**Site:** https://mrbinio.github.io/copy-lab-ops/now.html?v=0636  
-**Stamp:** `BUILD 06:36 UTC`  
+**Site:** https://mrbinio.github.io/copy-lab-ops/now.html?v=0637  
+**Stamp:** `BUILD 06:37 UTC`  
 **Executor:** `@PolyCop_BOT` only. Copy **off**.
 
 ---
@@ -37,5 +37,5 @@ Copy stays off. The chart is for eyes, not for enabling a wallet.
 ## Changelog
 
 ```
-2026-09-11  06:36 UTC  Live BTC/ETH/SOL from Binance on Co robić. Copy off.
+2026-09-11  06:37 UTC  Live BTC/ETH/SOL from Binance on Co robić. Copy off.
 ```
