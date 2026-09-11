@@ -1,7 +1,7 @@
 {
   "status": "done",
   "goal": "Find one specialist a $39 stack can copy at $5 after 60/90d, not Top 8.",
-  "checked": 1055,
+  "checked": 1061,
   "log": [
     "plan cats=SPORTS,POLITICS,FINANCE,CULTURE,TECH,ECONOMICS extra={\"SPORTS\":[250,300]} x_skip=",
     "LB SPORTS ALL off=150 n=50",
@@ -30,48 +30,48 @@
     "LB ECONOMICS ALL off=200 n=50",
     "LB ECONOMICS MONTH off=100 n=50",
     "LB ECONOMICS MONTH off=150 n=50",
-    "new wallets to scan: 1056",
-    "scanned 30, queued 9",
+    "new wallets to scan: 1062",
+    "scanned 45, queued 11",
     "scanned 60, queued 12",
-    "scanned 90, queued 12",
-    "scanned 135, queued 12",
+    "scanned 120, queued 12",
     "scanned 150, queued 12",
-    "scanned 165, queued 17",
-    "scanned 180, queued 21",
+    "scanned 165, queued 15",
     "scanned 195, queued 24",
-    "scanned 210, queued 24",
-    "scanned 225, queued 24",
-    "scanned 240, queued 24",
     "scanned 255, queued 24",
     "scanned 270, queued 24",
-    "scanned 330, queued 24",
-    "scanned 360, queued 25",
-    "scanned 375, queued 30",
+    "scanned 300, queued 24",
+    "scanned 315, queued 24",
+    "scanned 345, queued 24",
+    "scanned 390, queued 30",
+    "scanned 405, queued 30",
     "scanned 435, queued 30",
-    "scanned 465, queued 30",
+    "scanned 450, queued 30",
     "scanned 480, queued 30",
     "scanned 510, queued 30",
-    "scanned 540, queued 35",
+    "scanned 525, queued 30",
     "scanned 555, queued 36",
     "scanned 570, queued 36",
-    "scanned 585, queued 36",
-    "scanned 690, queued 36",
+    "scanned 600, queued 36",
+    "scanned 675, queued 36",
+    "scanned 705, queued 36",
     "scanned 720, queued 36",
+    "scanned 750, queued 36",
     "scanned 765, queued 36",
-    "scanned 840, queued 36",
-    "scanned 885, queued 36",
-    "scanned 900, queued 36",
-    "scanned 945, queued 36",
-    "scanned 960, queued 36",
+    "scanned 780, queued 36",
+    "scanned 795, queued 36",
+    "scanned 870, queued 36",
+    "scanned 915, queued 36",
+    "scanned 990, queued 36",
+    "scanned 1005, queued 36",
     "scanned 1020, queued 36",
-    "scanned 1035, queued 36",
+    "scanned 1050, queued 36",
     "simming 36",
     "0x411A2D42fefF12 POLITICS   d=612 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "ExhaustedBoyBill POLITICS   d=551 60=+0.0 90=+0.0 conc=1.0 cg=None",
-    "Brokie           POLITICS   d=263 60=+0.0 90=+15.4 conc=1.0 cg=Avoid",
-    "petanimal        POLITICS   d=380 60=+0.0 90=+0.0 conc=0.5 cg=Copy with caution",
+    "Brokie           POLITICS   d=263 60=+0.0 90=+15.4 conc=1.0 cg=None",
+    "petanimal        POLITICS   d=380 60=+0.0 90=+0.0 conc=0.5 cg=None",
     "AWice            POLITICS   d=761 60=+0.0 90=+0.0 conc=0.31 cg=None",
-    "ASOEMFE          POLITICS   d=134 60=+0.0 90=+0.0 conc=1.0 cg=Avoid",
+    "ASOEMFE          POLITICS   d=134 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "stevn            CULTURE    d=330 60=+0.0 90=+0.0 conc=0.59 cg=None",
     "Spice-511        CULTURE    d=592 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "GetEvenOrGetEven CULTURE    d=538 60=+0.0 90=+0.0 conc=1.0 cg=None",
@@ -94,8 +94,8 @@
     "BroadwaySlasher  SPORTS     d=147 60=+0.0 90=+0.0 conc=0.56 cg=None",
     "Tirdenchi        SPORTS     d=264 60=+0.0 90=+9.7 conc=1.0 cg=None",
     "Jargs            SPORTS     d=168 60=+0.0 90=+0.0 conc=1.0 cg=None",
+    "SportsPsychology SPORTS     d=184 60=+0.0 90=+4.6 conc=0.62 cg=None",
     "GrizzliesSuck    SPORTS     d=82 60=+0.0 90=+0.0 conc=1.0 cg=None",
-    "quiteimprobable  SPORTS     d=124 60=+0.0 90=+0.0 conc=0.55 cg=None",
     "DumbMoney1       ECONOMICS  d=581 60=+0.0 90=+0.0 conc=0.78 cg=None",
     "Poyo             ECONOMICS  d=1044 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "H27JA            ECONOMICS  d=684 60=+0.0 90=-5.0 conc=0.15 cg=None",
@@ -118,7 +118,7 @@
       "top_market": "Will Bitcoin hit $100k by Friday?",
       "candle": 0.0,
       "copygrade": {
-        "status": "not_indexed"
+        "status": "rate_limit"
       },
       "score": -13.5
     },
@@ -169,7 +169,7 @@
       "top_market": "Will Donald Trump win the 2024 US Presidential Election?",
       "candle": 0.14,
       "copygrade": {
-        "status": "not_indexed"
+        "status": "rate_limit"
       },
       "score": -56.1
     }
@@ -187,9 +187,9 @@
     "top_market": "Will Bitcoin hit $100k by Friday?",
     "candle": 0.0,
     "copygrade": {
-      "status": "not_indexed"
+      "status": "rate_limit"
     },
     "score": -13.5
   },
-  "updated_at": "2026-09-11T13:40:00.876963+00:00"
+  "updated_at": "2026-09-11T13:59:36.696101+00:00"
 }
