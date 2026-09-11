@@ -812,6 +812,34 @@
     return pool[0] || null;
   }
 
+  function enClean(s) {
+    var out = String(s || "");
+    var pairs = [
+      [/jeden event/gi, "one event"],
+      [/za mało filli/gi, "too few fills"],
+      [/Najbliżej:/g, "Closest:"],
+      [/Brakuje:/g, "Missing:"],
+      [/Patrz w Symulacji\./g, "Look in Simulation."],
+      [/W Telegramie nic nie klikasz\./g, "Do nothing in Telegram."],
+      [/Następny bieg:/g, "Next run:"],
+      [/głębiej /g, "deeper "],
+      [/potem /g, "then "],
+      [/Pomijamy /g, "Skip "],
+      [/jako pick\./g, "as a pick."],
+      [/Filtr X:/g, "X filter:"],
+      [/nie seria/g, "not a series"],
+      [/Hunt idzie dalej\./g, "Hunt continues."],
+      [/Nic nie włączasz\./g, "Do not enable."]
+    ];
+    for (var i = 0; i < pairs.length; i++) out = out.replace(pairs[i][0], pairs[i][1]);
+    return out;
+  }
+
+  function briefLine(sol, enKey, plKey, lang) {
+    var raw = lang === "en" ? (sol[enKey] || sol[plKey] || "") : (sol[plKey] || "");
+    return lang === "en" ? enClean(raw) : raw;
+  }
+
   function renderBrief(s, rows) {
     const verb = $("do-brief-verb");
     const body = $("do-brief-body");
@@ -824,10 +852,10 @@
     const sol = state.solutions || {};
     const lang = state.lang === "en" ? "en" : "pl";
     if (sol.now_pl || sol.now_en) {
-      body.textContent = sol[lang === "en" ? "now_en" : "now_pl"] || sol.now_pl || "";
-      if (path) path.textContent = sol[lang === "en" ? "path_en" : "path_pl"] || sol.path_pl || "";
-      if (next) next.textContent = sol[lang === "en" ? "hunt_next_en" : "hunt_next_pl"] || sol.hunt_next_pl || "";
-      if (xline) xline.textContent = sol[lang === "en" ? "x_en" : "x_pl"] || sol.x_pl || "—";
+      body.textContent = briefLine(sol, "now_en", "now_pl", lang);
+      if (path) path.textContent = briefLine(sol, "path_en", "path_pl", lang);
+      if (next) next.textContent = briefLine(sol, "hunt_next_en", "hunt_next_pl", lang);
+      if (xline) xline.textContent = briefLine(sol, "x_en", "x_pl", lang) || "—";
       const srcBits = [sol.source === "claude" ? t("do.solClaude") : t("do.solLab")];
       if (sol.x_source === "grok") srcBits.push(t("do.solGrok"));
       else if (sol.x_source === "off" || sol.x_source === "error") srcBits.push(t("do.solGrokOff"));
