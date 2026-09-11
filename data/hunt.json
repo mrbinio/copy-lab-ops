@@ -1,7 +1,7 @@
 {
   "status": "done",
   "goal": "Find one specialist a $39 stack can copy at $5 after 60/90d, not Top 8.",
-  "checked": 999,
+  "checked": 997,
   "log": [
     "LB POLITICS ALL off=150 n=50",
     "LB POLITICS ALL off=200 n=50",
@@ -27,7 +27,7 @@
     "LB ECONOMICS ALL off=200 n=50",
     "LB ECONOMICS MONTH off=100 n=50",
     "LB ECONOMICS MONTH off=150 n=50",
-    "new wallets to scan: 999",
+    "new wallets to scan: 997",
     "scanned 15, queued 6",
     "scanned 30, queued 6",
     "scanned 60, queued 6",
@@ -55,13 +55,14 @@
     "scanned 630, queued 36",
     "scanned 645, queued 36",
     "scanned 675, queued 36",
-    "scanned 720, queued 36",
-    "scanned 735, queued 36",
-    "scanned 765, queued 36",
+    "scanned 705, queued 36",
+    "scanned 750, queued 36",
     "scanned 795, queued 36",
-    "scanned 855, queued 36",
-    "scanned 870, queued 36",
-    "scanned 960, queued 36",
+    "scanned 825, queued 36",
+    "scanned 840, queued 36",
+    "scanned 930, queued 36",
+    "scanned 975, queued 36",
+    "scanned 990, queued 36",
     "simming 36",
     "Brokie           POLITICS   d=263 60=+0.0 90=+15.4 conc=1.0 cg=None",
     "0x411A2D42fefF12 POLITICS   d=612 60=+0.0 90=+0.0 conc=1.0 cg=None",
@@ -188,5 +189,5 @@
     },
     "score": -26.5
   },
-  "updated_at": "2026-09-11T09:06:54.301840+00:00"
+  "updated_at": "2026-09-11T09:25:25.186991+00:00"
 }
