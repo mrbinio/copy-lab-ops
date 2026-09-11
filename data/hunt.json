@@ -60,7 +60,6 @@
     "scanned 870, queued 36",
     "scanned 885, queued 36",
     "scanned 915, queued 36",
-    "scanned 945, queued 36",
     "simming 36",
     "Brokie           POLITICS   d=263 60=+0.0 90=+15.4 conc=1.0 cg=None",
     "0x411A2D42fefF12 POLITICS   d=612 60=+0.0 90=+0.0 conc=1.0 cg=None",
@@ -170,5 +169,5 @@
     },
     "score": -55.1
   },
-  "updated_at": "2026-09-11T10:01:37.682277+00:00"
+  "updated_at": "2026-09-11T10:20:14.352035+00:00"
 }
