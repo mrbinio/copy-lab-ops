@@ -40,8 +40,11 @@
       "do.briefNone": "Żaden tor nie przeszedł sitów. Dziś nic nie włączasz i nic nie dokupujesz. Crypto-świece zostają NIE.",
       "do.pathK": "Najbliższa ścieżka",
       "do.nextK": "Hunt teraz szuka",
+      "do.xK": "Filtr X",
       "do.solClaude": "Claude z taśmy huntu. Nie włącza copy.",
       "do.solLab": "Z liczb huntu. Claude bez klucza — ten sam werdykt z sitów.",
+      "do.solGrok": "Grok na X. Nie włącza copy.",
+      "do.solGrokOff": "Filtr X czeka na klucz xAI.",
       "do.warn": "Turn On All Copy włącza całą starą listę. Tak poszła strata −$13.58 na invorserze.",
       "lane.title": "Rynki teraz",
       "lane.lead": "Który tor ma edge, a który jest martwy. Hunt przepisuje taśmę w pętli 24/7. Klik otwiera nazwy w Symulacji. Copy sam się nie przełącza.",
@@ -161,6 +164,8 @@
       "how.a6": "Z Binance, w Twojej przeglądarce. Wybierasz krypto i zakres. GitHub ich nie serwuje. Strona nic nie kupuje. To nie sygnał do copy.",
       "how.q7": "Co robi Claude?",
       "how.a7": "Po każdym huncie czyta taśmę i pisze najbliższą ścieżkę $5 / $15 plus gdzie szukać dalej. Nie włącza copy. Sity zostają sitem.",
+      "how.q8": "Co robi Grok na X?",
+      "how.a8": "Po Claude sprawdza 3–5 najbliższych nicków na X: seria czy jeden news. Może odciąć fałszywe prawie. Nie odblokowuje conc, świec ani Avoid. Nie włącza copy.",
       "how.card": "Kartka do PolyCop (na później)",
       "how.cardLead": "Lab ją wypełnia. Nie wciskasz All Copy.",
       "how.ban": "Tego nie wklejasz",
@@ -242,8 +247,11 @@
       "do.briefNone": "No lane cleared the gates. Do not enable and do not add cash. Candle crypto stays NO.",
       "do.pathK": "Closest path",
       "do.nextK": "Hunt is searching",
+      "do.xK": "X filter",
       "do.solClaude": "Claude from the hunt tape. Does not enable copy.",
       "do.solLab": "From hunt numbers. No Claude key — same gate verdict.",
+      "do.solGrok": "Grok on X. Does not enable copy.",
+      "do.solGrokOff": "X filter waiting for the xAI key.",
       "do.warn": "Turn On All Copy enables the whole old list. That is how invorser lost −$13.58.",
       "lane.title": "Markets now",
       "lane.lead": "Which book has an edge and which is dead. Hunt rewrites the tape in a 24/7 loop. Click opens names in Simulation. Copy does not switch itself.",
@@ -363,6 +371,8 @@
       "how.a6": "From Binance, in your browser. You pick the coin and the range. GitHub does not serve them. The page does not trade. This is not a signal to enable copy.",
       "how.q7": "What does Claude do?",
       "how.a7": "After each hunt it reads the tape and writes the closest $5 / $15 path plus where to search next. It does not enable copy. The gates stay the gates.",
+      "how.q8": "What does Grok on X do?",
+      "how.a8": "After Claude it checks 3–5 closest nicks on X: series or one news spike. It can cut a false almost. It cannot clear conc, candles, or Avoid. It does not enable copy.",
       "how.card": "PolyCop paste card (later)",
       "how.cardLead": "The lab fills it. Do not press All Copy.",
       "how.ban": "Do not paste",
@@ -807,6 +817,7 @@
     const body = $("do-brief-body");
     const path = $("do-brief-path");
     const next = $("do-brief-next");
+    const xline = $("do-brief-x");
     const src = $("do-brief-src");
     if (!verb || !body) return;
     verb.textContent = t("do.briefVerb");
@@ -816,11 +827,16 @@
       body.textContent = sol[lang === "en" ? "now_en" : "now_pl"] || sol.now_pl || "";
       if (path) path.textContent = sol[lang === "en" ? "path_en" : "path_pl"] || sol.path_pl || "";
       if (next) next.textContent = sol[lang === "en" ? "hunt_next_en" : "hunt_next_pl"] || sol.hunt_next_pl || "";
-      if (src) src.textContent = sol.source === "claude" ? t("do.solClaude") : t("do.solLab");
+      if (xline) xline.textContent = sol[lang === "en" ? "x_en" : "x_pl"] || sol.x_pl || "—";
+      const srcBits = [sol.source === "claude" ? t("do.solClaude") : t("do.solLab")];
+      if (sol.x_source === "grok") srcBits.push(t("do.solGrok"));
+      else if (sol.x_source === "off" || sol.x_source === "error") srcBits.push(t("do.solGrokOff"));
+      if (src) src.textContent = srcBits.join(" ");
       return;
     }
     if (path) path.textContent = "—";
     if (next) next.textContent = "—";
+    if (xline) xline.textContent = "—";
     if (src) src.textContent = t("do.solLab");
     const top = pickBriefLane(buildLanes(s, rows));
     if (!top || !top.best) {

@@ -239,7 +239,7 @@ input[type="email"] {
   text-transform: uppercase;
   color: var(--dim);
 }
-#do-brief-path, #do-brief-next { margin: 0; color: var(--ink); max-width: 46rem; }
+#do-brief-path, #do-brief-next, #do-brief-x { margin: 0; color: var(--ink); max-width: 46rem; }
 #do-brief-src { margin: 0.75rem 0 0; color: var(--dim); }
 .jump { margin-top: 0.2rem; margin-right: 0.45rem; }
 
