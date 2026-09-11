@@ -68,7 +68,7 @@
     "ASOEMFE          POLITICS   d=134 60=+0.0 90=+0.0 conc=1.0 cg=Avoid",
     "sciuboi          POLITICS   d=107 60=-5.0 90=+7.5 conc=1.0 cg=None",
     "Poyo             CULTURE    d=1044 60=+0.0 90=+0.0 conc=1.0 cg=Copy with caution",
-    "EscalateFund     CULTURE    d=277 60=+0.0 90=+0.0 conc=1.0 cg=None",
+    "EscalateFund     CULTURE    d=278 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "TheRedChip       CULTURE    d=184 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "stevn            CULTURE    d=330 60=+0.0 90=+0.0 conc=0.59 cg=None",
     "crystalfalls     CULTURE    d=519 60=+0.0 90=+0.0 conc=1.0 cg=None",
@@ -169,5 +169,5 @@
     },
     "score": -55.1
   },
-  "updated_at": "2026-09-11T00:52:16.864484+00:00"
+  "updated_at": "2026-09-11T01:10:42.394873+00:00"
 }
