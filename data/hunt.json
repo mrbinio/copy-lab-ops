@@ -79,7 +79,7 @@
     "whatisthisclownm TECH       d=995 60=+0.0 90=+0.0 conc=0.43 cg=None",
     "fgrnkj           TECH       d=193 60=+0.0 90=+0.0 conc=0.44 cg=None",
     "George.Smiley    TECH       d=341 60=-5.0 90=+3.1 conc=0.73 cg=None",
-    "Optimus-         TECH       d=125 60=+0.0 90=+0.0 conc=1.0 cg=None",
+    "Optimus-         TECH       d=126 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "7sevndragon      FINANCE    d=250 60=+0.0 90=+17.6 conc=0.62 cg=None",
     "Snoorrason       FINANCE    d=100 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "debased          FINANCE    d=85 60=+0.0 90=+0.0 conc=1.0 cg=None",
@@ -170,5 +170,5 @@
     },
     "score": -55.1
   },
-  "updated_at": "2026-09-11T09:43:27.270587+00:00"
+  "updated_at": "2026-09-11T10:01:37.682277+00:00"
 }
