@@ -1,7 +1,7 @@
 {
   "status": "done",
   "goal": "Front of board plus leftover. Rank. Do not enable copy.",
-  "checked": 818,
+  "checked": 811,
   "log": [
     "tick front+leftover",
     "simming 24",
@@ -22,7 +22,7 @@
     "roundtripped     SPORTS     d=278 60=+2.3 90=+1.7 conc=1.0 cg=Avoid",
     "eth10001         SPORTS     d=251 60=+0.0 90=+0.0 conc=1.0 cg=Avoid",
     "Railcool         POLITICS   d=147 60=+0.0 90=+0.0 conc=0.32 cg=Avoid",
-    "b324u            SPORTS     d=192 60=+7.5 90=+7.5 conc=0.53 cg=Copy with caution",
+    "b324u            SPORTS     d=192 60=+7.5 90=+7.5 conc=0.53 cg=None",
     "0xPolymarketAnon FINANCE    d=648 60=+0.0 90=+0.0 conc=0.6 cg=None",
     "BoggsFromShawsha SPORTS     d=150 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "0xc8C2e35222F6b2 FINANCE    d=159 60=+0.0 90=+0.0 conc=0.43 cg=None",
@@ -46,14 +46,7 @@
       "top_market": "Will Trump visit China by April 30?",
       "candle": 0.01,
       "copygrade": {
-        "status": "ok",
-        "score": 54,
-        "label": "Copy with caution",
-        "edge_real": -64.3,
-        "farming": {
-          "level": "watch",
-          "signals": 1
-        }
+        "status": "rate_limit"
       },
       "score": -16.2,
       "lane": "recheck"
@@ -101,23 +94,16 @@
     "top_market": "Will Trump visit China by April 30?",
     "candle": 0.01,
     "copygrade": {
-      "status": "ok",
-      "score": 54,
-      "label": "Copy with caution",
-      "edge_real": -64.3,
-      "farming": {
-        "level": "watch",
-        "signals": 1
-      }
+      "status": "rate_limit"
     },
     "score": -16.2,
     "lane": "recheck"
   },
   "journal": {
-    "checked": 818,
+    "checked": 811,
     "queued": 24,
     "drops": {
-      "pre_sim": 794
+      "pre_sim": 787
     },
     "wait_n": 0,
     "items": [
@@ -326,5 +312,5 @@
       "conc": null
     }
   ],
-  "updated_at": "2026-09-14T11:27:25.079151+00:00"
+  "updated_at": "2026-09-14T12:38:41.302345+00:00"
 }
