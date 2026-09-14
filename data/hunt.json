@@ -1,10 +1,10 @@
 {
   "status": "done",
   "goal": "Front, leftover, stale pluses, live tape, volume week. Rank. Do not enable copy.",
-  "checked": 1198,
+  "checked": 1196,
   "log": [
     "tick front+leftover",
-    "simming 39",
+    "simming 41",
     "0943             ECONOMICS  d=220 60=+0.0 90=+0.0 conc=1.0 cg=Avoid",
     "0xCB3143ee858E14 ECONOMICS  d=66 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "debased          ECONOMICS  d=88 60=+0.0 90=+0.0 conc=1.0 cg=None",
@@ -35,6 +35,8 @@
     "0x76078561b3382e POLITICS   d=134 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "0xD9B9de38B5Af03 POLITICS   d=200 60=+31.1 90=+0.0 conc=0.59 cg=None",
     "raymondpoincare  POLITICS   d=110 60=-5.0 90=-2.9 conc=0.41 cg=None",
+    "0x13b72e0a       POLITICS   d=80 60=+3.1 90=+0.0 conc=1.0 cg=None",
+    "d78zdjt83wms     POLITICS   d=79 60=+0.0 90=-2.5 conc=1.0 cg=None",
     "Bsv              POLITICS   d=363 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "BabyGroot        POLITICS   d=87 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "033033033        POLITICS   d=170 60=+0.0 90=+0.0 conc=1.0 cg=None",
@@ -148,33 +150,13 @@
     "lane": "stale"
   },
   "journal": {
-    "checked": 1198,
-    "queued": 39,
+    "checked": 1196,
+    "queued": 41,
     "drops": {
-      "pre_sim": 1159
+      "pre_sim": 1155
     },
     "wait_n": 1,
     "items": [
-      {
-        "name": "jacky00",
-        "cat": "OTHER",
-        "tone": "no",
-        "why": "one_event",
-        "w60": 19.6,
-        "w90": 19.6,
-        "days": 295.0,
-        "conc": 0.5
-      },
-      {
-        "name": "Rumpelstiltskin",
-        "cat": "OTHER",
-        "tone": "no",
-        "why": "one_event",
-        "w60": 1.2,
-        "w90": 1.2,
-        "days": 477.0,
-        "conc": 0.52
-      },
       {
         "name": "0x76078561b3382e",
         "cat": "POLITICS",
@@ -204,6 +186,26 @@
         "w90": -2.9,
         "days": 110.0,
         "conc": 0.41
+      },
+      {
+        "name": "0x13b72e0a",
+        "cat": "POLITICS",
+        "tone": "no",
+        "why": "one_event",
+        "w60": 3.1,
+        "w90": 0.0,
+        "days": 80.0,
+        "conc": 1.0
+      },
+      {
+        "name": "d78zdjt83wms",
+        "cat": "POLITICS",
+        "tone": "no",
+        "why": "one_event",
+        "w60": 0.0,
+        "w90": -2.5,
+        "days": 79.0,
+        "conc": 1.0
       },
       {
         "name": "Bsv",
@@ -360,5 +362,5 @@
       "conc": null
     }
   ],
-  "updated_at": "2026-09-14T13:27:56.515069+00:00"
+  "updated_at": "2026-09-14T13:28:46.227927+00:00"
 }
