@@ -1,10 +1,10 @@
 {
   "status": "done",
   "goal": "Front, leftover, stale pluses, live tape, volume week. Rank. Do not enable copy.",
-  "checked": 807,
+  "checked": 1202,
   "log": [
     "tick front+leftover",
-    "simming 43",
+    "simming 38",
     "0943             ECONOMICS  d=220 60=+0.0 90=+0.0 conc=1.0 cg=Avoid",
     "0xCB3143ee858E14 ECONOMICS  d=66 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "debased          ECONOMICS  d=88 60=+0.0 90=+0.0 conc=1.0 cg=Avoid",
@@ -15,39 +15,34 @@
     "anon1933         CULTURE    d=500 60=+0.0 90=+0.0 conc=0.57 cg=None",
     "chilling         FINANCE    d=118 60=+0.0 90=+0.0 conc=0.4 cg=None",
     "0xPolymath       CULTURE    d=309 60=+0.0 90=+0.0 conc=1.0 cg=None",
-    "SemyonMarmeladov ECONOMICS  d=194 60=+0.0 90=+0.0 conc=1.0 cg=Avoid",
-    "Dropper          CULTURE    d=147 60=+0.0 90=+0.0 conc=1.0 cg=Avoid",
-    "robban888        SPORTS     d=74 60=+0.0 90=+3.2 conc=0.38 cg=Avoid",
-    "tyutgbhnm        SPORTS     d=99 60=+18.9 90=+22.7 conc=0.53 cg=Avoid",
+    "Dropper          CULTURE    d=147 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "occasionalAwaren FINANCE    d=446 60=+0.0 90=+0.0 conc=1.0 cg=None",
-    "roundtripped     SPORTS     d=278 60=+2.3 90=+1.7 conc=1.0 cg=Avoid",
-    "eth10001         SPORTS     d=251 60=+0.0 90=+0.0 conc=1.0 cg=Avoid",
-    "Railcool         POLITICS   d=147 60=+0.0 90=+0.0 conc=0.32 cg=Avoid",
-    "0xPolymarketAnon FINANCE    d=648 60=+0.0 90=+0.0 conc=0.6 cg=None",
-    "BoggsFromShawsha SPORTS     d=150 60=+0.0 90=+0.0 conc=1.0 cg=None",
-    "0xc8C2e35222F6b2 FINANCE    d=159 60=+0.0 90=+0.0 conc=0.43 cg=None",
-    "77603dad7edbb9a2 FINANCE    d=202 60=+0.0 90=+0.0 conc=0.52 cg=None",
-    "amb2             FINANCE    d=281 60=+0.0 90=+0.0 conc=1.0 cg=None",
-    "Rookieoftheyear  FINANCE    d=217 60=+0.0 90=+0.0 conc=0.2 cg=None",
-    "Jittz            SPORTS     d=92 60=+12.2 90=+19.0 conc=0.35 cg=None",
-    "gambamaster      SPORTS     d=84 60=+7.3 90=+38.0 conc=0.53 cg=None",
+    "Railcool         POLITICS   d=147 60=+0.0 90=+0.0 conc=0.32 cg=None",
+    "DonaldinhoTrumpi MENTIONS   d=175 60=+0.0 90=-5.0 conc=1.0 cg=None",
+    "JustAProfessor   POLITICS   d=197 60=-15.0 90=-15.0 conc=0.18 cg=None",
+    "anoin123         POLITICS   d=185 60=+0.0 90=+3.4 conc=0.79 cg=None",
+    "BrownBees        TECH       d=107 60=+8.8 90=+0.0 conc=1.0 cg=None",
+    "gopfan2          POLITICS   d=175 60=+0.0 90=+0.0 conc=1.0 cg=None",
+    "suvorov          ECONOMICS  d=177 60=+0.0 90=+0.0 conc=0.25 cg=None",
+    "cynical.reason   CULTURE    d=119 60=+0.0 90=+0.0 conc=1.0 cg=None",
+    "ClaudeAI         ECONOMICS  d=85 60=+0.0 90=+0.0 conc=0.53 cg=None",
+    "Official-Market- ECONOMICS  d=753 60=+0.0 90=+0.0 conc=0.42 cg=None",
+    "viltalik         ECONOMICS  d=101 60=+0.0 90=+0.0 conc=0.67 cg=None",
+    "BryanPunishMK22  ECONOMICS  d=292 60=+0.0 90=+0.0 conc=0.48 cg=None",
     "0xc938fejdifuiwf OTHER      d=157 60=+36.2 90=+36.2 conc=0.31 cg=None",
-    "BrownBees        OTHER      d=107 60=+8.8 90=+0.0 conc=1.0 cg=None",
-    "0x760f1063       SPORTS     d=109 60=+8.5 90=+0.0 conc=0.44 cg=None",
     "jacky00          OTHER      d=295 60=+19.6 90=+19.6 conc=0.5 cg=None",
-    "martingaleking   SPORTS     d=140 60=+14.2 90=+16.2 conc=0.34 cg=None",
-    "Antblack         SPORTS     d=80 60=+8.4 90=-6.4 conc=0.37 cg=Copy with caution",
-    "b324u            SPORTS     d=192 60=+7.5 90=+7.5 conc=0.53 cg=None",
-    "0xad7f8A6fa4A425 SPORTS     d=372 60=+8.2 90=+8.2 conc=0.66 cg=None",
     "Rumpelstiltskin  OTHER      d=477 60=+1.2 90=+1.2 conc=0.52 cg=None",
-    "AnonymousUsernam SPORTS     d=172 60=+0.0 90=+0.0 conc=1.0 cg=None",
-    "SS787878         SPORTS     d=496 60=+25.2 90=+25.2 conc=0.61 cg=None",
-    "0x228B8d11EBa89B SPORTS     d=59 60=+0.0 90=+0.0 conc=1.0 cg=None",
-    "Kch-Temp         SPORTS     d=97 60=+0.0 90=+0.0 conc=1.0 cg=None",
+    "raymondpoincare  POLITICS   d=110 60=-5.0 90=-2.9 conc=0.41 cg=None",
+    "Bsv              POLITICS   d=363 60=+0.0 90=+0.0 conc=1.0 cg=None",
+    "zhaoyuyou        POLITICS   d=308 60=+0.0 90=+0.0 conc=0.15 cg=None",
     "BabyGroot        POLITICS   d=87 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "033033033        POLITICS   d=170 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "ZnotluvuiSamez   POLITICS   d=161 60=+0.0 90=+0.0 conc=0.33 cg=None",
-    "11122            POLITICS   d=66 60=+0.0 90=+0.0 conc=1.0 cg=None"
+    "11122            POLITICS   d=66 60=+0.0 90=+0.0 conc=1.0 cg=None",
+    "Q96s3kwozynxpau  POLITICS   d=247 60=+0.0 90=+0.0 conc=1.0 cg=None",
+    "erokha           POLITICS   d=220 60=+7.5 90=+7.5 conc=0.56 cg=None",
+    "Grodan           POLITICS   d=187 60=+0.0 90=-3.9 conc=0.33 cg=None",
+    "fiter            POLITICS   d=150 60=+0.0 90=+0.0 conc=1.0 cg=None"
   ],
   "candidates": [
     {
@@ -71,86 +66,6 @@
       "lane": "stale"
     },
     {
-      "username": "martingaleking",
-      "wallet": "0x52f5efdfb8759d4b9be1fbe63f80401474445e8a",
-      "cat": "SPORTS",
-      "domain": "sport",
-      "history_days": 140.2,
-      "w60": 14.15,
-      "w90": 16.19,
-      "w60_copies": 9,
-      "w90_copies": 10,
-      "copies": 12,
-      "conc": 0.34,
-      "top_market": "Nuggets vs. Timberwolves",
-      "candle": 0.0,
-      "copygrade": {
-        "status": "rate_limit"
-      },
-      "score": 35.8,
-      "lane": "stale"
-    },
-    {
-      "username": "Jittz",
-      "wallet": "0xd47107e357c4688bffc76504541f5280760bedf8",
-      "cat": "SPORTS",
-      "domain": "sport",
-      "history_days": 92.2,
-      "w60": 12.24,
-      "w90": 19.02,
-      "w60_copies": 4,
-      "w90_copies": 6,
-      "copies": 10,
-      "conc": 0.35,
-      "top_market": "Will Spain win on 2026-06-15?",
-      "candle": 0.0,
-      "copygrade": {
-        "status": "rate_limit"
-      },
-      "score": 31.9,
-      "lane": "stale"
-    },
-    {
-      "username": "gambamaster",
-      "wallet": "0x9ee8bbc36d378af72e5f6b8e2ea2eb67c05a89de",
-      "cat": "SPORTS",
-      "domain": "sport",
-      "history_days": 84.1,
-      "w60": 7.28,
-      "w90": 38.04,
-      "w60_copies": 5,
-      "w90_copies": 9,
-      "copies": 9,
-      "conc": 0.53,
-      "top_market": "Will England win on 2026-06-23?",
-      "candle": 0.0,
-      "copygrade": {
-        "status": "rate_limit"
-      },
-      "score": 12.3,
-      "lane": "stale"
-    },
-    {
-      "username": "SS787878",
-      "wallet": "0xdd7e989aee938a94a878256f00d1121be1760be3",
-      "cat": "SPORTS",
-      "domain": "sport",
-      "history_days": 495.5,
-      "w60": 25.25,
-      "w90": 25.25,
-      "w60_copies": 8,
-      "w90_copies": 8,
-      "copies": 5,
-      "conc": 0.61,
-      "top_market": "Pump.fun announces public raise sold out in the first hour?",
-      "candle": 0.0,
-      "copygrade": {
-        "status": "rate_limit"
-      },
-      "score": 5.1,
-      "lane": "vol"
-    },
-    {
       "username": "jacky00",
       "wallet": "0x9ca079e7d80ee3d63bc2b29c7e4934c3d6a41616",
       "cat": "OTHER",
@@ -168,26 +83,6 @@
         "status": "rate_limit"
       },
       "score": -1.8,
-      "lane": "stale"
-    },
-    {
-      "username": "b324u",
-      "wallet": "0xad2b18343919cf24b56b6f822360937ab322f091",
-      "cat": "SPORTS",
-      "domain": "sport",
-      "history_days": 192.2,
-      "w60": 7.5,
-      "w90": 7.5,
-      "w60_copies": 3,
-      "w90_copies": 3,
-      "copies": 6,
-      "conc": 0.53,
-      "top_market": "Will Trump visit China by April 30?",
-      "candle": 0.01,
-      "copygrade": {
-        "status": "rate_limit"
-      },
-      "score": -16.2,
       "lane": "stale"
     },
     {
@@ -211,51 +106,24 @@
       "lane": "stale"
     },
     {
-      "username": "0xad7f8A6fa4A425F808d71Fc4D79B0974a3fA0988-1756962986716",
-      "wallet": "0xad7f8a6fa4a425f808d71fc4d79b0974a3fa0988",
-      "cat": "SPORTS",
-      "domain": "sport",
-      "history_days": 372.5,
-      "w60": 8.16,
-      "w90": 8.16,
+      "username": "erokha",
+      "wallet": "0x7dbc916b0c3360c955870a49304d75916a64d4ad",
+      "cat": "POLITICS",
+      "domain": "other",
+      "history_days": 219.8,
+      "w60": 7.46,
+      "w90": 7.46,
       "w60_copies": 3,
       "w90_copies": 3,
       "copies": 5,
-      "conc": 0.66,
-      "top_market": "Will Jannik Sinner win the 2025 US Open?",
+      "conc": 0.56,
+      "top_market": "Will there be between 10 and 13 US strikes on Somalia in February 2026",
       "candle": 0.0,
       "copygrade": {
         "status": "rate_limit"
       },
-      "score": -31.1,
-      "lane": "stale"
-    },
-    {
-      "username": "tyutgbhnm",
-      "wallet": "0x5ad7346a9f6b4a1ad852ec8e0716d446527cae48",
-      "cat": "SPORTS",
-      "domain": "sport",
-      "history_days": 99.4,
-      "w60": 18.94,
-      "w90": 22.67,
-      "w60_copies": 4,
-      "w90_copies": 6,
-      "copies": 6,
-      "conc": 0.53,
-      "top_market": "Will Portugal vs. DR Congo end in a draw?",
-      "candle": 0.0,
-      "copygrade": {
-        "status": "ok",
-        "score": 33,
-        "label": "Avoid",
-        "edge_real": -100,
-        "farming": {
-          "level": "clean",
-          "signals": 0
-        }
-      },
-      "score": -73.6,
-      "lane": "recheck"
+      "score": -28.5,
+      "lane": "vol"
     }
   ],
   "pick": {
@@ -279,13 +147,23 @@
     "lane": "stale"
   },
   "journal": {
-    "checked": 807,
-    "queued": 43,
+    "checked": 1202,
+    "queued": 38,
     "drops": {
-      "pre_sim": 764
+      "pre_sim": 1164
     },
-    "wait_n": 2,
+    "wait_n": 1,
     "items": [
+      {
+        "name": "0xc938fejdifuiwf",
+        "cat": "OTHER",
+        "tone": "wait",
+        "why": "partial",
+        "w60": 36.2,
+        "w90": 36.2,
+        "days": 157.0,
+        "conc": 0.31
+      },
       {
         "name": "jacky00",
         "cat": "OTHER",
@@ -295,46 +173,6 @@
         "w90": 19.6,
         "days": 295.0,
         "conc": 0.5
-      },
-      {
-        "name": "martingaleking",
-        "cat": "SPORTS",
-        "tone": "wait",
-        "why": "partial",
-        "w60": 14.2,
-        "w90": 16.2,
-        "days": 140.0,
-        "conc": 0.34
-      },
-      {
-        "name": "Antblack",
-        "cat": "SPORTS",
-        "tone": "no",
-        "why": "dead_edge",
-        "w60": 8.4,
-        "w90": -6.4,
-        "days": 80.0,
-        "conc": 0.37
-      },
-      {
-        "name": "b324u",
-        "cat": "SPORTS",
-        "tone": "no",
-        "why": "one_event",
-        "w60": 7.5,
-        "w90": 7.5,
-        "days": 192.0,
-        "conc": 0.53
-      },
-      {
-        "name": "0xad7f8A6fa4A425",
-        "cat": "SPORTS",
-        "tone": "no",
-        "why": "one_event",
-        "w60": 8.2,
-        "w90": 8.2,
-        "days": 372.0,
-        "conc": 0.66
       },
       {
         "name": "Rumpelstiltskin",
@@ -347,44 +185,34 @@
         "conc": 0.52
       },
       {
-        "name": "AnonymousUsernam",
-        "cat": "SPORTS",
+        "name": "raymondpoincare",
+        "cat": "POLITICS",
+        "tone": "no",
+        "why": "no_both",
+        "w60": -5.0,
+        "w90": -2.9,
+        "days": 110.0,
+        "conc": 0.41
+      },
+      {
+        "name": "Bsv",
+        "cat": "POLITICS",
         "tone": "no",
         "why": "one_event",
         "w60": 0.0,
         "w90": 0.0,
-        "days": 172.0,
+        "days": 363.0,
         "conc": 1.0
       },
       {
-        "name": "SS787878",
-        "cat": "SPORTS",
+        "name": "zhaoyuyou",
+        "cat": "POLITICS",
         "tone": "no",
-        "why": "one_event",
-        "w60": 25.2,
-        "w90": 25.2,
-        "days": 496.0,
-        "conc": 0.61
-      },
-      {
-        "name": "0x228B8d11EBa89B",
-        "cat": "SPORTS",
-        "tone": "no",
-        "why": "one_event",
+        "why": "no_both",
         "w60": 0.0,
         "w90": 0.0,
-        "days": 59.0,
-        "conc": 1.0
-      },
-      {
-        "name": "Kch-Temp",
-        "cat": "SPORTS",
-        "tone": "no",
-        "why": "one_event",
-        "w60": 0.0,
-        "w90": 0.0,
-        "days": 97.0,
-        "conc": 1.0
+        "days": 308.0,
+        "conc": 0.15
       },
       {
         "name": "BabyGroot",
@@ -425,6 +253,46 @@
         "w90": 0.0,
         "days": 66.0,
         "conc": 1.0
+      },
+      {
+        "name": "Q96s3kwozynxpau",
+        "cat": "POLITICS",
+        "tone": "no",
+        "why": "one_event",
+        "w60": 0.0,
+        "w90": 0.0,
+        "days": 247.0,
+        "conc": 1.0
+      },
+      {
+        "name": "erokha",
+        "cat": "POLITICS",
+        "tone": "no",
+        "why": "one_event",
+        "w60": 7.5,
+        "w90": 7.5,
+        "days": 220.0,
+        "conc": 0.56
+      },
+      {
+        "name": "Grodan",
+        "cat": "POLITICS",
+        "tone": "no",
+        "why": "no_both",
+        "w60": 0.0,
+        "w90": -3.9,
+        "days": 187.0,
+        "conc": 0.33
+      },
+      {
+        "name": "fiter",
+        "cat": "POLITICS",
+        "tone": "no",
+        "why": "one_event",
+        "w60": 0.0,
+        "w90": 0.0,
+        "days": 150.0,
+        "conc": 1.0
       }
     ],
     "flip": null
@@ -432,13 +300,13 @@
   "lanes": [
     {
       "cat": "POLITICS",
-      "tone": "cold",
-      "checked": 0,
-      "both_windows": 0,
-      "best": null,
-      "w60": null,
-      "w90": null,
-      "conc": null
+      "tone": "no",
+      "checked": 1,
+      "both_windows": 1,
+      "best": "erokha",
+      "w60": 7.46,
+      "w90": 7.46,
+      "conc": 0.56
     },
     {
       "cat": "CULTURE",
@@ -472,13 +340,13 @@
     },
     {
       "cat": "SPORTS",
-      "tone": "no",
-      "checked": 7,
-      "both_windows": 7,
-      "best": "gambamaster",
-      "w60": 7.28,
-      "w90": 38.04,
-      "conc": 0.53
+      "tone": "cold",
+      "checked": 0,
+      "both_windows": 0,
+      "best": null,
+      "w60": null,
+      "w90": null,
+      "conc": null
     },
     {
       "cat": "ECONOMICS",
@@ -491,5 +359,5 @@
       "conc": null
     }
   ],
-  "updated_at": "2026-09-14T12:47:05.925243+00:00"
+  "updated_at": "2026-09-14T12:53:55.184563+00:00"
 }
