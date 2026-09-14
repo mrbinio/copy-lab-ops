@@ -1,7 +1,7 @@
 {
   "status": "done",
   "goal": "Front, leftover, stale pluses, live tape, volume week. Rank. Do not enable copy.",
-  "checked": 1196,
+  "checked": 1198,
   "log": [
     "tick front+leftover",
     "simming 39",
@@ -148,10 +148,10 @@
     "lane": "stale"
   },
   "journal": {
-    "checked": 1196,
+    "checked": 1198,
     "queued": 39,
     "drops": {
-      "pre_sim": 1157
+      "pre_sim": 1159
     },
     "wait_n": 1,
     "items": [
@@ -360,5 +360,5 @@
       "conc": null
     }
   ],
-  "updated_at": "2026-09-14T13:27:48.901848+00:00"
+  "updated_at": "2026-09-14T13:27:56.515069+00:00"
 }
