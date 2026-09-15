@@ -1,28 +1,28 @@
 {
   "status": "done",
   "goal": "Front, leftover, stale pluses, live tape, volume week. Rank. Do not enable copy.",
-  "checked": 1156,
+  "checked": 1152,
   "log": [
     "tick front+leftover",
     "simming 38",
-    "0943             ECONOMICS  d=220 60=+0.0 90=+0.0 conc=1.0 cg=Avoid",
+    "0943             ECONOMICS  d=220 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "0xCB3143ee858E14 ECONOMICS  d=66 60=+0.0 90=+0.0 conc=1.0 cg=None",
-    "debased          ECONOMICS  d=90 60=+0.0 90=+0.0 conc=1.0 cg=Avoid",
+    "debased          ECONOMICS  d=90 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "XRVIA            FINANCE    d=303 60=+0.0 90=+0.0 conc=0.29 cg=None",
     "ScarletRot       ECONOMICS  d=363 60=+0.0 90=+0.0 conc=1.0 cg=None",
-    "0xe639e41094bbea ECONOMICS  d=511 60=-5.0 90=+0.0 conc=1.0 cg=Avoid",
+    "0xe639e41094bbea ECONOMICS  d=511 60=-5.0 90=+0.0 conc=1.0 cg=None",
     "anon1933         CULTURE    d=500 60=+0.0 90=+0.0 conc=0.57 cg=None",
     "chilling         FINANCE    d=118 60=+0.0 90=+0.0 conc=0.4 cg=None",
     "0xPolymath       CULTURE    d=309 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "PolymaREKT       FINANCE    d=182 60=+1.6 90=+1.6 conc=1.0 cg=None",
-    "foodenjoyer      ECONOMICS  d=199 60=-5.0 90=+0.0 conc=1.0 cg=Avoid",
-    "Dropper          CULTURE    d=150 60=+0.0 90=+0.0 conc=1.0 cg=Avoid",
+    "Dropper          CULTURE    d=150 60=+0.0 90=+0.0 conc=1.0 cg=None",
+    "foodenjoyer      ECONOMICS  d=199 60=-5.0 90=+0.0 conc=1.0 cg=None",
     "occasionalAwaren FINANCE    d=448 60=+0.0 90=+0.0 conc=1.0 cg=None",
-    "Railcool         POLITICS   d=147 60=+0.0 90=+0.0 conc=0.32 cg=Avoid",
-    "DonaldinhoTrumpi MENTIONS   d=175 60=+0.0 90=-5.0 conc=1.0 cg=Copy with caution",
-    "JustAProfessor   POLITICS   d=197 60=-10.0 90=-15.0 conc=0.18 cg=Avoid",
-    "RRRRRRRRL        ECONOMICS  d=77 60=+0.0 90=+0.0 conc=1.0 cg=Avoid",
-    "anoin123         POLITICS   d=187 60=+0.0 90=+3.4 conc=0.79 cg=None",
+    "Railcool         POLITICS   d=147 60=+0.0 90=+0.0 conc=0.32 cg=None",
+    "DonaldinhoTrumpi MENTIONS   d=175 60=+0.0 90=-5.0 conc=1.0 cg=None",
+    "JustAProfessor   POLITICS   d=197 60=-10.0 90=-15.0 conc=0.18 cg=None",
+    "RRRRRRRRL        ECONOMICS  d=77 60=+0.0 90=+0.0 conc=1.0 cg=None",
+    "anoin123         POLITICS   d=187 60=+0.0 90=+3.4 conc=1.0 cg=None",
     "b2d0             ECONOMICS  d=350 60=+0.0 90=+1.2 conc=0.35 cg=None",
     "perfectnostalgia ECONOMICS  d=132 60=+10.6 90=+0.0 conc=1.0 cg=None",
     "peoplearestrange ECONOMICS  d=710 60=+1.3 90=+6.9 conc=0.27 cg=None",
@@ -33,13 +33,13 @@
     "BrownBees        OTHER      d=107 60=+8.8 90=+3.6 conc=1.0 cg=None",
     "jacky00          OTHER      d=295 60=+19.6 90=+19.6 conc=0.5 cg=None",
     "Rumpelstiltskin  OTHER      d=477 60=+1.2 90=+1.2 conc=0.52 cg=None",
+    "raymondpoincare  POLITICS   d=110 60=-5.0 90=-2.9 conc=0.41 cg=None",
     "Te0n2            POLITICS   d=116 60=+0.0 90=+0.0 conc=1.0 cg=None",
-    "shadyjdz         POLITICS   d=794 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "BabyGroot        POLITICS   d=89 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "lifeswhatyoumake CULTURE    d=91 60=+0.0 90=+0.0 conc=1.0 cg=None",
-    "Q96s3kwozynxpau  POLITICS   d=247 60=+0.0 90=+0.0 conc=1.0 cg=None",
-    "11122            POLITICS   d=70 60=+0.0 90=+0.0 conc=1.0 cg=None",
-    "033033033        POLITICS   d=166 60=+0.0 90=+0.0 conc=1.0 cg=None",
+    "Q96s3kwozynxpau  POLITICS   d=247 60=+0.0 90=+0.0 conc=1.0 cg=Avoid",
+    "11122            POLITICS   d=70 60=+0.0 90=+0.0 conc=1.0 cg=Avoid",
+    "033033033        POLITICS   d=166 60=+0.0 90=+0.0 conc=1.0 cg=Copy with caution",
     "erokha           POLITICS   d=220 60=+7.5 90=+7.5 conc=0.56 cg=None",
     "ZnotluvuiSamez   POLITICS   d=162 60=+0.0 90=+0.0 conc=0.33 cg=None",
     "caviaro          POLITICS   d=237 60=+0.0 90=+0.0 conc=1.0 cg=None"
@@ -80,8 +80,7 @@
       "top_market": "Will Kamala say \"I'm speaking\" at debate?",
       "candle": 0.0,
       "copygrade": {
-        "status": "error",
-        "error": ""
+        "status": "rate_limit"
       },
       "score": 14.5,
       "lane": "leftover"
@@ -141,7 +140,7 @@
       "top_market": "Will there be between 10 and 13 US strikes on Somalia in February 2026",
       "candle": 0.0,
       "copygrade": {
-        "status": "rate_limit"
+        "status": "not_indexed"
       },
       "score": -28.5,
       "lane": "vol"
@@ -181,7 +180,7 @@
       "top_market": "Will there be no change in Fed interest rates after the July 2026 meet",
       "candle": 0.07,
       "copygrade": {
-        "status": "not_indexed"
+        "status": "rate_limit"
       },
       "score": -58.8,
       "lane": "front"
@@ -208,10 +207,10 @@
     "lane": "stale"
   },
   "journal": {
-    "checked": 1156,
+    "checked": 1152,
     "queued": 38,
     "drops": {
-      "pre_sim": 1118
+      "pre_sim": 1114
     },
     "wait_n": 1,
     "items": [
@@ -256,6 +255,16 @@
         "conc": 0.52
       },
       {
+        "name": "raymondpoincare",
+        "cat": "POLITICS",
+        "tone": "no",
+        "why": "no_both",
+        "w60": -5.0,
+        "w90": -2.9,
+        "days": 110.0,
+        "conc": 0.41
+      },
+      {
         "name": "Te0n2",
         "cat": "POLITICS",
         "tone": "no",
@@ -263,16 +272,6 @@
         "w60": 0.0,
         "w90": 0.0,
         "days": 116.0,
-        "conc": 1.0
-      },
-      {
-        "name": "shadyjdz",
-        "cat": "POLITICS",
-        "tone": "no",
-        "why": "one_event",
-        "w60": 0.0,
-        "w90": 0.0,
-        "days": 794.0,
         "conc": 1.0
       },
       {
@@ -299,7 +298,7 @@
         "name": "Q96s3kwozynxpau",
         "cat": "POLITICS",
         "tone": "no",
-        "why": "one_event",
+        "why": "avoid",
         "w60": 0.0,
         "w90": 0.0,
         "days": 247.0,
@@ -309,7 +308,7 @@
         "name": "11122",
         "cat": "POLITICS",
         "tone": "no",
-        "why": "one_event",
+        "why": "avoid",
         "w60": 0.0,
         "w90": 0.0,
         "days": 70.0,
@@ -420,5 +419,5 @@
       "conc": 0.27
     }
   ],
-  "updated_at": "2026-09-15T21:41:20.261554+00:00"
+  "updated_at": "2026-09-15T22:05:48.657283+00:00"
 }
