@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta http-equiv="Cache-Control" content="no-store" />
+<title>BTC lab · papier</title>
+<style>
+body{margin:0;font:14px/1.5 -apple-system,system-ui,sans-serif;background:#0b0d10;color:#e6e8eb;padding:20px}
+.top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px;flex-wrap:wrap;gap:6px}
+h1{font-size:17px;margin:0} .mut{color:#7d858f} .good{color:#34c47c} .bad{color:#ef6b6b}
+.kpi{display:flex;gap:26px;margin:10px 0 18px;flex-wrap:wrap} .kpi b{display:block;font-size:19px}
+.cards{display:flex;gap:16px;flex-wrap:wrap}
+.card{background:#0f1216;border:1px solid #1e2329;border-radius:8px;padding:14px 16px;min-width:300px;flex:1}
+.hd{font-weight:600;margin-bottom:4px} .big{font:600 34px/1.2 ui-monospace,Menlo,monospace}
+.num{font-family:ui-monospace,Menlo,monospace}
+table{border-collapse:collapse;margin:8px 0;width:100%}
+th,td{text-align:left;padding:3px 10px 3px 0;border-bottom:1px solid #1e2329;font-size:13px}
+th{color:#7d858f;font-weight:500;text-transform:uppercase;font-size:10.5px}
+.gate{max-width:340px;margin:80px auto;background:#0f1216;border:1px solid #1e2329;border-radius:8px;padding:24px}
+.gate input{width:100%;box-sizing:border-box;margin:8px 0 12px;padding:9px;background:#0b0d10;border:1px solid #2a3038;border-radius:5px;color:#e6e8eb;font-size:14px}
+.gate button{width:100%;padding:10px;background:#7fb2ff;border:0;border-radius:5px;font-weight:600;cursor:pointer}
+.hidden{display:none}
+a{color:#7fb2ff;text-decoration:none}
+</style>
+</head>
+<body>
+<div id="gate" class="gate">
+  <h1>BTC lab</h1>
+  <p class="mut">Podaj haslo strony (to samo co w Copy Lab).</p>
+  <p id="gate-msg" class="bad"></p>
+  <input id="code" type="password" autocomplete="current-password" />
+  <button id="open" type="button">Otworz</button>
+</div>
+
+<div id="app" class="hidden">
+  <div class="top">
+    <h1>BTC Up or Down · papier (zero prawdziwych zleceń)</h1>
+    <span class="mut">ceny na żywo z przeglądarki · <span id="stamp"></span> · <a href="./now.html">Copy Lab</a></span>
+  </div>
+  <div class="kpi">
+    <div class="mut">Sniper wynik<b id="k-pnl">—</b></div>
+    <div class="mut">bilans<b id="k-rec">—</b></div>
+    <div class="mut">stawka<b>$5 / okno</b></div>
+    <div class="mut">wyniki z Maca<b id="k-upd">—</b></div>
+  </div>
+  <div class="cards" id="cards"></div>
+  <h1 style="margin:22px 0 6px;font-size:14px">Ostatnie okna (dosylane z Maca co ~15 min)</h1>
+  <table><thead><tr><th>start UTC</th><th>okno</th><th>linia</th><th>zamkniecie</th><th>wynik</th><th>sniper</th><th>P&amp;L</th></tr></thead>
+  <tbody id="hist"><tr><td colspan="7" class="mut">wczytywanie…</td></tr></tbody></table>
+  <p class="mut">Sniper (papier): w koncowce okna, gdy BTC jest min. $25 (5m) / $50 (15m) od linii, kupuje prowadzaca strone po 80–95,5 centa za $5.
+  Oplata: 7% &times; cena &times; (1&minus;cena) od akcji. Symulacja pomyslu Mitcha — zadnych prawdziwych zlecen.</p>
+</div>
+
+<script src="./access-config.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const KEY = "btc_gate_v1";
+
+async function sha256(s){
+  const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
+  return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join("");
+}
+async function tryOpen(code){
+  const want = (window.OPS_CONFIG||{}).pageCodeSha256 || "";
+  if (!want) { $("gate-msg").textContent = "brak konfiguracji"; return; }
+  const h = await sha256(code);
+  if (h === want){ localStorage.setItem(KEY, h); $("gate").classList.add("hidden"); $("app").classList.remove("hidden"); start(); }
+  else $("gate-msg").textContent = "zle haslo";
+}
+$("open").onclick = () => tryOpen($("code").value);
+$("code").addEventListener("keydown", e => { if (e.key === "Enter") tryOpen($("code").value); });
+(async () => {
+  const saved = localStorage.getItem(KEY);
+  if (saved && saved === (window.OPS_CONFIG||{}).pageCodeSha256){
+    $("gate").classList.add("hidden"); $("app").classList.remove("hidden"); start();
+  }
+})();
+
+// ------------------------------------------------------------------ live
+const FEE = 0.07;
+const fee = (p) => FEE * p * (1 - p);
+const IVS = [5, 15];
+const evCache = {};
+const openCache = {};
+
+async function jget(url){ const r = await fetch(url); if(!r.ok) throw new Error(r.status); return r.json(); }
+
+function windowOf(iv){
+  const sec = iv * 60, now = Math.floor(Date.now()/1000);
+  const start = now - (now % sec);
+  return { start, end: start + sec, slug: `btc-updown-${iv}m-${start}` };
+}
+async function gammaEvent(slug){
+  if (evCache[slug] !== undefined) return evCache[slug];
+  try{
+    const b = await jget(`https://gamma-api.polymarket.com/events?slug=${slug}`);
+    evCache[slug] = (Array.isArray(b) && b.length) ? b[0] : null;
+  }catch(e){ return null; }
+  return evCache[slug];
+}
+async function binOpen(start, iv){
+  const k = `${iv}:${start}`;
+  if (openCache[k] !== undefined) return openCache[k];
+  try{
+    const b = await jget(`https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=${iv}m&startTime=${start*1000}&limit=1`);
+    openCache[k] = b.length ? parseFloat(b[0][1]) : null;
+  }catch(e){ return null; }
+  return openCache[k];
+}
+async function ask(token){
+  try{
+    const b = await jget(`https://clob.polymarket.com/price?token_id=${token}&side=sell`);
+    const px = parseFloat(b.price || 0);
+    return (px > 0.001 && px < 0.999) ? px : null;
+  }catch(e){ return null; }
+}
+const usd = (n) => n == null ? "—" : "$" + n.toLocaleString("en-US", {minimumFractionDigits:1, maximumFractionDigits:1});
+
+async function card(iv, btc){
+  const w = windowOf(iv);
+  const [ev, line] = await Promise.all([gammaEvent(w.slug), binOpen(w.start, iv)]);
+  const left = Math.max(0, w.end - Math.floor(Date.now()/1000));
+  const title = ev ? ev.title : w.slug;
+  let rows = "";
+  if (ev && ev.markets && ev.markets.length){
+    const m = ev.markets[0];
+    let outs = [], toks = [];
+    try{ outs = JSON.parse(m.outcomes||"[]"); toks = JSON.parse(m.clobTokenIds||"[]"); }catch(e){}
+    const asks = await Promise.all(toks.map(t => ask(String(t))));
+    outs.forEach((name, i) => {
+      const a = asks[i];
+      if (a == null){ rows += `<tr><td>${name}</td><td colspan=3 class=mut>brak ofert</td></tr>`; return; }
+      const f = fee(a), win = 1 - a - f;
+      rows += `<tr><td>${name}</td><td class=num>${(a*100).toFixed(1)}c</td><td class="num mut">${(f*100).toFixed(2)}c</td><td class=num>+${(win*100).toFixed(1)}c</td></tr>`;
+    });
+  } else rows = `<tr><td colspan=4 class=mut>Polymarket jeszcze nie wystawil tego okna</td></tr>`;
+  const diff = (btc != null && line != null) ? btc - line : null;
+  const cls = diff == null ? "" : (diff >= 0 ? "good" : "bad");
+  const dtxt = diff == null ? "—" : (diff >= 0 ? "+" : "") + diff.toFixed(1);
+  return `<div class=card><div class=hd>${title}</div>
+    <div class=big>${Math.floor(left/60)}:${String(left%60).padStart(2,"0")}</div>
+    <div>linia <span class=num>${usd(line)}</span> · BTC <span class=num>${usd(btc)}</span> · <span class="num ${cls}">${dtxt}</span> vs linia</div>
+    <table><tr><th></th><th>kup po</th><th>oplata</th><th>wygrana da</th></tr>${rows}</table></div>`;
+}
+
+async function tickLive(){
+  let btc = null;
+  try{ btc = parseFloat((await jget("https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT")).price); }catch(e){}
+  const cards = await Promise.all(IVS.map(iv => card(iv, btc)));
+  $("cards").innerHTML = cards.join("");
+  $("stamp").textContent = new Date().toISOString().slice(11,19) + " UTC";
+}
+
+async function tickState(){
+  try{
+    const s = await jget(`./data/btc-state.json?ts=${Date.now()}`);
+    const sn = s.sniper || {};
+    const pnl = sn.pnl || 0;
+    $("k-pnl").textContent = (pnl >= 0 ? "+" : "") + pnl.toFixed(2) + " $";
+    $("k-pnl").className = pnl >= 0 ? "good" : "bad";
+    $("k-rec").textContent = `${sn.wins||0}-${sn.losses||0}`;
+    $("k-upd").textContent = (s.updated || "—").slice(11,16) + " UTC";
+    const rows = (s.windows || []).slice(0,30).map(w => {
+      const cls = w.pnl == null ? "" : (w.pnl > 0 ? "good" : "bad");
+      const pl = w.pnl == null ? "—" : (w.pnl >= 0 ? "+" : "") + w.pnl.toFixed(2);
+      return `<tr><td>${w.when}</td><td>${w.iv}m</td><td class=num>${usd(w.line)}</td><td class=num>${usd(w.close)}</td><td>${w.result}</td><td>${w.snipe||"—"}</td><td class="num ${cls}">${pl}</td></tr>`;
+    });
+    $("hist").innerHTML = rows.join("") || `<tr><td colspan=7 class=mut>jeszcze nic — czekamy na pierwsze zamkniete okno</td></tr>`;
+  }catch(e){
+    $("hist").innerHTML = `<tr><td colspan=7 class=mut>brak btc-state.json (Mac jeszcze nie dosylal)</td></tr>`;
+  }
+}
+
+let started = false;
+function start(){
+  if (started) return; started = true;
+  tickLive(); tickState();
+  setInterval(tickLive, 6000);
+  setInterval(tickState, 60000);
+}
+</script>
+</body>
+</html>
