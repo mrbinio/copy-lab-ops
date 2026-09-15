@@ -1,29 +1,29 @@
 {
   "status": "done",
   "goal": "Front, leftover, stale pluses, live tape, volume week. Rank. Do not enable copy.",
-  "checked": 1178,
+  "checked": 1173,
   "log": [
     "tick front+leftover",
-    "simming 39",
-    "0943             ECONOMICS  d=220 60=+0.0 90=+0.0 conc=1.0 cg=None",
+    "simming 40",
+    "0943             ECONOMICS  d=220 60=+0.0 90=+0.0 conc=1.0 cg=Avoid",
     "0xCB3143ee858E14 ECONOMICS  d=66 60=+0.0 90=+0.0 conc=1.0 cg=None",
-    "debased          ECONOMICS  d=89 60=+0.0 90=+0.0 conc=1.0 cg=None",
+    "debased          ECONOMICS  d=89 60=+0.0 90=+0.0 conc=1.0 cg=Avoid",
     "XRVIA            FINANCE    d=303 60=+0.0 90=+0.0 conc=0.29 cg=None",
     "ScarletRot       ECONOMICS  d=363 60=+0.0 90=+0.0 conc=1.0 cg=None",
-    "0xe639e41094bbea ECONOMICS  d=511 60=-5.0 90=+0.0 conc=1.0 cg=None",
+    "0xe639e41094bbea ECONOMICS  d=511 60=-5.0 90=+0.0 conc=1.0 cg=Avoid",
     "anon1933         CULTURE    d=500 60=+0.0 90=+0.0 conc=0.57 cg=None",
     "chilling         FINANCE    d=118 60=+0.0 90=+0.0 conc=0.4 cg=None",
     "0xPolymath       CULTURE    d=309 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "PolymaREKT       FINANCE    d=181 60=+1.6 90=+1.6 conc=1.0 cg=None",
-    "Dropper          CULTURE    d=150 60=+0.0 90=+0.0 conc=1.0 cg=None",
+    "Dropper          CULTURE    d=150 60=+0.0 90=+0.0 conc=1.0 cg=Avoid",
     "occasionalAwaren FINANCE    d=446 60=+0.0 90=+0.0 conc=1.0 cg=None",
-    "Railcool         POLITICS   d=147 60=+0.0 90=+0.0 conc=0.32 cg=None",
-    "foodenjoyer      ECONOMICS  d=198 60=-5.0 90=-5.0 conc=1.0 cg=None",
-    "DonaldinhoTrumpi MENTIONS   d=175 60=+0.0 90=-5.0 conc=1.0 cg=None",
-    "JustAProfessor   POLITICS   d=197 60=-10.0 90=-15.0 conc=0.18 cg=None",
-    "anoin123         POLITICS   d=187 60=+0.0 90=+3.4 conc=0.79 cg=None",
-    "BrownBees        TECH       d=107 60=+8.8 90=+0.0 conc=1.0 cg=None",
-    "b2d0             ECONOMICS  d=286 60=+0.0 90=+1.2 conc=0.35 cg=None",
+    "foodenjoyer      ECONOMICS  d=198 60=-5.0 90=-5.0 conc=1.0 cg=Avoid",
+    "Railcool         POLITICS   d=147 60=+0.0 90=+0.0 conc=0.32 cg=Avoid",
+    "DonaldinhoTrumpi MENTIONS   d=175 60=+0.0 90=-5.0 conc=1.0 cg=Copy with caution",
+    "JustAProfessor   POLITICS   d=197 60=-10.0 90=-15.0 conc=0.18 cg=Avoid",
+    "anoin123         POLITICS   d=187 60=+0.0 90=+3.4 conc=0.79 cg=Avoid",
+    "BrownBees        TECH       d=107 60=+8.8 90=+0.0 conc=1.0 cg=Copy with caution",
+    "b2d0             ECONOMICS  d=286 60=+0.0 90=+1.2 conc=0.35 cg=Avoid",
     "perfectnostalgia ECONOMICS  d=131 60=+10.6 90=+0.0 conc=1.0 cg=None",
     "peoplearestrange ECONOMICS  d=710 60=+1.3 90=+6.9 conc=0.27 cg=None",
     "suvorov          ECONOMICS  d=177 60=+0.0 90=+0.0 conc=0.25 cg=None",
@@ -34,16 +34,17 @@
     "Rumpelstiltskin  OTHER      d=477 60=+1.2 90=+1.2 conc=0.52 cg=None",
     "ytfuyt           POLITICS   d=84 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "raymondpoincare  POLITICS   d=110 60=-5.0 90=-2.9 conc=0.41 cg=None",
-    "awenn8           POLITICS   d=201 60=-5.0 90=-5.0 conc=0.55 cg=None",
-    "0x08eb9061       POLITICS   d=132 60=+15.8 90=+45.0 conc=0.76 cg=None",
+    "zhaoyuyou        POLITICS   d=308 60=+0.0 90=+0.0 conc=0.15 cg=None",
+    "dajiahaozaiji    POLITICS   d=306 60=+0.0 90=+0.0 conc=1.0 cg=None",
+    "Te0n2            POLITICS   d=118 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "BabyGroot        POLITICS   d=87 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "033033033        POLITICS   d=169 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "Q96s3kwozynxpau  POLITICS   d=247 60=+0.0 90=+0.0 conc=1.0 cg=None",
+    "11122            POLITICS   d=69 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "ZnotluvuiSamez   POLITICS   d=161 60=+0.0 90=+0.0 conc=0.33 cg=None",
-    "11122            POLITICS   d=70 60=+0.0 90=+0.0 conc=1.0 cg=None",
-    "GobiDesertCanoeP POLITICS   d=264 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "erokha           POLITICS   d=220 60=+7.5 90=+7.5 conc=0.56 cg=None",
-    "SlenderMan       POLITICS   d=260 60=+0.0 90=+3.3 conc=1.0 cg=None"
+    "GobiDesertCanoeP POLITICS   d=264 60=+0.0 90=+0.0 conc=1.0 cg=None",
+    "fiter            POLITICS   d=150 60=+0.0 90=+0.0 conc=1.0 cg=None"
   ],
   "candidates": [
     {
@@ -85,26 +86,6 @@
       },
       "score": 14.5,
       "lane": "leftover"
-    },
-    {
-      "username": "0x08eb9061",
-      "wallet": "0x08eb9061d05bd0e6f79c9ba947825f1bdc759ca4",
-      "cat": "POLITICS",
-      "domain": "other",
-      "history_days": 132.0,
-      "w60": 15.83,
-      "w90": 45.05,
-      "w60_copies": 4,
-      "w90_copies": 10,
-      "copies": 5,
-      "conc": 0.76,
-      "top_market": "UFC 328: Sean Strickland vs. Khamzat Chimaev (Middleweight, Main Card)",
-      "candle": 0.0,
-      "copygrade": {
-        "status": "rate_limit"
-      },
-      "score": 7.1,
-      "lane": "live"
     },
     {
       "username": "jacky00",
@@ -181,7 +162,7 @@
       "top_market": "Will there be no change in Fed interest rates after the July 2026 meet",
       "candle": 0.07,
       "copygrade": {
-        "status": "rate_limit"
+        "status": "not_indexed"
       },
       "score": -58.8,
       "lane": "front"
@@ -208,23 +189,13 @@
     "lane": "stale"
   },
   "journal": {
-    "checked": 1178,
-    "queued": 39,
+    "checked": 1173,
+    "queued": 40,
     "drops": {
-      "pre_sim": 1139
+      "pre_sim": 1133
     },
     "wait_n": 1,
     "items": [
-      {
-        "name": "jacky00",
-        "cat": "OTHER",
-        "tone": "no",
-        "why": "one_event",
-        "w60": 19.6,
-        "w90": 19.6,
-        "days": 295.0,
-        "conc": 0.5
-      },
       {
         "name": "Rumpelstiltskin",
         "cat": "OTHER",
@@ -256,24 +227,34 @@
         "conc": 0.41
       },
       {
-        "name": "awenn8",
+        "name": "zhaoyuyou",
         "cat": "POLITICS",
         "tone": "no",
-        "why": "one_event",
-        "w60": -5.0,
-        "w90": -5.0,
-        "days": 201.0,
-        "conc": 0.55
+        "why": "no_both",
+        "w60": 0.0,
+        "w90": 0.0,
+        "days": 308.0,
+        "conc": 0.15
       },
       {
-        "name": "0x08eb9061",
+        "name": "dajiahaozaiji",
         "cat": "POLITICS",
         "tone": "no",
         "why": "one_event",
-        "w60": 15.8,
-        "w90": 45.0,
-        "days": 132.0,
-        "conc": 0.76
+        "w60": 0.0,
+        "w90": 0.0,
+        "days": 306.0,
+        "conc": 1.0
+      },
+      {
+        "name": "Te0n2",
+        "cat": "POLITICS",
+        "tone": "no",
+        "why": "one_event",
+        "w60": 0.0,
+        "w90": 0.0,
+        "days": 118.0,
+        "conc": 1.0
       },
       {
         "name": "BabyGroot",
@@ -306,6 +287,16 @@
         "conc": 1.0
       },
       {
+        "name": "11122",
+        "cat": "POLITICS",
+        "tone": "no",
+        "why": "one_event",
+        "w60": 0.0,
+        "w90": 0.0,
+        "days": 69.0,
+        "conc": 1.0
+      },
+      {
         "name": "ZnotluvuiSamez",
         "cat": "POLITICS",
         "tone": "no",
@@ -314,26 +305,6 @@
         "w90": 0.0,
         "days": 161.0,
         "conc": 0.33
-      },
-      {
-        "name": "11122",
-        "cat": "POLITICS",
-        "tone": "no",
-        "why": "one_event",
-        "w60": 0.0,
-        "w90": 0.0,
-        "days": 70.0,
-        "conc": 1.0
-      },
-      {
-        "name": "GobiDesertCanoeP",
-        "cat": "POLITICS",
-        "tone": "no",
-        "why": "one_event",
-        "w60": 0.0,
-        "w90": 0.0,
-        "days": 264.0,
-        "conc": 1.0
       },
       {
         "name": "erokha",
@@ -346,13 +317,23 @@
         "conc": 0.56
       },
       {
-        "name": "SlenderMan",
+        "name": "GobiDesertCanoeP",
         "cat": "POLITICS",
         "tone": "no",
         "why": "one_event",
         "w60": 0.0,
-        "w90": 3.3,
-        "days": 260.0,
+        "w90": 0.0,
+        "days": 264.0,
+        "conc": 1.0
+      },
+      {
+        "name": "fiter",
+        "cat": "POLITICS",
+        "tone": "no",
+        "why": "one_event",
+        "w60": 0.0,
+        "w90": 0.0,
+        "days": 150.0,
         "conc": 1.0
       }
     ],
@@ -362,12 +343,12 @@
     {
       "cat": "POLITICS",
       "tone": "no",
-      "checked": 2,
-      "both_windows": 2,
-      "best": "0x08eb9061",
-      "w60": 15.83,
-      "w90": 45.05,
-      "conc": 0.76
+      "checked": 1,
+      "both_windows": 1,
+      "best": "erokha",
+      "w60": 7.46,
+      "w90": 7.46,
+      "conc": 0.56
     },
     {
       "cat": "CULTURE",
@@ -420,5 +401,5 @@
       "conc": 0.27
     }
   ],
-  "updated_at": "2026-09-14T23:15:17.997600+00:00"
+  "updated_at": "2026-09-15T03:41:39.084565+00:00"
 }
