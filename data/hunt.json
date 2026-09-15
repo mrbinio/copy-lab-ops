@@ -22,19 +22,19 @@
     "DonaldinhoTrumpi MENTIONS   d=175 60=+0.0 90=-5.0 conc=1.0 cg=Copy with caution",
     "JustAProfessor   POLITICS   d=197 60=-10.0 90=-15.0 conc=0.18 cg=Avoid",
     "RRRRRRRRL        ECONOMICS  d=77 60=+0.0 90=+0.0 conc=1.0 cg=Avoid",
-    "anoin123         POLITICS   d=187 60=+0.0 90=+3.4 conc=0.79 cg=Copy with caution",
-    "b2d0             ECONOMICS  d=350 60=+0.0 90=+1.2 conc=0.35 cg=Avoid",
+    "anoin123         POLITICS   d=187 60=+0.0 90=+3.4 conc=0.79 cg=None",
+    "b2d0             ECONOMICS  d=350 60=+0.0 90=+1.2 conc=0.35 cg=None",
     "perfectnostalgia ECONOMICS  d=132 60=+10.6 90=+0.0 conc=1.0 cg=None",
     "peoplearestrange ECONOMICS  d=710 60=+1.3 90=+6.9 conc=0.27 cg=None",
     "suvorov          ECONOMICS  d=177 60=+0.0 90=+0.0 conc=0.25 cg=None",
     "cynical.reason   CULTURE    d=119 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "ClaudeAI         ECONOMICS  d=85 60=+0.0 90=+0.0 conc=0.53 cg=None",
     "0xc938fejdifuiwf OTHER      d=158 60=+36.2 90=+36.2 conc=0.31 cg=None",
-    "BrownBees        OTHER      d=107 60=+8.8 90=+0.0 conc=1.0 cg=None",
+    "BrownBees        OTHER      d=107 60=+8.8 90=+3.6 conc=1.0 cg=None",
     "jacky00          OTHER      d=295 60=+19.6 90=+19.6 conc=0.5 cg=None",
     "Rumpelstiltskin  OTHER      d=477 60=+1.2 90=+1.2 conc=0.52 cg=None",
-    "raymondpoincare  POLITICS   d=110 60=-5.0 90=-2.9 conc=0.41 cg=None",
     "Te0n2            POLITICS   d=116 60=+0.0 90=+0.0 conc=1.0 cg=None",
+    "shadyjdz         POLITICS   d=794 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "BabyGroot        POLITICS   d=89 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "lifeswhatyoumake CULTURE    d=91 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "Q96s3kwozynxpau  POLITICS   d=247 60=+0.0 90=+0.0 conc=1.0 cg=None",
@@ -80,7 +80,8 @@
       "top_market": "Will Kamala say \"I'm speaking\" at debate?",
       "candle": 0.0,
       "copygrade": {
-        "status": "rate_limit"
+        "status": "error",
+        "error": ""
       },
       "score": 14.5,
       "lane": "leftover"
@@ -144,6 +145,26 @@
       },
       "score": -28.5,
       "lane": "vol"
+    },
+    {
+      "username": "BrownBees",
+      "wallet": "0x75a27d0cc95b3586297c1e6b5417269332cd6992",
+      "cat": "OTHER",
+      "domain": "other",
+      "history_days": 107.3,
+      "w60": 8.82,
+      "w90": 3.62,
+      "w60_copies": 5,
+      "w90_copies": 4,
+      "copies": 4,
+      "conc": 1.0,
+      "top_market": "Claude 4.8 released by May 31?",
+      "candle": 0.02,
+      "copygrade": {
+        "status": "rate_limit"
+      },
+      "score": -53.2,
+      "lane": "stale"
     },
     {
       "username": "PolymaREKT",
@@ -210,7 +231,7 @@
         "tone": "no",
         "why": "one_event",
         "w60": 8.8,
-        "w90": 0.0,
+        "w90": 3.6,
         "days": 107.0,
         "conc": 1.0
       },
@@ -235,16 +256,6 @@
         "conc": 0.52
       },
       {
-        "name": "raymondpoincare",
-        "cat": "POLITICS",
-        "tone": "no",
-        "why": "no_both",
-        "w60": -5.0,
-        "w90": -2.9,
-        "days": 110.0,
-        "conc": 0.41
-      },
-      {
         "name": "Te0n2",
         "cat": "POLITICS",
         "tone": "no",
@@ -252,6 +263,16 @@
         "w60": 0.0,
         "w90": 0.0,
         "days": 116.0,
+        "conc": 1.0
+      },
+      {
+        "name": "shadyjdz",
+        "cat": "POLITICS",
+        "tone": "no",
+        "why": "one_event",
+        "w60": 0.0,
+        "w90": 0.0,
+        "days": 794.0,
         "conc": 1.0
       },
       {
@@ -399,5 +420,5 @@
       "conc": 0.27
     }
   ],
-  "updated_at": "2026-09-15T20:38:45.597594+00:00"
+  "updated_at": "2026-09-15T21:41:20.261554+00:00"
 }
