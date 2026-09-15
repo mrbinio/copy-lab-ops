@@ -1,7 +1,7 @@
 {
   "status": "done",
   "goal": "Front, leftover, stale pluses, live tape, volume week. Rank. Do not enable copy.",
-  "checked": 1177,
+  "checked": 1179,
   "log": [
     "tick front+leftover",
     "simming 38",
@@ -15,29 +15,29 @@
     "chilling         FINANCE    d=118 60=+0.0 90=+0.0 conc=0.4 cg=None",
     "0xPolymath       CULTURE    d=309 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "PolymaREKT       FINANCE    d=182 60=+1.6 90=+1.6 conc=1.0 cg=None",
-    "Dropper          CULTURE    d=150 60=+0.0 90=+0.0 conc=1.0 cg=Avoid",
-    "foodenjoyer      ECONOMICS  d=199 60=-5.0 90=-5.0 conc=1.0 cg=Avoid",
+    "Dropper          CULTURE    d=151 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "occasionalAwaren FINANCE    d=446 60=+0.0 90=+0.0 conc=1.0 cg=None",
-    "Railcool         POLITICS   d=147 60=+0.0 90=+0.0 conc=0.32 cg=Avoid",
-    "DonaldinhoTrumpi MENTIONS   d=175 60=+0.0 90=-5.0 conc=1.0 cg=Copy with caution",
-    "JustAProfessor   POLITICS   d=197 60=-10.0 90=-15.0 conc=0.18 cg=Avoid",
-    "anoin123         POLITICS   d=187 60=+0.0 90=+3.4 conc=0.79 cg=Copy with caution",
-    "RRRRRRRRL        ECONOMICS  d=77 60=+0.0 90=+0.0 conc=1.0 cg=Avoid",
-    "b2d0             ECONOMICS  d=286 60=+0.0 90=+1.2 conc=0.35 cg=Avoid",
+    "foodenjoyer      ECONOMICS  d=199 60=-5.0 90=-5.0 conc=1.0 cg=None",
+    "Railcool         POLITICS   d=147 60=+0.0 90=+0.0 conc=0.32 cg=None",
+    "DonaldinhoTrumpi MENTIONS   d=175 60=+0.0 90=-5.0 conc=1.0 cg=None",
+    "JustAProfessor   POLITICS   d=197 60=-10.0 90=-15.0 conc=0.18 cg=None",
+    "anoin123         POLITICS   d=187 60=+0.0 90=+3.4 conc=0.79 cg=None",
+    "BrownBees        TECH       d=107 60=+8.8 90=+0.0 conc=1.0 cg=None",
+    "b2d0             ECONOMICS  d=286 60=+0.0 90=+1.2 conc=0.35 cg=None",
     "perfectnostalgia ECONOMICS  d=131 60=+10.6 90=+0.0 conc=1.0 cg=None",
     "peoplearestrange ECONOMICS  d=710 60=+1.3 90=+6.9 conc=0.27 cg=None",
     "suvorov          ECONOMICS  d=177 60=+0.0 90=+0.0 conc=0.25 cg=None",
     "cynical.reason   CULTURE    d=119 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "ClaudeAI         ECONOMICS  d=85 60=+0.0 90=+0.0 conc=0.53 cg=None",
     "0xc938fejdifuiwf OTHER      d=158 60=+36.2 90=+36.2 conc=0.31 cg=None",
-    "BrownBees        OTHER      d=107 60=+8.8 90=+0.0 conc=1.0 cg=None",
     "jacky00          OTHER      d=295 60=+19.6 90=+19.6 conc=0.5 cg=None",
     "Rumpelstiltskin  OTHER      d=477 60=+1.2 90=+1.2 conc=0.52 cg=None",
-    "Te0n2            POLITICS   d=119 60=+0.0 90=+0.0 conc=1.0 cg=None",
-    "onamura          POLITICS   d=202 60=+0.0 90=+0.0 conc=0.5 cg=None",
+    "raymondpoincare  POLITICS   d=110 60=-5.0 90=-2.9 conc=0.41 cg=None",
+    "Te0n2            POLITICS   d=118 60=+0.0 90=+0.0 conc=1.0 cg=None",
+    "zhaoyuyou        POLITICS   d=309 60=+0.0 90=+0.0 conc=0.15 cg=None",
+    "BabyGroot        POLITICS   d=89 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "lifeswhatyoumake CULTURE    d=91 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "Q96s3kwozynxpau  POLITICS   d=247 60=+0.0 90=+0.0 conc=1.0 cg=None",
-    "BabyGroot        POLITICS   d=89 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "033033033        POLITICS   d=166 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "ZnotluvuiSamez   POLITICS   d=162 60=+0.0 90=+0.0 conc=0.33 cg=None",
     "11122            POLITICS   d=69 60=+0.0 90=+0.0 conc=1.0 cg=None",
@@ -80,7 +80,7 @@
       "top_market": "Will Kamala say \"I'm speaking\" at debate?",
       "candle": 0.0,
       "copygrade": {
-        "status": "not_indexed"
+        "status": "rate_limit"
       },
       "score": 14.5,
       "lane": "leftover"
@@ -160,7 +160,7 @@
       "top_market": "Will there be no change in Fed interest rates after the July 2026 meet",
       "candle": 0.07,
       "copygrade": {
-        "status": "not_indexed"
+        "status": "rate_limit"
       },
       "score": -58.8,
       "lane": "front"
@@ -187,10 +187,10 @@
     "lane": "stale"
   },
   "journal": {
-    "checked": 1177,
+    "checked": 1179,
     "queued": 38,
     "drops": {
-      "pre_sim": 1139
+      "pre_sim": 1141
     },
     "wait_n": 1,
     "items": [
@@ -203,16 +203,6 @@
         "w90": 36.2,
         "days": 158.0,
         "conc": 0.31
-      },
-      {
-        "name": "BrownBees",
-        "cat": "OTHER",
-        "tone": "no",
-        "why": "one_event",
-        "w60": 8.8,
-        "w90": 0.0,
-        "days": 107.0,
-        "conc": 1.0
       },
       {
         "name": "jacky00",
@@ -235,24 +225,44 @@
         "conc": 0.52
       },
       {
+        "name": "raymondpoincare",
+        "cat": "POLITICS",
+        "tone": "no",
+        "why": "no_both",
+        "w60": -5.0,
+        "w90": -2.9,
+        "days": 110.0,
+        "conc": 0.41
+      },
+      {
         "name": "Te0n2",
         "cat": "POLITICS",
         "tone": "no",
         "why": "one_event",
         "w60": 0.0,
         "w90": 0.0,
-        "days": 119.0,
+        "days": 118.0,
         "conc": 1.0
       },
       {
-        "name": "onamura",
+        "name": "zhaoyuyou",
+        "cat": "POLITICS",
+        "tone": "no",
+        "why": "no_both",
+        "w60": 0.0,
+        "w90": 0.0,
+        "days": 309.0,
+        "conc": 0.15
+      },
+      {
+        "name": "BabyGroot",
         "cat": "POLITICS",
         "tone": "no",
         "why": "one_event",
         "w60": 0.0,
         "w90": 0.0,
-        "days": 202.0,
-        "conc": 0.5
+        "days": 89.0,
+        "conc": 1.0
       },
       {
         "name": "lifeswhatyoumake",
@@ -272,16 +282,6 @@
         "w60": 0.0,
         "w90": 0.0,
         "days": 247.0,
-        "conc": 1.0
-      },
-      {
-        "name": "BabyGroot",
-        "cat": "POLITICS",
-        "tone": "no",
-        "why": "one_event",
-        "w60": 0.0,
-        "w90": 0.0,
-        "days": 89.0,
         "conc": 1.0
       },
       {
@@ -399,5 +399,5 @@
       "conc": 0.27
     }
   ],
-  "updated_at": "2026-09-15T12:52:32.661615+00:00"
+  "updated_at": "2026-09-15T15:26:07.114269+00:00"
 }
