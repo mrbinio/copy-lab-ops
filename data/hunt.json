@@ -23,8 +23,8 @@
     "JustAProfessor   POLITICS   d=197 60=-10.0 90=-15.0 conc=0.18 cg=None",
     "RRRRRRRRL        ECONOMICS  d=77 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "anoin123         POLITICS   d=187 60=+0.0 90=+3.4 conc=1.0 cg=None",
-    "b2d0             ECONOMICS  d=350 60=+0.0 90=+1.2 conc=0.35 cg=None",
     "perfectnostalgia ECONOMICS  d=132 60=+10.6 90=+0.0 conc=1.0 cg=None",
+    "b2d0             ECONOMICS  d=350 60=+0.0 90=+0.0 conc=0.35 cg=None",
     "peoplearestrange ECONOMICS  d=710 60=+1.3 90=+6.9 conc=0.27 cg=None",
     "suvorov          ECONOMICS  d=177 60=+0.0 90=+0.0 conc=0.25 cg=None",
     "cynical.reason   CULTURE    d=119 60=+0.0 90=+0.0 conc=1.0 cg=None",
@@ -140,7 +140,7 @@
       "top_market": "Will there be between 10 and 13 US strikes on Somalia in February 2026",
       "candle": 0.0,
       "copygrade": {
-        "status": "not_indexed"
+        "status": "rate_limit"
       },
       "score": -28.5,
       "lane": "vol"
@@ -419,5 +419,5 @@
       "conc": 0.27
     }
   ],
-  "updated_at": "2026-09-15T22:05:48.657283+00:00"
+  "updated_at": "2026-09-15T22:06:42.949281+00:00"
 }
