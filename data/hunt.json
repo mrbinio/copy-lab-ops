@@ -1,10 +1,10 @@
 {
   "status": "done",
   "goal": "Front, leftover, stale pluses, live tape, volume week. Rank. Do not enable copy.",
-  "checked": 1164,
+  "checked": 1157,
   "log": [
     "tick front+leftover",
-    "simming 35",
+    "simming 37",
     "0943             ECONOMICS  d=220 60=+0.0 90=+0.0 conc=1.0 cg=Avoid",
     "0xCB3143ee858E14 ECONOMICS  d=66 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "debased          ECONOMICS  d=90 60=+0.0 90=+0.0 conc=1.0 cg=Avoid",
@@ -20,26 +20,28 @@
     "occasionalAwaren FINANCE    d=448 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "Railcool         POLITICS   d=147 60=+0.0 90=+0.0 conc=0.32 cg=Avoid",
     "DonaldinhoTrumpi MENTIONS   d=175 60=+0.0 90=-5.0 conc=1.0 cg=Copy with caution",
-    "JustAProfessor   POLITICS   d=197 60=-10.0 90=-15.0 conc=0.18 cg=Avoid",
+    "anoin123         POLITICS   d=186 60=+0.0 90=+3.4 conc=1.0 cg=Copy with caution",
+    "JustAProfessor   POLITICS   d=197 60=+0.0 90=-15.0 conc=0.18 cg=Avoid",
     "RRRRRRRRL        ECONOMICS  d=77 60=+0.0 90=+0.0 conc=1.0 cg=Avoid",
-    "BrownBees        TECH       d=107 60=+8.8 90=+3.6 conc=1.0 cg=Copy with caution",
     "perfectnostalgia ECONOMICS  d=132 60=+10.6 90=+0.0 conc=1.0 cg=None",
-    "b2d0             ECONOMICS  d=350 60=+0.0 90=+0.0 conc=0.35 cg=Avoid",
+    "b2d0             ECONOMICS  d=350 60=+0.0 90=+0.0 conc=0.35 cg=None",
     "peoplearestrange ECONOMICS  d=710 60=+1.3 90=+6.9 conc=0.27 cg=None",
     "suvorov          ECONOMICS  d=177 60=+0.0 90=+0.0 conc=0.25 cg=None",
     "cynical.reason   CULTURE    d=119 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "ClaudeAI         ECONOMICS  d=85 60=+0.0 90=+0.0 conc=0.53 cg=None",
-    "0xc938fejdifuiwf OTHER      d=159 60=+31.2 90=+31.2 conc=0.3 cg=None",
+    "0xc938fejdifuiwf OTHER      d=159 60=+31.2 90=+31.2 conc=0.31 cg=None",
+    "BrownBees        OTHER      d=107 60=+8.8 90=+3.6 conc=1.0 cg=None",
     "jacky00          OTHER      d=295 60=+19.6 90=+19.6 conc=0.5 cg=None",
     "Rumpelstiltskin  OTHER      d=477 60=+1.2 90=+1.2 conc=0.52 cg=None",
-    "anoin123         POLITICS   d=186 60=+0.0 90=+3.4 conc=1.0 cg=Copy with caution",
-    "lifeswhatyoumake CULTURE    d=92 60=+0.0 90=+0.0 conc=1.0 cg=Avoid \u2014 farming risk",
+    "0x687b4cf1       POLITICS   d=228 60=+0.0 90=+0.0 conc=0.84 cg=None",
     "BabyGroot        POLITICS   d=89 60=+0.0 90=+0.0 conc=1.0 cg=Avoid",
-    "Q96s3kwozynxpau  POLITICS   d=247 60=+0.0 90=+0.0 conc=1.0 cg=Avoid",
-    "11122            POLITICS   d=70 60=+0.0 90=+0.0 conc=1.0 cg=Avoid",
-    "033033033        POLITICS   d=164 60=+0.0 90=+0.0 conc=1.0 cg=Copy with caution",
+    "lifeswhatyoumake CULTURE    d=92 60=+0.0 90=+0.0 conc=1.0 cg=None",
+    "Q96s3kwozynxpau  POLITICS   d=247 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "erokha           POLITICS   d=220 60=+7.5 90=+7.5 conc=0.56 cg=None",
-    "bogdanc1         POLITICS   d=142 60=+3.3 90=+21.1 conc=1.0 cg=None"
+    "bogdanc1         POLITICS   d=141 60=+3.3 90=+21.1 conc=1.0 cg=None",
+    "11122            POLITICS   d=70 60=+0.0 90=+0.0 conc=1.0 cg=None",
+    "033033033        POLITICS   d=164 60=+0.0 90=+0.0 conc=1.0 cg=None",
+    "ZnotluvuiSamez   POLITICS   d=162 60=+0.0 90=+0.0 conc=0.33 cg=None"
   ],
   "candidates": [
     {
@@ -47,19 +49,19 @@
       "wallet": "0x4a407ca9a2317ee6077bc2e8c699ef1cbab2ede7",
       "cat": "OTHER",
       "domain": "other",
-      "history_days": 159.0,
+      "history_days": 159.2,
       "w60": 31.24,
       "w90": 31.24,
       "w60_copies": 9,
       "w90_copies": 9,
       "copies": 17,
-      "conc": 0.3,
+      "conc": 0.31,
       "top_market": "Will Grand Theft Auto VI Extended Look get between 20 and 22 million v",
       "candle": 0.04,
       "copygrade": {
         "status": "rate_limit"
       },
-      "score": 73.4,
+      "score": 73.0,
       "lane": "stale"
     },
     {
@@ -97,8 +99,7 @@
       "top_market": "Will OpenAI\u2019s Astra model be released by September 3, 2026?",
       "candle": 0.0,
       "copygrade": {
-        "status": "error",
-        "error": ""
+        "status": "rate_limit"
       },
       "score": -1.8,
       "lane": "stale"
@@ -118,7 +119,7 @@
       "top_market": "Grok 5 released by December 31?",
       "candle": 0.0,
       "copygrade": {
-        "status": "not_indexed"
+        "status": "rate_limit"
       },
       "score": -25.3,
       "lane": "stale"
@@ -138,7 +139,7 @@
       "top_market": "Will there be between 10 and 13 US strikes on Somalia in February 2026",
       "candle": 0.0,
       "copygrade": {
-        "status": "not_indexed"
+        "status": "rate_limit"
       },
       "score": -28.5,
       "lane": "vol"
@@ -148,25 +149,25 @@
       "wallet": "0xfde6d3106320cf7d22fa64822fdec909fa3f7ed6",
       "cat": "POLITICS",
       "domain": "other",
-      "history_days": 141.8,
+      "history_days": 141.1,
       "w60": 3.33,
       "w90": 21.06,
       "w60_copies": 4,
       "w90_copies": 5,
-      "copies": 3,
+      "copies": 4,
       "conc": 1.0,
-      "top_market": null,
+      "top_market": "Will Paris Saint-Germain FC win on 2026-04-28?",
       "candle": 0.0,
       "copygrade": {
-        "status": "not_indexed"
+        "status": "rate_limit"
       },
-      "score": -40.5,
+      "score": -39.6,
       "lane": "vol"
     },
     {
       "username": "BrownBees",
       "wallet": "0x75a27d0cc95b3586297c1e6b5417269332cd6992",
-      "cat": "TECH",
+      "cat": "OTHER",
       "domain": "other",
       "history_days": 107.3,
       "w60": 8.82,
@@ -178,17 +179,10 @@
       "top_market": "Claude 4.8 released by May 31?",
       "candle": 0.02,
       "copygrade": {
-        "status": "ok",
-        "score": 61,
-        "label": "Copy with caution",
-        "edge_real": -21.9,
-        "farming": {
-          "level": "clean",
-          "signals": 0
-        }
+        "status": "rate_limit"
       },
       "score": -53.2,
-      "lane": "recheck"
+      "lane": "stale"
     }
   ],
   "pick": {
@@ -196,49 +190,29 @@
     "wallet": "0x4a407ca9a2317ee6077bc2e8c699ef1cbab2ede7",
     "cat": "OTHER",
     "domain": "other",
-    "history_days": 159.0,
+    "history_days": 159.2,
     "w60": 31.24,
     "w90": 31.24,
     "w60_copies": 9,
     "w90_copies": 9,
     "copies": 17,
-    "conc": 0.3,
+    "conc": 0.31,
     "top_market": "Will Grand Theft Auto VI Extended Look get between 20 and 22 million v",
     "candle": 0.04,
     "copygrade": {
       "status": "rate_limit"
     },
-    "score": 73.4,
+    "score": 73.0,
     "lane": "stale"
   },
   "journal": {
-    "checked": 1164,
-    "queued": 35,
+    "checked": 1157,
+    "queued": 37,
     "drops": {
-      "pre_sim": 1129
+      "pre_sim": 1120
     },
     "wait_n": 1,
     "items": [
-      {
-        "name": "suvorov",
-        "cat": "ECONOMICS",
-        "tone": "no",
-        "why": "no_both",
-        "w60": 0.0,
-        "w90": 0.0,
-        "days": 177.0,
-        "conc": 0.25
-      },
-      {
-        "name": "cynical.reason",
-        "cat": "CULTURE",
-        "tone": "no",
-        "why": "one_event",
-        "w60": 0.0,
-        "w90": 0.0,
-        "days": 119.0,
-        "conc": 1.0
-      },
       {
         "name": "ClaudeAI",
         "cat": "ECONOMICS",
@@ -257,7 +231,17 @@
         "w60": 31.2,
         "w90": 31.2,
         "days": 159.0,
-        "conc": 0.3
+        "conc": 0.31
+      },
+      {
+        "name": "BrownBees",
+        "cat": "OTHER",
+        "tone": "no",
+        "why": "one_event",
+        "w60": 8.8,
+        "w90": 3.6,
+        "days": 107.0,
+        "conc": 1.0
       },
       {
         "name": "jacky00",
@@ -280,24 +264,14 @@
         "conc": 0.52
       },
       {
-        "name": "anoin123",
+        "name": "0x687b4cf1",
         "cat": "POLITICS",
         "tone": "no",
         "why": "one_event",
         "w60": 0.0,
-        "w90": 3.4,
-        "days": 186.0,
-        "conc": 1.0
-      },
-      {
-        "name": "lifeswhatyoumake",
-        "cat": "CULTURE",
-        "tone": "no",
-        "why": "avoid",
-        "w60": 0.0,
         "w90": 0.0,
-        "days": 92.0,
-        "conc": 1.0
+        "days": 228.0,
+        "conc": 0.84
       },
       {
         "name": "BabyGroot",
@@ -310,33 +284,23 @@
         "conc": 1.0
       },
       {
+        "name": "lifeswhatyoumake",
+        "cat": "CULTURE",
+        "tone": "no",
+        "why": "one_event",
+        "w60": 0.0,
+        "w90": 0.0,
+        "days": 92.0,
+        "conc": 1.0
+      },
+      {
         "name": "Q96s3kwozynxpau",
-        "cat": "POLITICS",
-        "tone": "no",
-        "why": "avoid",
-        "w60": 0.0,
-        "w90": 0.0,
-        "days": 247.0,
-        "conc": 1.0
-      },
-      {
-        "name": "11122",
-        "cat": "POLITICS",
-        "tone": "no",
-        "why": "avoid",
-        "w60": 0.0,
-        "w90": 0.0,
-        "days": 70.0,
-        "conc": 1.0
-      },
-      {
-        "name": "033033033",
         "cat": "POLITICS",
         "tone": "no",
         "why": "one_event",
         "w60": 0.0,
         "w90": 0.0,
-        "days": 164.0,
+        "days": 247.0,
         "conc": 1.0
       },
       {
@@ -356,8 +320,38 @@
         "why": "one_event",
         "w60": 3.3,
         "w90": 21.1,
-        "days": 142.0,
+        "days": 141.0,
         "conc": 1.0
+      },
+      {
+        "name": "11122",
+        "cat": "POLITICS",
+        "tone": "no",
+        "why": "one_event",
+        "w60": 0.0,
+        "w90": 0.0,
+        "days": 70.0,
+        "conc": 1.0
+      },
+      {
+        "name": "033033033",
+        "cat": "POLITICS",
+        "tone": "no",
+        "why": "one_event",
+        "w60": 0.0,
+        "w90": 0.0,
+        "days": 164.0,
+        "conc": 1.0
+      },
+      {
+        "name": "ZnotluvuiSamez",
+        "cat": "POLITICS",
+        "tone": "no",
+        "why": "no_both",
+        "w60": 0.0,
+        "w90": 0.0,
+        "days": 162.0,
+        "conc": 0.33
       }
     ],
     "flip": null
@@ -385,13 +379,13 @@
     },
     {
       "cat": "TECH",
-      "tone": "no",
-      "checked": 1,
-      "both_windows": 1,
-      "best": "BrownBees",
-      "w60": 8.82,
-      "w90": 3.62,
-      "conc": 1.0
+      "tone": "cold",
+      "checked": 0,
+      "both_windows": 0,
+      "best": null,
+      "w60": null,
+      "w90": null,
+      "conc": null
     },
     {
       "cat": "FINANCE",
@@ -424,5 +418,5 @@
       "conc": 0.27
     }
   ],
-  "updated_at": "2026-09-16T12:06:28.380459+00:00"
+  "updated_at": "2026-09-16T16:21:04.836338+00:00"
 }
