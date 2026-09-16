@@ -4,7 +4,7 @@
   "checked": 1149,
   "log": [
     "tick front+leftover",
-    "simming 39",
+    "simming 40",
     "0943             ECONOMICS  d=220 60=+0.0 90=+0.0 conc=1.0 cg=Avoid",
     "0xCB3143ee858E14 ECONOMICS  d=66 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "debased          ECONOMICS  d=90 60=+0.0 90=+0.0 conc=1.0 cg=Avoid",
@@ -36,6 +36,7 @@
     "lifeswhatyoumake POLITICS   d=92 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "cestledeuxieme   POLITICS   d=91 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "trader-43933f20  POLITICS   d=53 60=+0.0 90=+0.0 conc=1.0 cg=None",
+    "fiter            POLITICS   d=152 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "BabyGroot        POLITICS   d=89 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "Q96s3kwozynxpau  POLITICS   d=247 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "erokha           POLITICS   d=220 60=+7.5 90=+7.5 conc=0.56 cg=None",
@@ -209,22 +210,12 @@
   },
   "journal": {
     "checked": 1149,
-    "queued": 39,
+    "queued": 40,
     "drops": {
-      "pre_sim": 1110
+      "pre_sim": 1109
     },
     "wait_n": 1,
     "items": [
-      {
-        "name": "BrownBees",
-        "cat": "OTHER",
-        "tone": "no",
-        "why": "one_event",
-        "w60": 8.8,
-        "w90": 3.6,
-        "days": 107.0,
-        "conc": 1.0
-      },
       {
         "name": "jacky00",
         "cat": "OTHER",
@@ -273,6 +264,16 @@
         "w60": 0.0,
         "w90": 0.0,
         "days": 53.0,
+        "conc": 1.0
+      },
+      {
+        "name": "fiter",
+        "cat": "POLITICS",
+        "tone": "no",
+        "why": "one_event",
+        "w60": 0.0,
+        "w90": 0.0,
+        "days": 152.0,
         "conc": 1.0
       },
       {
@@ -420,5 +421,5 @@
       "conc": 0.27
     }
   ],
-  "updated_at": "2026-09-16T18:03:57.847255+00:00"
+  "updated_at": "2026-09-16T18:06:26.944471+00:00"
 }
