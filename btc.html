@@ -29,7 +29,7 @@ th{color:#7d858f;font-weight:500;text-transform:uppercase;font-size:10.5px}
 .gate{max-width:340px;margin:80px auto;background:#0f1216;border:1px solid #1e2329;border-radius:8px;padding:24px}
 .gate input{width:100%;box-sizing:border-box;margin:8px 0 12px;padding:9px;background:#0b0d10;border:1px solid #2a3038;border-radius:5px;color:#e6e8eb;font-size:14px}
 .gate button{width:100%;padding:10px;background:#7fb2ff;border:0;border-radius:5px;font-weight:600;cursor:pointer}
-.hidden{display:none}
+.hidden{display:none !important}
 a{color:#7fb2ff;text-decoration:none}
 </style>
 </head>
@@ -51,7 +51,7 @@ a{color:#7fb2ff;text-decoration:none}
     </span>
   </div>
   <div class="note">We copy <b>only the late Sniper</b> (last minutes, Bitcoin already far from the line, $5 paper).
-    We do <b>not</b> copy Mitch’s early ~48c Up/Down bets — on his own board that sleeve is the red one.
+    We do <b>not</b> copy Mitch’s early ~48c Up/Down bets — on his own board that book is the red one.
     15-minute Sniper watches the <b>last 5 minutes</b>.</div>
   <div class="kpi">
     <div class="mut">Sniper result <a href="./btc-guide.html#sniper-result">what is this?</a>
@@ -73,178 +73,243 @@ a{color:#7fb2ff;text-decoration:none}
   <p class="mut">Sniper is pretend money only. Last 75s of a 5-min window ($25 off the line) or last 5 min of a 15-min window ($50 off). Buys the leading side at 80–95.5 cents for $5. We do not take the early 48c coin-flip. Full explanation: <a href="./btc-guide.html">Guide (PL + EN)</a>.</p>
 </div>
 
+<script type="application/json" id="boot-state">{"updated":"2026-09-16 17:39:46","sniper":{"pnl":4.75,"wins":17,"losses":1},"windows":[{"iv":5,"start":1789579800,"when":"17:30","line":75715.4,"close":75632.0,"result":"Down","snipe":"Down @ 0.89","pnl":0.58},{"iv":15,"start":1789578900,"when":"17:15","line":75727.1,"close":75715.4,"result":"Down","snipe":null,"pnl":null},{"iv":5,"start":1789579500,"when":"17:25","line":75706.0,"close":75715.4,"result":"Up","snipe":null,"pnl":null},{"iv":5,"start":1789579200,"when":"17:20","line":75742.0,"close":75706.0,"result":"Down","snipe":null,"pnl":null},{"iv":5,"start":1789578900,"when":"17:15","line":75727.1,"close":75742.0,"result":"Up","snipe":null,"pnl":null},{"iv":5,"start":1789578000,"when":"17:00","line":75768.0,"close":75783.8,"result":"Up","snipe":null,"pnl":null},{"iv":15,"start":1789578000,"when":"17:00","line":75768.0,"close":75727.1,"result":"Down","snipe":null,"pnl":null},{"iv":15,"start":1789577100,"when":"16:45","line":75688.0,"close":75768.0,"result":"Up","snipe":null,"pnl":null},{"iv":5,"start":1789577700,"when":"16:55","line":75794.0,"close":75768.0,"result":"Down","snipe":null,"pnl":null},{"iv":15,"start":1789576200,"when":"16:30","line":75788.0,"close":75688.0,"result":"Down","snipe":null,"pnl":null},{"iv":5,"start":1789576800,"when":"16:40","line":75750.0,"close":75688.0,"result":"Down","snipe":null,"pnl":null},{"iv":5,"start":1789576500,"when":"16:35","line":75754.5,"close":75750.7,"result":"Down","snipe":null,"pnl":null},{"iv":5,"start":1789576200,"when":"16:30","line":75788.0,"close":75754.5,"result":"Down","snipe":"Down @ 0.92","pnl":0.41},{"iv":15,"start":1789575300,"when":"16:15","line":75842.0,"close":75788.0,"result":"Down","snipe":null,"pnl":null},{"iv":5,"start":1789575900,"when":"16:25","line":75800.0,"close":75788.0,"result":"Down","snipe":null,"pnl":null},{"iv":5,"start":1789575600,"when":"16:20","line":75878.9,"close":75800.0,"result":"Down","snipe":"Down @ 0.85","pnl":0.83},{"iv":5,"start":1789575300,"when":"16:15","line":75842.0,"close":75878.9,"result":"Up","snipe":"Up @ 0.94","pnl":0.3},{"iv":15,"start":1789574400,"when":"16:00","line":75788.4,"close":75842.0,"result":"Up","snipe":"Up @ 0.81","pnl":1.11},{"iv":5,"start":1789575000,"when":"16:10","line":75732.0,"close":75842.0,"result":"Up","snipe":null,"pnl":null},{"iv":5,"start":1789574700,"when":"16:05","line":75777.3,"close":75732.0,"result":"Down","snipe":null,"pnl":null},{"iv":5,"start":1789574400,"when":"16:00","line":75788.4,"close":75777.3,"result":"Down","snipe":null,"pnl":null},{"iv":15,"start":1789573500,"when":"15:45","line":75730.0,"close":75788.4,"result":"Up","snipe":null,"pnl":null},{"iv":5,"start":1789573500,"when":"15:45","line":75730.0,"close":75820.0,"result":"Up","snipe":null,"pnl":null},{"iv":5,"start":1789572300,"when":"15:25","line":75740.0,"close":75638.5,"result":"Down","snipe":null,"pnl":null},{"iv":15,"start":1789571700,"when":"15:15","line":75762.0,"close":75638.5,"result":"Down","snipe":"Down @ 0.90","pnl":0.52},{"iv":5,"start":1789572000,"when":"15:20","line":75695.0,"close":75740.0,"result":"Up","snipe":null,"pnl":null},{"iv":5,"start":1789571700,"when":"15:15","line":75762.0,"close":75695.0,"result":"Down","snipe":null,"pnl":null},{"iv":15,"start":1789570800,"when":"15:00","line":75697.8,"close":75762.0,"result":"Up","snipe":null,"pnl":null},{"iv":5,"start":1789571400,"when":"15:10","line":75740.0,"close":75762.0,"result":"Up","snipe":null,"pnl":null},{"iv":5,"start":1789571100,"when":"15:05","line":75713.2,"close":75740.0,"result":"Up","snipe":null,"pnl":null},{"iv":15,"start":1789569900,"when":"14:45","line":75762.0,"close":75697.8,"result":"Down","snipe":null,"pnl":null},{"iv":5,"start":1789569900,"when":"14:45","line":75762.0,"close":75590.9,"result":"Down","snipe":null,"pnl":null},{"iv":15,"start":1789569000,"when":"14:30","line":75828.0,"close":75762.0,"result":"Down","snipe":null,"pnl":null},{"iv":5,"start":1789569300,"when":"14:35","line":75730.0,"close":75636.6,"result":"Down","snipe":null,"pnl":null},{"iv":5,"start":1789569000,"when":"14:30","line":75828.0,"close":75730.0,"result":"Down","snipe":null,"pnl":null},{"iv":15,"start":1789568100,"when":"14:15","line":75570.7,"close":75828.0,"result":"Up","snipe":null,"pnl":null},{"iv":5,"start":1789568700,"when":"14:25","line":75631.9,"close":75828.0,"result":"Up","snipe":null,"pnl":null},{"iv":5,"start":1789568400,"when":"14:20","line":75562.7,"close":75631.9,"result":"Up","snipe":null,"pnl":null},{"iv":15,"start":1789567200,"when":"14:00","line":75646.0,"close":75570.7,"result":"Down","snipe":null,"pnl":null},{"iv":5,"start":1789567800,"when":"14:10","line":75570.1,"close":75570.7,"result":"Up","snipe":null,"pnl":null}],"tape":[{"ts":"17:35:06","who":"SNIPER","text":"Leftover paid +0.58 (Down at 0.89; Bitcoin finished down)."},{"ts":"17:33:54","who":"SNIPER","text":"Paper leftover Down at 0.89. Bitcoin is $27 off the line. Stake $5."},{"ts":"17:29:45","who":"DESK","text":"Paper Sniper only. No early 48c bets. 15-minute leftover watches the last 5 minutes."}]}</script>
 <script src="./access-config.js"></script>
 <script>
-const $ = (id) => document.getElementById(id);
-const KEY = "btc_gate_v1";
+(function () {
+  function el(id) { return document.getElementById(id); }
+  const KEY = "btc_gate_v1";
+  const FEE = 0.07;
+  const fee = (p) => FEE * p * (1 - p);
+  const IVS = [5, 15];
+  const evCache = {};
+  const openCache = {};
+  const usd = (n) => n == null || n !== n ? "—" : "$" + Number(n).toLocaleString("en-US", {minimumFractionDigits:1, maximumFractionDigits:1});
 
-async function sha256(s){
-  const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
-  return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join("");
-}
-function skipGate(){
-  const want = (window.OPS_CONFIG||{}).pageCodeSha256 || "";
-  return !want;
-}
-async function tryOpen(code){
-  const want = (window.OPS_CONFIG||{}).pageCodeSha256 || "";
-  if (!want) { openApp(); return; }
-  const h = await sha256(code);
-  if (h === want){ localStorage.setItem(KEY, h); openApp(); }
-  else $("gate-msg").textContent = "wrong password";
-}
-function openApp(){
-  $("gate").classList.add("hidden");
-  $("app").classList.remove("hidden");
-  start();
-}
-$("open").onclick = () => tryOpen($("code").value);
-$("code").addEventListener("keydown", e => { if (e.key === "Enter") tryOpen($("code").value); });
-(async () => {
-  if (skipGate()){ openApp(); return; }
-  const saved = localStorage.getItem(KEY);
-  if (saved && saved === (window.OPS_CONFIG||{}).pageCodeSha256) openApp();
-})();
+  async function sha256(s){
+    const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
+    return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, "0")).join("");
+  }
+  function wantHash(){
+    return (window.OPS_CONFIG && window.OPS_CONFIG.pageCodeSha256) || "";
+  }
+  function alreadyOpen(){
+    const want = wantHash();
+    if (!want) return true;
+    try {
+      if (sessionStorage.getItem("copy-lab-ok") === "1") return true;
+      if (localStorage.getItem(KEY) === want) return true;
+    } catch (e) {}
+    return false;
+  }
+  async function tryOpen(code){
+    const want = wantHash();
+    if (!want) { openApp(); return; }
+    try {
+      const h = await sha256(code || "");
+      if (h === want) {
+        try { localStorage.setItem(KEY, h); } catch (e) {}
+        openApp();
+      } else el("gate-msg").textContent = "wrong password";
+    } catch (e) {
+      el("gate-msg").textContent = "browser blocked the check — try Chrome";
+    }
+  }
+  function openApp(){
+    el("gate").classList.add("hidden");
+    el("app").classList.remove("hidden");
+    paintBoot();
+    start();
+  }
 
-const FEE = 0.07;
-const fee = (p) => FEE * p * (1 - p);
-const IVS = [5, 15];
-const evCache = {};
-const openCache = {};
+  async function jget(url, ms){
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), ms || 4000);
+    try {
+      const r = await fetch(url, { signal: ctrl.signal, cache: "no-store" });
+      if (!r.ok) throw new Error(String(r.status));
+      return await r.json();
+    } finally {
+      clearTimeout(t);
+    }
+  }
 
-async function jget(url){ const r = await fetch(url); if(!r.ok) throw new Error(r.status); return r.json(); }
+  function paintBoot(){
+    const node = el("boot-state");
+    if (!node || !node.textContent) return;
+    try {
+      const s = JSON.parse(node.textContent);
+      if (s && s.sniper) applyState(s);
+    } catch (e) {}
+  }
 
-function windowOf(iv){
-  const sec = iv * 60, now = Math.floor(Date.now()/1000);
-  const start = now - (now % sec);
-  return { start, end: start + sec, slug: `btc-updown-${iv}m-${start}` };
-}
-async function gammaEvent(slug){
-  if (evCache[slug] !== undefined) return evCache[slug];
-  try{
-    const b = await jget(`https://gamma-api.polymarket.com/events?slug=${slug}`);
-    evCache[slug] = (Array.isArray(b) && b.length) ? b[0] : null;
-  }catch(e){ return null; }
-  return evCache[slug];
-}
-async function binOpen(start, iv){
-  const k = `${iv}:${start}`;
-  if (openCache[k] !== undefined) return openCache[k];
-  try{
-    const b = await jget(`https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=${iv}m&startTime=${start*1000}&limit=1`);
-    openCache[k] = b.length ? parseFloat(b[0][1]) : null;
-  }catch(e){ return null; }
-  return openCache[k];
-}
-async function ask(token){
-  try{
-    const b = await jget(`https://clob.polymarket.com/price?token_id=${token}&side=sell`);
-    const px = parseFloat(b.price || 0);
-    return (px > 0.001 && px < 0.999) ? px : null;
-  }catch(e){ return null; }
-}
-const usd = (n) => n == null ? "—" : "$" + n.toLocaleString("en-US", {minimumFractionDigits:1, maximumFractionDigits:1});
-
-function vsHint(diff){
-  if (diff == null) return "Waiting for Bitcoin price.";
-  const abs = Math.abs(diff).toFixed(1);
-  if (diff >= 0) return `Bitcoin is $${abs} above the start of this window. Up is ahead so far.`;
-  return `Bitcoin is $${abs} below the start of this window. Down is ahead so far.`;
-}
-function phaseOf(iv, left){
-  const total = iv * 60, snipe = iv === 15 ? 300 : 75, elapsed = total - left;
-  if (elapsed < 90) return "just opened — letting prices settle";
-  if (left > snipe) return "waiting — too early for Sniper";
-  if (left >= 10) return "Sniper window — last minutes";
-  return "closing";
-}
-function extraNote(asks){
-  const mid = asks.find(p => p != null && p >= 0.40 && p <= 0.60);
-  if (mid == null) return "No 50/50 price right now. We still do not take an early coin-flip bet.";
-  const keep = 1 - mid - fee(mid);
-  if (keep < 0.03) return `After fees an early ${(mid*100).toFixed(0)}c bet keeps only ${(keep*100).toFixed(1)}c. We skip that (Mitch’s book is red on these).`;
-  return `After fees an early ${(mid*100).toFixed(0)}c bet would keep ${(keep*100).toFixed(1)}c. We still skip it — Sniper only.`;
-}
-
-async function card(iv, btc){
-  const w = windowOf(iv);
-  const [ev, line] = await Promise.all([gammaEvent(w.slug), binOpen(w.start, iv)]);
-  const left = Math.max(0, w.end - Math.floor(Date.now()/1000));
-  const title = ev ? ev.title : w.slug;
-  let rows = "";
-  let extra = "We do not take an early coin-flip bet.";
-  if (ev && ev.markets && ev.markets.length){
-    const m = ev.markets[0];
-    let outs = [], toks = [];
-    try{ outs = JSON.parse(m.outcomes||"[]"); toks = JSON.parse(m.clobTokenIds||"[]"); }catch(e){}
-    const asks = await Promise.all(toks.map(t => ask(String(t))));
-    outs.forEach((name, i) => {
-      const a = asks[i];
-      if (a == null){ rows += `<tr><td>${name}</td><td colspan=3 class=mut>no offers</td></tr>`; return; }
-      const f = fee(a), win = 1 - a - f;
-      rows += `<tr><td>${name}</td><td class=num>${(a*100).toFixed(1)}c</td><td class="num mut">${(f*100).toFixed(2)}c</td><td class=num>+${(win*100).toFixed(1)}c</td></tr>`;
-    });
-    extra = extraNote(asks);
-  } else rows = `<tr><td colspan=4 class=mut>Polymarket has not listed this window yet</td></tr>`;
-  const diff = (btc != null && line != null) ? btc - line : null;
-  const cls = diff == null ? "" : (diff >= 0 ? "good" : "bad");
-  const dtxt = diff == null ? "—" : (diff >= 0 ? "+" : "") + diff.toFixed(1);
-  return `<div class=card><div class=hd>${title}</div>
-    <div class=mut>${phaseOf(iv, left)}</div>
-    <div class=big>${Math.floor(left/60)}:${String(left%60).padStart(2,"0")}</div>
-    <div>line <span class=num>${usd(line)}</span> · BTC <span class=num>${usd(btc)}</span> ·
-      <span class="num ${cls}">${dtxt}</span> vs line
-      <a href="./btc-guide.html#vs-line" style="font-size:11px">?</a></div>
-    <div class=hint>${vsHint(diff)}</div>
-    <table><tr><th></th><th>buy at</th><th>fee</th><th>win pays</th></tr>${rows}</table>
-    <div class=hint>${extra}</div></div>`;
-}
-
-async function tickLive(){
-  let btc = null;
-  try{ btc = parseFloat((await jget("https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT")).price); }catch(e){}
-  const cards = await Promise.all(IVS.map(iv => card(iv, btc)));
-  $("cards").innerHTML = cards.join("");
-  $("stamp").textContent = new Date().toISOString().slice(11,19) + " UTC";
-}
-
-async function tickState(){
-  try{
-    const s = await jget(`./data/btc-state.json?ts=${Date.now()}`);
+  function applyState(s){
     const sn = s.sniper || {};
-    const pnl = sn.pnl || 0;
-    $("k-pnl").textContent = (pnl >= 0 ? "+" : "") + pnl.toFixed(2) + " $";
-    $("k-pnl").className = pnl >= 0 ? "good" : "bad";
-    $("k-rec").textContent = `${sn.wins||0}-${sn.losses||0}`;
-    $("k-upd").textContent = (s.updated || "—").slice(11,16) + " UTC";
+    const pnl = Number(sn.pnl || 0);
+    el("k-pnl").textContent = (pnl >= 0 ? "+" : "") + pnl.toFixed(2) + " $";
+    el("k-pnl").className = pnl >= 0 ? "good" : "bad";
+    el("k-rec").textContent = (sn.wins || 0) + "-" + (sn.losses || 0);
+    const upd = String(s.updated || "—");
+    el("k-upd").textContent = upd.length >= 16 ? upd.slice(11, 16) + " UTC" : upd;
     const tape = s.tape || [];
-    $("tape").innerHTML = tape.length
-      ? tape.slice(0,16).map(r => `<div class=msg><span class=mut>${r.ts||""}</span> <b>${r.who||""}</b> ${r.text||""}</div>`).join("")
+    el("tape").innerHTML = tape.length
+      ? tape.slice(0, 16).map(r => `<div class=msg><span class=mut>${r.ts || ""}</span> <b>${r.who || ""}</b> ${r.text || ""}</div>`).join("")
       : `<span class=mut>No Sniper shots published yet.</span>`;
-    const bars = (s.windows || []).slice(0,24).reverse().map(w => {
+    const bars = (s.windows || []).slice(0, 24).reverse().map(w => {
       const cls = w.result === "Up" ? "up" : "dn";
       const mark = w.snipe ? " s" : "";
-      return `<i class="bar ${cls}${mark}" title="${w.when||""} ${w.iv}m ${w.result||""}"></i>`;
+      return `<i class="bar ${cls}${mark}" title="${w.when || ""} ${w.iv}m ${w.result || ""}"></i>`;
     });
-    $("bars").innerHTML = bars.join("") || `<span class=mut>waiting for closed windows</span>`;
-    const rows = (s.windows || []).slice(0,30).map(w => {
+    el("bars").innerHTML = bars.join("") || `<span class=mut>waiting for closed windows</span>`;
+    const rows = (s.windows || []).slice(0, 30).map(w => {
       const cls = w.pnl == null ? "" : (w.pnl > 0 ? "good" : "bad");
-      const pl = w.pnl == null ? "—" : (w.pnl >= 0 ? "+" : "") + w.pnl.toFixed(2);
-      return `<tr><td>${w.when}</td><td>${w.iv}m</td><td class=num>${usd(w.line)}</td><td class=num>${usd(w.close)}</td><td>${w.result}</td><td>${w.snipe||"—"}</td><td class="num ${cls}">${pl}</td></tr>`;
+      const pl = w.pnl == null ? "—" : (w.pnl >= 0 ? "+" : "") + Number(w.pnl).toFixed(2);
+      return `<tr><td>${w.when || ""}</td><td>${w.iv}m</td><td class=num>${usd(w.line)}</td><td class=num>${usd(w.close)}</td><td>${w.result || ""}</td><td>${w.snipe || "—"}</td><td class="num ${cls}">${pl}</td></tr>`;
     });
-    $("hist").innerHTML = rows.join("") || `<tr><td colspan=7 class=mut>nothing yet — waiting for the first closed window</td></tr>`;
-  }catch(e){
-    $("hist").innerHTML = `<tr><td colspan=7 class=mut>no results file yet (Mac has not published)</td></tr>`;
+    el("hist").innerHTML = rows.join("") || `<tr><td colspan=7 class=mut>nothing yet — waiting for the first closed window</td></tr>`;
   }
-}
 
-let started = false;
-function start(){
-  if (started) return; started = true;
-  tickLive(); tickState();
-  setInterval(tickLive, 6000);
-  setInterval(tickState, 60000);
-}
+  function windowOf(iv){
+    const sec = iv * 60, now = Math.floor(Date.now() / 1000);
+    const start = now - (now % sec);
+    return { start, end: start + sec, slug: `btc-updown-${iv}m-${start}` };
+  }
+  async function gammaEvent(slug){
+    if (evCache[slug] !== undefined) return evCache[slug];
+    try {
+      const b = await jget("https://gamma-api.polymarket.com/events?slug=" + encodeURIComponent(slug), 4000);
+      evCache[slug] = (Array.isArray(b) && b.length) ? b[0] : null;
+    } catch (e) { return null; }
+    return evCache[slug];
+  }
+  async function binOpen(start, iv){
+    const k = iv + ":" + start;
+    if (openCache[k] !== undefined) return openCache[k];
+    try {
+      const b = await jget(`https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=${iv}m&startTime=${start * 1000}&limit=1`, 3000);
+      openCache[k] = (b && b.length) ? parseFloat(b[0][1]) : null;
+    } catch (e) { return null; }
+    return openCache[k];
+  }
+  async function ask(token){
+    try {
+      const b = await jget("https://clob.polymarket.com/price?token_id=" + token + "&side=sell", 4000);
+      const px = parseFloat(b.price || 0);
+      return (px > 0.001 && px < 0.999) ? px : null;
+    } catch (e) { return null; }
+  }
+  async function btcSpot(){
+    try {
+      const d = await jget("https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT", 2500);
+      const n = parseFloat(d.price);
+      if (n > 0) return n;
+    } catch (e) {}
+    try {
+      const d = await jget("https://api.coinbase.com/v2/prices/BTC-USD/spot", 2500);
+      const n = parseFloat(d.data && d.data.amount);
+      if (n > 0) return n;
+    } catch (e) {}
+    return null;
+  }
+  function vsHint(diff){
+    if (diff == null) return "Waiting for Bitcoin price.";
+    const abs = Math.abs(diff).toFixed(1);
+    if (diff >= 0) return "Bitcoin is $" + abs + " above the start of this window. Up is ahead so far.";
+    return "Bitcoin is $" + abs + " below the start of this window. Down is ahead so far.";
+  }
+  function phaseOf(iv, left){
+    const total = iv * 60, snipe = iv === 15 ? 300 : 75, elapsed = total - left;
+    if (elapsed < 90) return "just opened — letting prices settle";
+    if (left > snipe) return "waiting — too early for Sniper";
+    if (left >= 10) return "Sniper window — last minutes";
+    return "closing";
+  }
+  function extraNote(asks){
+    const mid = asks.find(p => p != null && p >= 0.40 && p <= 0.60);
+    if (mid == null) return "No 50/50 price right now. We still do not take an early coin-flip bet.";
+    const keep = 1 - mid - fee(mid);
+    if (keep < 0.03) return "After fees an early " + (mid * 100).toFixed(0) + "c bet keeps only " + (keep * 100).toFixed(1) + "c. We skip that (Mitch’s book is red on these).";
+    return "After fees an early " + (mid * 100).toFixed(0) + "c bet would keep " + (keep * 100).toFixed(1) + "c. We still skip it — Sniper only.";
+  }
+
+  async function card(iv, btc){
+    const w = windowOf(iv);
+    const [ev, line] = await Promise.all([gammaEvent(w.slug), binOpen(w.start, iv)]);
+    const left = Math.max(0, w.end - Math.floor(Date.now() / 1000));
+    const title = ev ? ev.title : w.slug;
+    let rows = "";
+    let extra = "We do not take an early coin-flip bet.";
+    if (ev && ev.markets && ev.markets.length){
+      const m = ev.markets[0];
+      let outs = [], toks = [];
+      try { outs = JSON.parse(m.outcomes || "[]"); toks = JSON.parse(m.clobTokenIds || "[]"); } catch (e) {}
+      const asks = await Promise.all(toks.map(t => ask(String(t))));
+      outs.forEach((name, i) => {
+        const a = asks[i];
+        if (a == null){ rows += `<tr><td>${name}</td><td colspan=3 class=mut>no offers</td></tr>`; return; }
+        const f = fee(a), win = 1 - a - f;
+        rows += `<tr><td>${name}</td><td class=num>${(a * 100).toFixed(1)}c</td><td class="num mut">${(f * 100).toFixed(2)}c</td><td class=num>+${(win * 100).toFixed(1)}c</td></tr>`;
+      });
+      extra = extraNote(asks);
+    } else rows = `<tr><td colspan=4 class=mut>Polymarket has not listed this window yet</td></tr>`;
+    const diff = (btc != null && line != null) ? btc - line : null;
+    const cls = diff == null ? "" : (diff >= 0 ? "good" : "bad");
+    const dtxt = diff == null ? "—" : (diff >= 0 ? "+" : "") + diff.toFixed(1);
+    return `<div class=card><div class=hd>${title}</div>
+      <div class=mut>${phaseOf(iv, left)}</div>
+      <div class=big>${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}</div>
+      <div>line <span class=num>${usd(line)}</span> · BTC <span class=num>${usd(btc)}</span> ·
+        <span class="num ${cls}">${dtxt}</span> vs line
+        <a href="./btc-guide.html#vs-line" style="font-size:11px">?</a></div>
+      <div class=hint>${vsHint(diff)}</div>
+      <table><tr><th></th><th>buy at</th><th>fee</th><th>win pays</th></tr>${rows}</table>
+      <div class=hint>${extra}</div></div>`;
+  }
+
+  async function tickLive(){
+    try {
+      const btc = await btcSpot();
+      const cards = await Promise.all(IVS.map(iv => card(iv, btc)));
+      el("cards").innerHTML = cards.join("");
+      el("stamp").textContent = new Date().toISOString().slice(11, 19) + " UTC";
+    } catch (e) {
+      if (!el("cards").innerHTML) {
+        el("cards").innerHTML = `<div class=card><div class=mut>Live prices did not load. Numbers from the Mac are in the table below.</div></div>`;
+      }
+    }
+  }
+
+  async function tickState(){
+    const urls = [
+      "./data/btc-state.json?ts=" + Date.now(),
+      "https://mrbinio.github.io/copy-lab-ops/data/btc-state.json?ts=" + Date.now()
+    ];
+    for (const url of urls) {
+      try {
+        const s = await jget(url, 5000);
+        if (s && s.sniper) { applyState(s); return; }
+      } catch (e) {}
+    }
+    if (el("k-pnl").textContent === "—") {
+      el("hist").innerHTML = `<tr><td colspan=7 class=mut>Could not load Mac results. Hard-refresh the page.</td></tr>`;
+    }
+  }
+
+  let started = false;
+  function start(){
+    if (started) return;
+    started = true;
+    tickLive();
+    tickState();
+    setInterval(tickLive, 8000);
+    setInterval(tickState, 30000);
+  }
+
+  el("open").onclick = () => tryOpen(el("code").value);
+  el("code").addEventListener("keydown", e => { if (e.key === "Enter") tryOpen(el("code").value); });
+  paintBoot();
+  if (alreadyOpen()) openApp();
+})();
 </script>
 </body>
 </html>
