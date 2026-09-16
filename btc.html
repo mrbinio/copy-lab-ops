@@ -17,6 +17,12 @@ h1{font-size:17px;margin:0} .mut{color:#7d858f} .good{color:#34c47c} .bad{color:
 .hd{font-weight:600;margin-bottom:4px} .big{font:600 34px/1.2 ui-monospace,Menlo,monospace}
 .num{font-family:ui-monospace,Menlo,monospace}
 .hint{color:#7d858f;font-size:12.5px;margin:6px 0 8px;max-width:42em}
+.note{background:#0f1216;border:1px solid #1e2329;border-radius:8px;padding:10px 12px;margin:0 0 14px;max-width:52em}
+.tape{background:#0f1216;border:1px solid #1e2329;border-radius:8px;padding:12px 14px;margin:16px 0;max-height:280px;overflow:auto}
+.msg{font-size:13px;padding:5px 0;border-bottom:1px solid #1e2329}
+.bars{display:flex;align-items:flex-end;gap:3px;height:44px;margin:8px 0 18px}
+.bar{display:block;width:8px;height:28px;background:#2a3038}
+.bar.up{background:#34c47c} .bar.dn{background:#ef6b6b} .bar.s{outline:1px solid #7fb2ff}
 table{border-collapse:collapse;margin:8px 0;width:100%}
 th,td{text-align:left;padding:3px 10px 3px 0;border-bottom:1px solid #1e2329;font-size:13px}
 th{color:#7d858f;font-weight:500;text-transform:uppercase;font-size:10.5px}
@@ -44,6 +50,9 @@ a{color:#7fb2ff;text-decoration:none}
       · <a href="./now.html">Copy Lab</a>
     </span>
   </div>
+  <div class="note">We copy <b>only the late Sniper</b> (last minutes, Bitcoin already far from the line, $5 paper).
+    We do <b>not</b> copy Mitch’s early ~48c Up/Down bets — on his own board that sleeve is the red one.
+    15-minute Sniper watches the <b>last 5 minutes</b>.</div>
   <div class="kpi">
     <div class="mut">Sniper result <a href="./btc-guide.html#sniper-result">what is this?</a>
       <b id="k-pnl">—</b></div>
@@ -55,10 +64,13 @@ a{color:#7fb2ff;text-decoration:none}
       <b id="k-upd">—</b></div>
   </div>
   <div class="cards" id="cards"></div>
+  <div class="mut">Recent windows (green = Up won, red = Down won, outline = we sniped)</div>
+  <div class="bars" id="bars"></div>
+  <div class="tape"><div class="mut">Tape (from the Mac, ~15 min)</div><div id="tape"><span class="mut">loading…</span></div></div>
   <h1 style="margin:22px 0 6px;font-size:14px">Closed windows (from the Mac, about every 15 min) <a href="./btc-guide.html#table" style="font-size:12px;font-weight:400">what is this?</a></h1>
   <table><thead><tr><th>start UTC</th><th>window</th><th>line</th><th>close</th><th>result</th><th>sniper</th><th>P&amp;L</th></tr></thead>
   <tbody id="hist"><tr><td colspan="7" class="mut">loading…</td></tr></tbody></table>
-  <p class="mut">Sniper is pretend money only. Near the end of a window, if Bitcoin is far from the line ($25 on 5-min / $50 on 15-min), it buys the leading side at 80–95.5 cents for $5. Polymarket fee: 7% × price × (1 − price) per share. Full explanation: <a href="./btc-guide.html">Guide (PL + EN)</a>.</p>
+  <p class="mut">Sniper is pretend money only. Last 75s of a 5-min window ($25 off the line) or last 5 min of a 15-min window ($50 off). Buys the leading side at 80–95.5 cents for $5. We do not take the early 48c coin-flip. Full explanation: <a href="./btc-guide.html">Guide (PL + EN)</a>.</p>
 </div>
 
 <script src="./access-config.js"></script>
@@ -139,6 +151,20 @@ function vsHint(diff){
   if (diff >= 0) return `Bitcoin is $${abs} above the start of this window. Up is ahead so far.`;
   return `Bitcoin is $${abs} below the start of this window. Down is ahead so far.`;
 }
+function phaseOf(iv, left){
+  const total = iv * 60, snipe = iv === 15 ? 300 : 75, elapsed = total - left;
+  if (elapsed < 90) return "just opened — letting prices settle";
+  if (left > snipe) return "waiting — too early for Sniper";
+  if (left >= 10) return "Sniper window — last minutes";
+  return "closing";
+}
+function extraNote(asks){
+  const mid = asks.find(p => p != null && p >= 0.40 && p <= 0.60);
+  if (mid == null) return "No 50/50 price right now. We still do not take an early coin-flip bet.";
+  const keep = 1 - mid - fee(mid);
+  if (keep < 0.03) return `After fees an early ${(mid*100).toFixed(0)}c bet keeps only ${(keep*100).toFixed(1)}c. We skip that (Mitch’s book is red on these).`;
+  return `After fees an early ${(mid*100).toFixed(0)}c bet would keep ${(keep*100).toFixed(1)}c. We still skip it — Sniper only.`;
+}
 
 async function card(iv, btc){
   const w = windowOf(iv);
@@ -146,6 +172,7 @@ async function card(iv, btc){
   const left = Math.max(0, w.end - Math.floor(Date.now()/1000));
   const title = ev ? ev.title : w.slug;
   let rows = "";
+  let extra = "We do not take an early coin-flip bet.";
   if (ev && ev.markets && ev.markets.length){
     const m = ev.markets[0];
     let outs = [], toks = [];
@@ -157,17 +184,20 @@ async function card(iv, btc){
       const f = fee(a), win = 1 - a - f;
       rows += `<tr><td>${name}</td><td class=num>${(a*100).toFixed(1)}c</td><td class="num mut">${(f*100).toFixed(2)}c</td><td class=num>+${(win*100).toFixed(1)}c</td></tr>`;
     });
+    extra = extraNote(asks);
   } else rows = `<tr><td colspan=4 class=mut>Polymarket has not listed this window yet</td></tr>`;
   const diff = (btc != null && line != null) ? btc - line : null;
   const cls = diff == null ? "" : (diff >= 0 ? "good" : "bad");
   const dtxt = diff == null ? "—" : (diff >= 0 ? "+" : "") + diff.toFixed(1);
   return `<div class=card><div class=hd>${title}</div>
+    <div class=mut>${phaseOf(iv, left)}</div>
     <div class=big>${Math.floor(left/60)}:${String(left%60).padStart(2,"0")}</div>
     <div>line <span class=num>${usd(line)}</span> · BTC <span class=num>${usd(btc)}</span> ·
       <span class="num ${cls}">${dtxt}</span> vs line
       <a href="./btc-guide.html#vs-line" style="font-size:11px">?</a></div>
     <div class=hint>${vsHint(diff)}</div>
-    <table><tr><th></th><th>buy at</th><th>fee</th><th>win pays</th></tr>${rows}</table></div>`;
+    <table><tr><th></th><th>buy at</th><th>fee</th><th>win pays</th></tr>${rows}</table>
+    <div class=hint>${extra}</div></div>`;
 }
 
 async function tickLive(){
@@ -187,6 +217,16 @@ async function tickState(){
     $("k-pnl").className = pnl >= 0 ? "good" : "bad";
     $("k-rec").textContent = `${sn.wins||0}-${sn.losses||0}`;
     $("k-upd").textContent = (s.updated || "—").slice(11,16) + " UTC";
+    const tape = s.tape || [];
+    $("tape").innerHTML = tape.length
+      ? tape.slice(0,16).map(r => `<div class=msg><span class=mut>${r.ts||""}</span> <b>${r.who||""}</b> ${r.text||""}</div>`).join("")
+      : `<span class=mut>No Sniper shots published yet.</span>`;
+    const bars = (s.windows || []).slice(0,24).reverse().map(w => {
+      const cls = w.result === "Up" ? "up" : "dn";
+      const mark = w.snipe ? " s" : "";
+      return `<i class="bar ${cls}${mark}" title="${w.when||""} ${w.iv}m ${w.result||""}"></i>`;
+    });
+    $("bars").innerHTML = bars.join("") || `<span class=mut>waiting for closed windows</span>`;
     const rows = (s.windows || []).slice(0,30).map(w => {
       const cls = w.pnl == null ? "" : (w.pnl > 0 ? "good" : "bad");
       const pl = w.pnl == null ? "—" : (w.pnl >= 0 ? "+" : "") + w.pnl.toFixed(2);
