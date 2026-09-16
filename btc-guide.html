@@ -61,6 +61,8 @@ ul{margin:8px 0 8px 18px} li{margin:4px 0}
       <a href="#stake">Stake</a> ·
       <a href="#mac-update">Mac update</a> ·
       <a href="#prices">Buy at / fee / win pays</a> ·
+      <a href="#tape">Tape</a> ·
+      <a href="#bars">Green and red bars</a> ·
       <a href="#table">Closed windows table</a> ·
       <a href="#wait">Why it waits</a> ·
       <a href="#danger">Why 10 wins in a row is not “we are rich”</a>
@@ -148,19 +150,25 @@ ul{margin:8px 0 8px 18px} li{margin:4px 0}
 
     <h2 id="table">9. Closed windows table</h2>
     <ul>
-      <li><b>start UTC</b> = when that window began (London/Poland is UTC+2 in summer, so 21:05 UTC = 23:05 in Poland).</li>
-      <li><b>window</b> = 5m or 15m.</li>
-      <li><b>line</b> = Bitcoin at the start.</li>
-      <li><b>close</b> = Bitcoin at the end.</li>
-      <li><b>result</b> = official winner, Up or Down.</li>
-      <li><b>sniper</b> = what the pretend bot bought, e.g. <b>Down @ 0.93</b> = bought Down at 93 cents. A dash means it skipped.</li>
-      <li><b>P&amp;L</b> = dollars won or lost on that one pretend bet. <span class="good">+0.35</span> is thirty-five cents profit. <span class="bad">−5.07</span> would be a full miss.</li>
+      <li id="col-start"><b>start UTC</b> = when that window began (London/Poland is UTC+2 in summer, so 21:05 UTC = 23:05 in Poland).</li>
+      <li id="col-window"><b>window</b> = 5m or 15m.</li>
+      <li id="col-line"><b>line</b> = Bitcoin at the start.</li>
+      <li id="col-close"><b>close</b> = Bitcoin at the end.</li>
+      <li id="col-result"><b>result</b> = official winner, Up or Down.</li>
+      <li id="col-sniper"><b>sniper</b> = what the pretend bot bought, e.g. <b>Down @ 0.93</b> = bought Down at 93 cents. A dash means it skipped.</li>
+      <li id="col-pnl"><b>P&amp;L</b> = dollars won or lost on that one pretend bet. <span class="good">+0.35</span> is thirty-five cents profit. <span class="bad">−5.07</span> would be a full miss.</li>
     </ul>
+
+    <h2 id="tape">Tape</h2>
+    <p>The tape is the Mac’s short diary. Each line is one pretend Sniper shot: the time, whether it bought Up or Down, the price in cents, and whether that shot paid or lost.</p>
+
+    <h2 id="bars">Recent windows (green and red bars)</h2>
+    <p>Each bar is one finished window. Green = Up won. Red = Down won. A light outline means the pretend Sniper took a $5 shot in that window. No outline means it skipped.</p>
 
     <h2 id="wait">10. Why it often says nothing / waits</h2>
     <p>The Sniper is allowed to bet only when <b>all</b> of this is true:</p>
     <ul>
-      <li>We are in the last 75 seconds of a 5-minute window, or the last 3 minutes of a 15-minute window.</li>
+      <li>We are in the last 75 seconds of a 5-minute window, or the last <b>5 minutes</b> of a 15-minute window.</li>
       <li>Bitcoin is at least <b>$25</b> away from the line (5-min) or <b>$50</b> (15-min). Close to the line = a coin flip. We skip coin flips.</li>
       <li>The leading side still costs between <b>80 cents and 95.5 cents</b>. Cheaper than 80 = not sure enough. More expensive than 95.5 = almost nothing left to earn after the fee.</li>
     </ul>
@@ -192,6 +200,8 @@ ul{margin:8px 0 8px 18px} li{margin:4px 0}
       <a href="#pl-stake">Stake</a> ·
       <a href="#pl-mac">Mac update</a> ·
       <a href="#pl-prices">Buy at / fee / win pays</a> ·
+      <a href="#pl-tape">Tape</a> ·
+      <a href="#pl-bars">Zielone i czerwone słupki</a> ·
       <a href="#pl-table">Tabela okien</a> ·
       <a href="#pl-wait">Dlaczego czeka</a> ·
       <a href="#pl-danger">Dlaczego 10 wygranych to jeszcze nie sukces</a>
@@ -279,19 +289,25 @@ ul{margin:8px 0 8px 18px} li{margin:4px 0}
 
     <h2 id="pl-table">9. Tabela zamkniętych okien</h2>
     <ul>
-      <li><b>start UTC</b> = kiedy okno się zaczęło (u Ciebie latem UTC+2, więc 21:05 UTC = 23:05 w Polsce).</li>
-      <li><b>window</b> = 5m albo 15m.</li>
-      <li><b>line</b> = Bitcoin na starcie.</li>
-      <li><b>close</b> = Bitcoin na mecie.</li>
-      <li><b>result</b> = oficjalny zwycięzca, Up albo Down.</li>
-      <li><b>sniper</b> = co kupił udawany bot, np. <b>Down @ 0.93</b> = kupił Down po 93 centy. Kreska = pominął.</li>
-      <li><b>P&amp;L</b> = dolary z tego jednego udawanego zakładu. <span class="good">+0.35</span> to trzydzieści pięć centów zysku. <span class="bad">−5.07</span> to pełna pomyłka.</li>
+      <li id="pl-col-start"><b>start UTC</b> = kiedy okno się zaczęło (u Ciebie latem UTC+2, więc 21:05 UTC = 23:05 w Polsce).</li>
+      <li id="pl-col-window"><b>window</b> = 5m albo 15m.</li>
+      <li id="pl-col-line"><b>line</b> = Bitcoin na starcie.</li>
+      <li id="pl-col-close"><b>close</b> = Bitcoin na mecie.</li>
+      <li id="pl-col-result"><b>result</b> = oficjalny zwycięzca, Up albo Down.</li>
+      <li id="pl-col-sniper"><b>sniper</b> = co kupił udawany bot, np. <b>Down @ 0.93</b> = kupił Down po 93 centy. Kreska = pominął.</li>
+      <li id="pl-col-pnl"><b>P&amp;L</b> = dolary z tego jednego udawanego zakładu. <span class="good">+0.35</span> to trzydzieści pięć centów zysku. <span class="bad">−5.07</span> to pełna pomyłka.</li>
     </ul>
+
+    <h2 id="pl-tape">Tape</h2>
+    <p>Taśma to krótki dziennik z Maca. Każda linia to jeden udawany strzał Snipera: godzina, czy kupił Up czy Down, cena w centach oraz czy ten strzał zapłacił, czy stracił.</p>
+
+    <h2 id="pl-bars">Ostatnie okna (zielone i czerwone słupki)</h2>
+    <p>Każdy słupek to jedno skończone okno. Zielony = wygrał Up. Czerwony = wygrał Down. Jasna obwódka znaczy, że udawany Sniper wziął w tym oknie strzał za $5. Bez obwódki = pominął.</p>
 
     <h2 id="pl-wait">10. Dlaczego często nic nie robi / czeka</h2>
     <p>Sniper może zagrać dopiero gdy spełnione jest <b>wszystko</b> naraz:</p>
     <ul>
-      <li>Zostało mniej niż 75 sekund (okno 5 min) albo mniej niż 3 minuty (okno 15 min).</li>
+      <li>Zostało mniej niż 75 sekund (okno 5 min) albo mniej niż <b>5 minut</b> (okno 15 min).</li>
       <li>Bitcoin jest co najmniej <b>$25</b> od linii (5 min) albo <b>$50</b> (15 min). Blisko linii = rzut monetą. Tego nie gramy.</li>
       <li>Prowadząca strona kosztuje między <b>80 a 95,5 centa</b>. Taniej niż 80 = za mało pewności. Drożej niż 95,5 = po opłacie prawie nic nie zostaje.</li>
     </ul>
@@ -329,13 +345,21 @@ function openApp(){
   $("gate").classList.add("hidden");
   $("app").classList.remove("hidden");
   const want = (location.hash || "").replace("#","");
-  if (want.startsWith("pl-") || ["pl-what","pl-game","pl-vs","pl-sniper","pl-record","pl-stake","pl-mac","pl-prices","pl-table","pl-wait","pl-danger"].includes(want)) setLang("pl");
+  if (want.startsWith("pl-")) setLang("pl");
+  else if (want) setLang("en");
+  if (want) {
+    const t = document.getElementById(want);
+    if (t) setTimeout(() => t.scrollIntoView(), 0);
+  }
 }
 async function tryOpen(code){
   const want = (window.OPS_CONFIG||{}).pageCodeSha256 || "";
   if (!want) { openApp(); return; }
   const h = await sha256(code);
-  if (h === want){ localStorage.setItem(KEY, h); openApp(); }
+  if (h === want){
+    try { localStorage.setItem(KEY, h); sessionStorage.setItem("copy-lab-ok", "1"); } catch (e) {}
+    openApp();
+  }
   else $("gate-msg").textContent = "wrong password";
 }
 function setLang(lang){
@@ -354,7 +378,9 @@ $("btn-pl").onclick = () => setLang("pl");
   if (savedLang === "pl" || savedLang === "en") setLang(savedLang);
   if (skipGate()){ openApp(); return; }
   const saved = localStorage.getItem(KEY);
-  if (saved && saved === (window.OPS_CONFIG||{}).pageCodeSha256) openApp();
+  let ok = false;
+  try { ok = sessionStorage.getItem("copy-lab-ok") === "1"; } catch (e) {}
+  if (ok || (saved && saved === (window.OPS_CONFIG||{}).pageCodeSha256)) openApp();
 })();
 </script>
 </body>
