@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta http-equiv="Cache-Control" content="no-store" />
+<title>BTC lab · Guide</title>
+<style>
+body{margin:0;font:16px/1.6 -apple-system,system-ui,sans-serif;background:#0b0d10;color:#e6e8eb}
+.wrap{max-width:720px;margin:0 auto;padding:24px 20px 80px}
+.top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:18px}
+h1{font-size:22px;margin:0 0 4px} h2{font-size:18px;margin:28px 0 8px} h3{font-size:15px;margin:18px 0 6px}
+.mut{color:#7d858f} .good{color:#34c47c} .bad{color:#ef6b6b}
+.lang{display:flex;gap:6px}
+.lang button{background:#0f1216;border:1px solid #2a3038;color:#e6e8eb;padding:6px 10px;border-radius:5px;cursor:pointer}
+.lang button.on{border-color:#7fb2ff;color:#7fb2ff}
+.ex{background:#0f1216;border:1px solid #1e2329;border-radius:8px;padding:12px 14px;margin:10px 0}
+.ex b{font-family:ui-monospace,Menlo,monospace}
+nav a, a{color:#7fb2ff;text-decoration:none}
+nav{font-size:13.5px;line-height:1.9;margin:12px 0 20px}
+.gate{max-width:340px;margin:80px auto;background:#0f1216;border:1px solid #1e2329;border-radius:8px;padding:24px}
+.gate input{width:100%;box-sizing:border-box;margin:8px 0 12px;padding:9px;background:#0b0d10;border:1px solid #2a3038;border-radius:5px;color:#e6e8eb;font-size:14px}
+.gate button.primary{width:100%;padding:10px;background:#7fb2ff;border:0;border-radius:5px;font-weight:600;cursor:pointer;color:#0b0d10}
+.hidden{display:none}
+hr{border:0;border-top:1px solid #1e2329;margin:28px 0}
+p{margin:8px 0}
+ul{margin:8px 0 8px 18px} li{margin:4px 0}
+</style>
+</head>
+<body>
+<div id="gate" class="gate">
+  <h1>BTC lab Guide</h1>
+  <p class="mut">Same page password as Copy Lab.</p>
+  <p id="gate-msg" class="bad"></p>
+  <input id="code" type="password" autocomplete="current-password" />
+  <button class="primary" id="open" type="button">Open</button>
+</div>
+
+<div id="app" class="hidden wrap">
+  <div class="top">
+    <div>
+      <h1>Guide</h1>
+      <p class="mut">What this page is, why the numbers exist, what each one means.</p>
+    </div>
+    <div>
+      <div class="lang" role="group" aria-label="Language">
+        <button type="button" id="btn-en" class="on">EN</button>
+        <button type="button" id="btn-pl">PL</button>
+      </div>
+      <p style="margin-top:8px"><a href="./btc.html">← Dashboard</a> · <a href="./now.html">Copy Lab</a></p>
+    </div>
+  </div>
+
+  <div id="en">
+    <nav>
+      <a href="#what">What is this?</a> ·
+      <a href="#game">The 5-minute game</a> ·
+      <a href="#vs-line">−75 vs line</a> ·
+      <a href="#sniper-result">Sniper result</a> ·
+      <a href="#record">Record</a> ·
+      <a href="#stake">Stake</a> ·
+      <a href="#mac-update">Mac update</a> ·
+      <a href="#prices">Buy at / fee / win pays</a> ·
+      <a href="#table">Closed windows table</a> ·
+      <a href="#wait">Why it waits</a> ·
+      <a href="#danger">Why 10 wins in a row is not “we are rich”</a>
+    </nav>
+
+    <h2 id="what">1. What is this page?</h2>
+    <p>This is a <b>practice board</b> for one idea: betting on whether Bitcoin goes up or down in the next few minutes, on Polymarket.</p>
+    <p><b>Good news first:</b> nothing here spends your real money. The computer pretends to bet $5. No wallet, no keys, no Telegram, no PolyCop.</p>
+    <p>This is a <b>different project</b> from Copy Lab. Copy Lab is “copy other people’s bets.” This page is “our own Bitcoin up/down bets,” still only on paper.</p>
+    <p>Why it exists: Mitch (a friend) built a similar board. We copied the idea so you can watch it on your phone. We wait until the pretend money proves it works before we ever talk about real money.</p>
+
+    <h2 id="game">2. What game is Polymarket selling here?</h2>
+    <p>Every 5 minutes and every 15 minutes Polymarket opens a new short market:</p>
+    <p><b>“Will Bitcoin finish this window higher than it started?”</b></p>
+    <ul>
+      <li><b>Up</b> = Bitcoin ends the window at or above the start price. You win if you bought Up.</li>
+      <li><b>Down</b> = Bitcoin ends the window below the start price. You win if you bought Down.</li>
+    </ul>
+    <p>The start price is taken from Binance (a big crypto exchange). Polymarket uses that as the official answer. We show the same number so the board matches the real result.</p>
+    <p>The big countdown (for example <b>4:10</b>) is how much time is left in the current window. When it hits 0:00, that window is over and a new one starts.</p>
+
+    <h2 id="vs-line">3. “Line” and “−75.0 vs line”</h2>
+    <p>This is the number that confused you. It is not a score and it is not money you lost.</p>
+    <p><b>Line</b> = Bitcoin’s price at the <b>start</b> of this window. Think of it as the starting line in a race.</p>
+    <p><b>BTC</b> = Bitcoin’s price <b>right now</b>.</p>
+    <p><b>vs line</b> = now minus start. How far Bitcoin has moved since the window opened.</p>
+
+    <div class="ex">
+      <p>Example you asked about:</p>
+      <p>line <b>$75,862.2</b> · BTC <b>$75,787.2</b> · <span class="bad"><b>−75.0 vs line</b></span></p>
+      <p><b>What it means in normal words:</b> since this window started, Bitcoin got $75 cheaper. It did not lose you $75. It is just “$75 below the start.”</p>
+      <p>Because Bitcoin is lower than the start, <b>Down is winning so far</b>. If the window ended right now, Down would pay $1 and Up would pay $0.</p>
+    </div>
+
+    <div class="ex">
+      <p>The other way:</p>
+      <p>line <b>$75,862.2</b> · BTC <b>$75,902.8</b> · <span class="good"><b>+40.6 vs line</b></span></p>
+      <p><b>What it means:</b> Bitcoin is $40.6 more expensive than at the start. <b>Up is winning so far.</b></p>
+    </div>
+
+    <p>Green vs line = Bitcoin is above the start (Up ahead). Red vs line = Bitcoin is below the start (Down ahead). The color is not “you won” or “you lost.” It is only “who is ahead in this race right now.”</p>
+    <p>Under each card the page also writes a sentence, so you do not have to decode the number.</p>
+
+    <h2 id="sniper-result">4. Sniper result</h2>
+    <p><b>Sniper</b> is the pretend bot. It does <b>not</b> bet every window. It only jumps in near the end, when Bitcoin is already far from the line, and buys the side that is almost surely going to win — at a high price like 85–93 cents.</p>
+    <p><b>Sniper result</b> is the total pretend profit or loss of those late bets, in dollars, since we started the test.</p>
+    <div class="ex">
+      <p>If you see <span class="good"><b>+5.52 $</b></span>: the pretend Sniper is ahead by $5.52. That is a few dollars, not a salary.</p>
+      <p>If you see <span class="bad"><b>−12.00 $</b></span>: the pretend Sniper is behind by $12.</p>
+    </div>
+    <p>How one bet is counted: it pretends to spend <b>$5</b>. If it bought Down at 85 cents and Down wins, the tickets pay $1 each, minus a small Polymarket fee, so you keep about <b>+$0.80</b>. If it is wrong, you lose the whole <b>~$5</b>.</p>
+    <p>That is why a long winning streak can look “always good,” then one miss wipes several wins. We keep it on paper until we have seen those misses too.</p>
+
+    <h2 id="record">5. Record (for example 10-0)</h2>
+    <p>This is <b>wins − losses</b> of the pretend Sniper only. Not “how many windows existed.”</p>
+    <div class="ex">
+      <p><b>10-0</b> = 10 pretend bets won, 0 lost.</p>
+      <p><b>10-2</b> = 10 won, 2 lost. Those 2 lost bets cost about $5 each, so about −$10, while the 10 wins might be only +$6 together. The dollar number (Sniper result) is the one that matters more than the 10-2.</p>
+    </div>
+    <p>Most windows show “—” in the table. That is normal. The Sniper skipped them because Bitcoin was too close to the line, or it was not late enough in the window, or the price was not in the 80–95.5 cent band.</p>
+
+    <h2 id="stake">6. Stake · $5 / window</h2>
+    <p>Each time the Sniper takes a shot, it pretends to spend <b>$5</b>. Not $5 per minute. Only $5 when it actually bets.</p>
+    <p>Why $5: small enough that the numbers are easy to read. Same size we use when we test copy-traders in the other project.</p>
+
+    <h2 id="mac-update">7. Mac update</h2>
+    <p>The live prices (countdown, line, BTC, Up/Down) come from <b>your phone’s browser</b> every 6 seconds. They are fresh.</p>
+    <p>The Sniper result, record, and the table of closed windows come from <b>your Mac at home</b>. The Mac writes a file and pushes it to this website about every <b>15 minutes</b>.</p>
+    <p>So: prices = now. Paper bets = up to 15 minutes late. If the Mac is asleep, the table freezes until it wakes up.</p>
+
+    <h2 id="prices">8. Buy at · fee · win pays</h2>
+    <p>Polymarket sells two tickets for every window: Up and Down. Each ticket costs between 1 cent and 99 cents. At the end, the winning ticket is worth <b>$1</b>, the losing one is worth <b>$0</b>.</p>
+    <ul>
+      <li><b>Buy at 80.0c</b> = one Up (or Down) ticket costs 80 cents right now.</li>
+      <li><b>Fee 1.12c</b> = Polymarket’s tax on crypto markets. They take more when the price is near 50/50, less when it is 90/10. This is real even on paper, because a live bet would pay it.</li>
+      <li><b>Win pays +18.9c</b> = if this side wins, after the fee you keep about 18.9 cents profit per $1 of tickets. If it loses, you lose the 80 cents you paid.</li>
+    </ul>
+    <p>Cheap side (21 cents) pays a lot if it wins, but it is the underdog. Expensive side (80 cents) pays little if it wins, but it is the favorite. The Sniper only buys the expensive favorite, late, when Bitcoin has already moved a lot.</p>
+
+    <h2 id="table">9. Closed windows table</h2>
+    <ul>
+      <li><b>start UTC</b> = when that window began (London/Poland is UTC+2 in summer, so 21:05 UTC = 23:05 in Poland).</li>
+      <li><b>window</b> = 5m or 15m.</li>
+      <li><b>line</b> = Bitcoin at the start.</li>
+      <li><b>close</b> = Bitcoin at the end.</li>
+      <li><b>result</b> = official winner, Up or Down.</li>
+      <li><b>sniper</b> = what the pretend bot bought, e.g. <b>Down @ 0.93</b> = bought Down at 93 cents. A dash means it skipped.</li>
+      <li><b>P&amp;L</b> = dollars won or lost on that one pretend bet. <span class="good">+0.35</span> is thirty-five cents profit. <span class="bad">−5.07</span> would be a full miss.</li>
+    </ul>
+
+    <h2 id="wait">10. Why it often says nothing / waits</h2>
+    <p>The Sniper is allowed to bet only when <b>all</b> of this is true:</p>
+    <ul>
+      <li>We are in the last 75 seconds of a 5-minute window, or the last 3 minutes of a 15-minute window.</li>
+      <li>Bitcoin is at least <b>$25</b> away from the line (5-min) or <b>$50</b> (15-min). Close to the line = a coin flip. We skip coin flips.</li>
+      <li>The leading side still costs between <b>80 cents and 95.5 cents</b>. Cheaper than 80 = not sure enough. More expensive than 95.5 = almost nothing left to earn after the fee.</li>
+    </ul>
+    <p>If Bitcoin sits near the line all evening, the board can look “dead.” That is the bot doing its job: not gambling.</p>
+
+    <h2 id="danger">11. How to read “good” vs “bad” without fooling yourself</h2>
+    <p><b>Good:</b> Sniper result is a green dollar number <b>after many days</b>, and you have seen some red rows too (misses). Then we know the idea survives a bad window.</p>
+    <p><b>Bad / too early:</b> 10 wins in a row and +$5. That is nice, but one wrong 93-cent ticket costs ~$5. The whole pile disappears in one window. Do not treat a short green streak as income.</p>
+    <p>Copying other people (PolyCop) stays off until the other project’s own rules are met. This BTC page does not turn that on.</p>
+
+    <h2>12. One-line cheat sheet</h2>
+    <ul>
+      <li><b>−75 vs line</b> = Bitcoin dropped $75 this window. Down is ahead. Not your −$75.</li>
+      <li><b>+40 vs line</b> = Bitcoin rose $40 this window. Up is ahead.</li>
+      <li><b>Sniper result +5.52 $</b> = pretend late-bets are +$5.52 in total.</li>
+      <li><b>10-0</b> = 10 pretend hits, 0 misses.</li>
+      <li><b>Buy at 93c</b> = favorite ticket costs 93 cents; win keeps a few cents, lose loses ~$5.</li>
+      <li>Green/red on the live card = who is ahead in the race, not whether we bet.</li>
+    </ul>
+  </div>
+
+  <div id="pl" class="hidden">
+    <nav>
+      <a href="#pl-what">Co to jest?</a> ·
+      <a href="#pl-game">Gra na 5 minut</a> ·
+      <a href="#pl-vs">−75 vs linia</a> ·
+      <a href="#pl-sniper">Sniper result</a> ·
+      <a href="#pl-record">Record</a> ·
+      <a href="#pl-stake">Stake</a> ·
+      <a href="#pl-mac">Mac update</a> ·
+      <a href="#pl-prices">Buy at / fee / win pays</a> ·
+      <a href="#pl-table">Tabela okien</a> ·
+      <a href="#pl-wait">Dlaczego czeka</a> ·
+      <a href="#pl-danger">Dlaczego 10 wygranych to jeszcze nie sukces</a>
+    </nav>
+
+    <h2 id="pl-what">1. Co to jest ta strona?</h2>
+    <p>To <b>ćwiczeniowa tablica</b> do jednego pomysłu: zakład, czy Bitcoin w najbliższych minutach pójdzie w górę, czy w dół, na Polymarket.</p>
+    <p><b>Najpierw dobre:</b> tu nie idą Twoje prawdziwe pieniądze. Komputer udaje zakład po $5. Bez portfela, bez kluczy, bez Telegrama, bez PolyCop.</p>
+    <p>To <b>inny projekt</b> niż Copy Lab. Copy Lab to „kopiuj zakłady innych ludzi.” Ta strona to „własne zakłady Bitcoin w górę/w dół,” na razie tylko na papierze.</p>
+    <p>Po co: Mitch (znajomy) zrobił podobną tablicę. Odtworzyliśmy pomysł, żebyś mógł to oglądać z telefonu. Prawdziwe pieniądze wchodzą dopiero gdy papier pokaże, że to działa.</p>
+
+    <h2 id="pl-game">2. W co tu się gra?</h2>
+    <p>Co 5 minut i co 15 minut Polymarket otwiera nowy krótki rynek:</p>
+    <p><b>„Czy Bitcoin skończy to okno wyżej, niż je zaczął?”</b></p>
+    <ul>
+      <li><b>Up</b> = Bitcoin kończy okno co najmniej tak samo jak zaczął. Wygrywasz, jeśli kupiłeś Up.</li>
+      <li><b>Down</b> = Bitcoin kończy okno niżej niż zaczął. Wygrywasz, jeśli kupiłeś Down.</li>
+    </ul>
+    <p>Cena startu jest z Binance (duża giełda krypto). Polymarket bierze ją jako oficjalną odpowiedź. My pokazujemy tę samą liczbę, żeby tablica zgadzała się z wynikiem.</p>
+    <p>Duży zegar (np. <b>4:10</b>) to ile zostało do końca okna. Przy 0:00 okno się zamyka i startuje następne.</p>
+
+    <h2 id="pl-vs">3. „Line” i „−75.0 vs line”</h2>
+    <p>To ta liczba, której nie rozumiałeś. To <b>nie</b> jest wynik zakładu i <b>nie</b> są to pieniądze, które straciłeś.</p>
+    <p><b>Line</b> = cena Bitcoina na <b>starcie</b> tego okna. Jak linia startu w wyścigu.</p>
+    <p><b>BTC</b> = cena Bitcoina <b>teraz</b>.</p>
+    <p><b>vs line</b> = teraz minus start. O ile Bitcoin ruszył od otwarcia okna.</p>
+
+    <div class="ex">
+      <p>Przykład, o który pytałeś:</p>
+      <p>line <b>$75,862.2</b> · BTC <b>$75,787.2</b> · <span class="bad"><b>−75.0 vs line</b></span></p>
+      <p><b>Po polsku:</b> od startu tego okna Bitcoin staniał o $75. To nie jest Twoje −$75. To tylko „$75 pod kreską startu.”</p>
+      <p>Skoro Bitcoin jest niżej niż na starcie, <b>na razie wygrywa Down</b>. Gdyby okno skończyło się teraz, Down płaci $1, a Up $0.</p>
+    </div>
+
+    <div class="ex">
+      <p>Odwrotnie:</p>
+      <p>line <b>$75,862.2</b> · BTC <b>$75,902.8</b> · <span class="good"><b>+40.6 vs line</b></span></p>
+      <p><b>Po polsku:</b> Bitcoin jest droższy o $40.6 niż na starcie. <b>Na razie wygrywa Up.</b></p>
+    </div>
+
+    <p>Zielone vs line = Bitcoin nad startem (przód ma Up). Czerwone vs line = Bitcoin pod startem (przód ma Down). Kolor <b>nie</b> znaczy „Ty wygrałeś / przegrałeś.” Znaczy tylko „kto prowadzi w tym wyścigu teraz.”</p>
+    <p>Pod każdą kartą jest też zdanie po angielsku, żeby nie trzeba było zgadywać liczby.</p>
+
+    <h2 id="pl-sniper">4. Sniper result</h2>
+    <p><b>Sniper</b> to udawany bot. <b>Nie</b> gra w każdym oknie. Wskakuje tylko pod koniec, gdy Bitcoin jest już daleko od linii, i kupuje stronę, która prawie na pewno wygra — drogo, np. po 85–93 centy.</p>
+    <p><b>Sniper result</b> to suma udawanych zysków i strat tych późnych zakładów, w dolarach, od startu testu.</p>
+    <div class="ex">
+      <p>Jak widzisz <span class="good"><b>+5.52 $</b></span>: udawany Sniper jest do przodu o $5.52. To kilka dolarów, nie pensja.</p>
+      <p>Jak widzisz <span class="bad"><b>−12.00 $</b></span>: udawany Sniper jest do tyłu o $12.</p>
+    </div>
+    <p>Jak liczymy jeden zakład: udaje wydatek <b>$5</b>. Jak kupił Down po 85 centów i Down wygra, bilety płacą po $1 minus mała opłata Polymarketu, zostaje ok. <b>+$0.80</b>. Jak się pomyli, tracisz całe <b>~$5</b>.</p>
+    <p>Dlatego seria wygranych wygląda „zawsze dobrze,” a jedna pomyłka zjada kilka trafień. Zostawiamy to na papierze, aż zobaczymy też te pomyłki.</p>
+
+    <h2 id="pl-record">5. Record (np. 10-0)</h2>
+    <p>To <b>wygrane − przegrane</b> samego udawanego Snipera. Nie „ile okien w ogóle było.”</p>
+    <div class="ex">
+      <p><b>10-0</b> = 10 udawanych zakładów wygranych, 0 przegranych.</p>
+      <p><b>10-2</b> = 10 wygranych, 2 przegrane. Te 2 kosztują po ok. $5, czyli ok. −$10, a 10 wygranych może dać razem tylko +$6. Ważniejsza jest liczba dolarów (Sniper result) niż sam 10-2.</p>
+    </div>
+    <p>W tabeli przy większości okien jest kreska. To normalne. Sniper je pominął, bo Bitcoin był za blisko linii, albo było za wcześnie, albo cena nie mieściła się w 80–95,5 centa.</p>
+
+    <h2 id="pl-stake">6. Stake · $5 / window</h2>
+    <p>Za każdym razem, gdy Sniper strzela, udaje wydatek <b>$5</b>. Nie $5 na minutę. Tylko $5, gdy naprawdę (na papierze) zagra.</p>
+    <p>Dlaczego $5: mała kwota, łatwo czytać wynik. Tyle samo co przy testach kopiowania w drugim projekcie.</p>
+
+    <h2 id="pl-mac">7. Mac update</h2>
+    <p>Ceny na żywo (zegar, linia, BTC, Up/Down) biorą się z <b>przeglądarki w Twoim telefonie</b> co 6 sekund. Są świeże.</p>
+    <p>Wynik Snipera, record i tabela zamkniętych okien idą z <b>Maca w domu</b>. Mac zapisuje plik i wypycha na tę stronę mniej więcej co <b>15 minut</b>.</p>
+    <p>Czyli: ceny = teraz. Papierowe zakłady = nawet 15 minut spóźnienia. Jak Mac śpi, tabela stoi w miejscu.</p>
+
+    <h2 id="pl-prices">8. Buy at · fee · win pays</h2>
+    <p>Polymarket sprzedaje dwa bilety na każde okno: Up i Down. Bilet kosztuje od 1 do 99 centów. Na końcu zwycięski bilet jest wart <b>$1</b>, przegrany <b>$0</b>.</p>
+    <ul>
+      <li><b>Buy at 80.0c</b> = jeden bilet Up (albo Down) kosztuje teraz 80 centów.</li>
+      <li><b>Fee 1.12c</b> = podatek Polymarketu na rynkach krypto. Większy przy cenie 50/50, mniejszy przy 90/10. Liczymy go i na papierze, bo na żywo też by go pobrali.</li>
+      <li><b>Win pays +18.9c</b> = jak ta strona wygra, po opłacie zostaje ok. 18,9 centa zysku na $1 biletów. Jak przegra, tracisz te 80 centów.</li>
+    </ul>
+    <p>Tania strona (21 centów) dużo płaci jak wygra, ale jest outsiderem. Droga strona (80 centów) mało płaci jak wygra, ale jest faworytem. Sniper kupuje tylko drogiego faworyta, późno, gdy Bitcoin już mocno odjechał.</p>
+
+    <h2 id="pl-table">9. Tabela zamkniętych okien</h2>
+    <ul>
+      <li><b>start UTC</b> = kiedy okno się zaczęło (u Ciebie latem UTC+2, więc 21:05 UTC = 23:05 w Polsce).</li>
+      <li><b>window</b> = 5m albo 15m.</li>
+      <li><b>line</b> = Bitcoin na starcie.</li>
+      <li><b>close</b> = Bitcoin na mecie.</li>
+      <li><b>result</b> = oficjalny zwycięzca, Up albo Down.</li>
+      <li><b>sniper</b> = co kupił udawany bot, np. <b>Down @ 0.93</b> = kupił Down po 93 centy. Kreska = pominął.</li>
+      <li><b>P&amp;L</b> = dolary z tego jednego udawanego zakładu. <span class="good">+0.35</span> to trzydzieści pięć centów zysku. <span class="bad">−5.07</span> to pełna pomyłka.</li>
+    </ul>
+
+    <h2 id="pl-wait">10. Dlaczego często nic nie robi / czeka</h2>
+    <p>Sniper może zagrać dopiero gdy spełnione jest <b>wszystko</b> naraz:</p>
+    <ul>
+      <li>Zostało mniej niż 75 sekund (okno 5 min) albo mniej niż 3 minuty (okno 15 min).</li>
+      <li>Bitcoin jest co najmniej <b>$25</b> od linii (5 min) albo <b>$50</b> (15 min). Blisko linii = rzut monetą. Tego nie gramy.</li>
+      <li>Prowadząca strona kosztuje między <b>80 a 95,5 centa</b>. Taniej niż 80 = za mało pewności. Drożej niż 95,5 = po opłacie prawie nic nie zostaje.</li>
+    </ul>
+    <p>Jak Bitcoin cały wieczór siedzi przy linii, tablica wygląda na „martwą.” Bot wtedy robi swoje: nie hazarduje.</p>
+
+    <h2 id="pl-danger">11. Jak czytać „dobrze / źle,” żeby się nie oszukać</h2>
+    <p><b>Dobrze:</b> Sniper result jest na plusie <b>po wielu dniach</b> i w tabeli widać też czerwone wiersze (pomyłki). Wtedy wiemy, że pomysł przeżywa złe okno.</p>
+    <p><b>Źle / za wcześnie:</b> 10 wygranych z rzędu i +$5. Fajnie, ale jeden zły bilet po 93 centy kosztuje ~$5. Cała kupka znika w jednym oknie. Krótka zielona seria to nie przychód.</p>
+    <p>Kopiowanie ludzi (PolyCop) zostaje wyłączone, dopóki tamten projekt nie spełni swoich reguł. Ta strona BTC tego nie włącza.</p>
+
+    <h2>12. Ściągawka w jednym zdaniu</h2>
+    <ul>
+      <li><b>−75 vs line</b> = Bitcoin spadł o $75 w tym oknie. Prowadzi Down. To nie Twoje −$75.</li>
+      <li><b>+40 vs line</b> = Bitcoin wzrósł o $40. Prowadzi Up.</li>
+      <li><b>Sniper result +5.52 $</b> = udawane późne zakłady razem +$5.52.</li>
+      <li><b>10-0</b> = 10 trafień na papierze, 0 pudeł.</li>
+      <li><b>Buy at 93c</b> = faworyt po 93 centy; wygrana zostawia grosze, pomyłka zabiera ~$5.</li>
+      <li>Zielone/czerwone na żywej karcie = kto prowadzi w wyścigu, nie czy my zagraliśmy.</li>
+    </ul>
+  </div>
+</div>
+
+<script src="./access-config.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const KEY = "btc_gate_v1";
+async function sha256(s){
+  const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
+  return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join("");
+}
+function skipGate(){
+  return !((window.OPS_CONFIG||{}).pageCodeSha256);
+}
+function openApp(){
+  $("gate").classList.add("hidden");
+  $("app").classList.remove("hidden");
+  const want = (location.hash || "").replace("#","");
+  if (want.startsWith("pl-") || ["pl-what","pl-game","pl-vs","pl-sniper","pl-record","pl-stake","pl-mac","pl-prices","pl-table","pl-wait","pl-danger"].includes(want)) setLang("pl");
+}
+async function tryOpen(code){
+  const want = (window.OPS_CONFIG||{}).pageCodeSha256 || "";
+  if (!want) { openApp(); return; }
+  const h = await sha256(code);
+  if (h === want){ localStorage.setItem(KEY, h); openApp(); }
+  else $("gate-msg").textContent = "wrong password";
+}
+function setLang(lang){
+  $("en").classList.toggle("hidden", lang !== "en");
+  $("pl").classList.toggle("hidden", lang !== "pl");
+  $("btn-en").classList.toggle("on", lang === "en");
+  $("btn-pl").classList.toggle("on", lang === "pl");
+  localStorage.setItem("btc_guide_lang", lang);
+}
+$("open").onclick = () => tryOpen($("code").value);
+$("code").addEventListener("keydown", e => { if (e.key === "Enter") tryOpen($("code").value); });
+$("btn-en").onclick = () => setLang("en");
+$("btn-pl").onclick = () => setLang("pl");
+(async () => {
+  const savedLang = localStorage.getItem("btc_guide_lang");
+  if (savedLang === "pl" || savedLang === "en") setLang(savedLang);
+  if (skipGate()){ openApp(); return; }
+  const saved = localStorage.getItem(KEY);
+  if (saved && saved === (window.OPS_CONFIG||{}).pageCodeSha256) openApp();
+})();
+</script>
+</body>
+</html>

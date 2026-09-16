@@ -1,19 +1,22 @@
 <!DOCTYPE html>
-<html lang="pl">
+<html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta http-equiv="Cache-Control" content="no-store" />
-<title>BTC lab · papier</title>
+<title>BTC lab · paper</title>
 <style>
 body{margin:0;font:14px/1.5 -apple-system,system-ui,sans-serif;background:#0b0d10;color:#e6e8eb;padding:20px}
-.top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px;flex-wrap:wrap;gap:6px}
+.top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px;flex-wrap:wrap;gap:8px}
 h1{font-size:17px;margin:0} .mut{color:#7d858f} .good{color:#34c47c} .bad{color:#ef6b6b}
+.nav a{margin-left:12px}
 .kpi{display:flex;gap:26px;margin:10px 0 18px;flex-wrap:wrap} .kpi b{display:block;font-size:19px}
+.kpi a{color:#7d858f;font-size:11px;text-decoration:none}
 .cards{display:flex;gap:16px;flex-wrap:wrap}
 .card{background:#0f1216;border:1px solid #1e2329;border-radius:8px;padding:14px 16px;min-width:300px;flex:1}
 .hd{font-weight:600;margin-bottom:4px} .big{font:600 34px/1.2 ui-monospace,Menlo,monospace}
 .num{font-family:ui-monospace,Menlo,monospace}
+.hint{color:#7d858f;font-size:12.5px;margin:6px 0 8px;max-width:42em}
 table{border-collapse:collapse;margin:8px 0;width:100%}
 th,td{text-align:left;padding:3px 10px 3px 0;border-bottom:1px solid #1e2329;font-size:13px}
 th{color:#7d858f;font-weight:500;text-transform:uppercase;font-size:10.5px}
@@ -27,29 +30,35 @@ a{color:#7fb2ff;text-decoration:none}
 <body>
 <div id="gate" class="gate">
   <h1>BTC lab</h1>
-  <p class="mut">Podaj haslo strony (to samo co w Copy Lab).</p>
+  <p class="mut">Same page password as Copy Lab.</p>
   <p id="gate-msg" class="bad"></p>
   <input id="code" type="password" autocomplete="current-password" />
-  <button id="open" type="button">Otworz</button>
+  <button id="open" type="button">Open</button>
 </div>
 
 <div id="app" class="hidden">
   <div class="top">
-    <h1>BTC Up or Down · papier (zero prawdziwych zleceń)</h1>
-    <span class="mut">ceny na żywo z przeglądarki · <span id="stamp"></span> · <a href="./now.html">Copy Lab</a></span>
+    <h1>Bitcoin Up or Down · paper (no real orders)</h1>
+    <span class="mut nav">live prices · <span id="stamp"></span>
+      · <a href="./btc-guide.html">Guide</a>
+      · <a href="./now.html">Copy Lab</a>
+    </span>
   </div>
   <div class="kpi">
-    <div class="mut">Sniper wynik<b id="k-pnl">—</b></div>
-    <div class="mut">bilans<b id="k-rec">—</b></div>
-    <div class="mut">stawka<b>$5 / okno</b></div>
-    <div class="mut">wyniki z Maca<b id="k-upd">—</b></div>
+    <div class="mut">Sniper result <a href="./btc-guide.html#sniper-result">what is this?</a>
+      <b id="k-pnl">—</b></div>
+    <div class="mut">Record <a href="./btc-guide.html#record">what is this?</a>
+      <b id="k-rec">—</b></div>
+    <div class="mut">Stake <a href="./btc-guide.html#stake">what is this?</a>
+      <b>$5 / window</b></div>
+    <div class="mut">Mac update <a href="./btc-guide.html#mac-update">what is this?</a>
+      <b id="k-upd">—</b></div>
   </div>
   <div class="cards" id="cards"></div>
-  <h1 style="margin:22px 0 6px;font-size:14px">Ostatnie okna (dosylane z Maca co ~15 min)</h1>
-  <table><thead><tr><th>start UTC</th><th>okno</th><th>linia</th><th>zamkniecie</th><th>wynik</th><th>sniper</th><th>P&amp;L</th></tr></thead>
-  <tbody id="hist"><tr><td colspan="7" class="mut">wczytywanie…</td></tr></tbody></table>
-  <p class="mut">Sniper (papier): w koncowce okna, gdy BTC jest min. $25 (5m) / $50 (15m) od linii, kupuje prowadzaca strone po 80–95,5 centa za $5.
-  Oplata: 7% &times; cena &times; (1&minus;cena) od akcji. Symulacja pomyslu Mitcha — zadnych prawdziwych zlecen.</p>
+  <h1 style="margin:22px 0 6px;font-size:14px">Closed windows (from the Mac, about every 15 min) <a href="./btc-guide.html#table" style="font-size:12px;font-weight:400">what is this?</a></h1>
+  <table><thead><tr><th>start UTC</th><th>window</th><th>line</th><th>close</th><th>result</th><th>sniper</th><th>P&amp;L</th></tr></thead>
+  <tbody id="hist"><tr><td colspan="7" class="mut">loading…</td></tr></tbody></table>
+  <p class="mut">Sniper is pretend money only. Near the end of a window, if Bitcoin is far from the line ($25 on 5-min / $50 on 15-min), it buys the leading side at 80–95.5 cents for $5. Polymarket fee: 7% × price × (1 − price) per share. Full explanation: <a href="./btc-guide.html">Guide (PL + EN)</a>.</p>
 </div>
 
 <script src="./access-config.js"></script>
@@ -61,23 +70,30 @@ async function sha256(s){
   const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
   return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join("");
 }
+function skipGate(){
+  const want = (window.OPS_CONFIG||{}).pageCodeSha256 || "";
+  return !want;
+}
 async function tryOpen(code){
   const want = (window.OPS_CONFIG||{}).pageCodeSha256 || "";
-  if (!want) { $("gate-msg").textContent = "brak konfiguracji"; return; }
+  if (!want) { openApp(); return; }
   const h = await sha256(code);
-  if (h === want){ localStorage.setItem(KEY, h); $("gate").classList.add("hidden"); $("app").classList.remove("hidden"); start(); }
-  else $("gate-msg").textContent = "zle haslo";
+  if (h === want){ localStorage.setItem(KEY, h); openApp(); }
+  else $("gate-msg").textContent = "wrong password";
+}
+function openApp(){
+  $("gate").classList.add("hidden");
+  $("app").classList.remove("hidden");
+  start();
 }
 $("open").onclick = () => tryOpen($("code").value);
 $("code").addEventListener("keydown", e => { if (e.key === "Enter") tryOpen($("code").value); });
 (async () => {
+  if (skipGate()){ openApp(); return; }
   const saved = localStorage.getItem(KEY);
-  if (saved && saved === (window.OPS_CONFIG||{}).pageCodeSha256){
-    $("gate").classList.add("hidden"); $("app").classList.remove("hidden"); start();
-  }
+  if (saved && saved === (window.OPS_CONFIG||{}).pageCodeSha256) openApp();
 })();
 
-// ------------------------------------------------------------------ live
 const FEE = 0.07;
 const fee = (p) => FEE * p * (1 - p);
 const IVS = [5, 15];
@@ -117,6 +133,13 @@ async function ask(token){
 }
 const usd = (n) => n == null ? "—" : "$" + n.toLocaleString("en-US", {minimumFractionDigits:1, maximumFractionDigits:1});
 
+function vsHint(diff){
+  if (diff == null) return "Waiting for Bitcoin price.";
+  const abs = Math.abs(diff).toFixed(1);
+  if (diff >= 0) return `Bitcoin is $${abs} above the start of this window. Up is ahead so far.`;
+  return `Bitcoin is $${abs} below the start of this window. Down is ahead so far.`;
+}
+
 async function card(iv, btc){
   const w = windowOf(iv);
   const [ev, line] = await Promise.all([gammaEvent(w.slug), binOpen(w.start, iv)]);
@@ -130,18 +153,21 @@ async function card(iv, btc){
     const asks = await Promise.all(toks.map(t => ask(String(t))));
     outs.forEach((name, i) => {
       const a = asks[i];
-      if (a == null){ rows += `<tr><td>${name}</td><td colspan=3 class=mut>brak ofert</td></tr>`; return; }
+      if (a == null){ rows += `<tr><td>${name}</td><td colspan=3 class=mut>no offers</td></tr>`; return; }
       const f = fee(a), win = 1 - a - f;
       rows += `<tr><td>${name}</td><td class=num>${(a*100).toFixed(1)}c</td><td class="num mut">${(f*100).toFixed(2)}c</td><td class=num>+${(win*100).toFixed(1)}c</td></tr>`;
     });
-  } else rows = `<tr><td colspan=4 class=mut>Polymarket jeszcze nie wystawil tego okna</td></tr>`;
+  } else rows = `<tr><td colspan=4 class=mut>Polymarket has not listed this window yet</td></tr>`;
   const diff = (btc != null && line != null) ? btc - line : null;
   const cls = diff == null ? "" : (diff >= 0 ? "good" : "bad");
   const dtxt = diff == null ? "—" : (diff >= 0 ? "+" : "") + diff.toFixed(1);
   return `<div class=card><div class=hd>${title}</div>
     <div class=big>${Math.floor(left/60)}:${String(left%60).padStart(2,"0")}</div>
-    <div>linia <span class=num>${usd(line)}</span> · BTC <span class=num>${usd(btc)}</span> · <span class="num ${cls}">${dtxt}</span> vs linia</div>
-    <table><tr><th></th><th>kup po</th><th>oplata</th><th>wygrana da</th></tr>${rows}</table></div>`;
+    <div>line <span class=num>${usd(line)}</span> · BTC <span class=num>${usd(btc)}</span> ·
+      <span class="num ${cls}">${dtxt}</span> vs line
+      <a href="./btc-guide.html#vs-line" style="font-size:11px">?</a></div>
+    <div class=hint>${vsHint(diff)}</div>
+    <table><tr><th></th><th>buy at</th><th>fee</th><th>win pays</th></tr>${rows}</table></div>`;
 }
 
 async function tickLive(){
@@ -166,9 +192,9 @@ async function tickState(){
       const pl = w.pnl == null ? "—" : (w.pnl >= 0 ? "+" : "") + w.pnl.toFixed(2);
       return `<tr><td>${w.when}</td><td>${w.iv}m</td><td class=num>${usd(w.line)}</td><td class=num>${usd(w.close)}</td><td>${w.result}</td><td>${w.snipe||"—"}</td><td class="num ${cls}">${pl}</td></tr>`;
     });
-    $("hist").innerHTML = rows.join("") || `<tr><td colspan=7 class=mut>jeszcze nic — czekamy na pierwsze zamkniete okno</td></tr>`;
+    $("hist").innerHTML = rows.join("") || `<tr><td colspan=7 class=mut>nothing yet — waiting for the first closed window</td></tr>`;
   }catch(e){
-    $("hist").innerHTML = `<tr><td colspan=7 class=mut>brak btc-state.json (Mac jeszcze nie dosylal)</td></tr>`;
+    $("hist").innerHTML = `<tr><td colspan=7 class=mut>no results file yet (Mac has not published)</td></tr>`;
   }
 }
 
