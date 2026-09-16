@@ -1,10 +1,10 @@
 {
   "status": "done",
   "goal": "Front, leftover, stale pluses, live tape, volume week. Rank. Do not enable copy.",
-  "checked": 1157,
+  "checked": 1165,
   "log": [
     "tick front+leftover",
-    "simming 37",
+    "simming 39",
     "0943             ECONOMICS  d=220 60=+0.0 90=+0.0 conc=1.0 cg=Avoid",
     "0xCB3143ee858E14 ECONOMICS  d=66 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "debased          ECONOMICS  d=90 60=+0.0 90=+0.0 conc=1.0 cg=Avoid",
@@ -20,11 +20,11 @@
     "occasionalAwaren FINANCE    d=448 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "Railcool         POLITICS   d=147 60=+0.0 90=+0.0 conc=0.32 cg=Avoid",
     "DonaldinhoTrumpi MENTIONS   d=175 60=+0.0 90=-5.0 conc=1.0 cg=Copy with caution",
-    "anoin123         POLITICS   d=186 60=+0.0 90=+3.4 conc=1.0 cg=Copy with caution",
     "JustAProfessor   POLITICS   d=197 60=+0.0 90=-15.0 conc=0.18 cg=Avoid",
+    "anoin123         POLITICS   d=186 60=+0.0 90=+3.4 conc=1.0 cg=Copy with caution",
     "RRRRRRRRL        ECONOMICS  d=77 60=+0.0 90=+0.0 conc=1.0 cg=Avoid",
     "perfectnostalgia ECONOMICS  d=132 60=+10.6 90=+0.0 conc=1.0 cg=None",
-    "b2d0             ECONOMICS  d=350 60=+0.0 90=+0.0 conc=0.35 cg=None",
+    "b2d0             ECONOMICS  d=350 60=+0.0 90=+0.0 conc=0.35 cg=Avoid",
     "peoplearestrange ECONOMICS  d=710 60=+1.3 90=+6.9 conc=0.27 cg=None",
     "suvorov          ECONOMICS  d=177 60=+0.0 90=+0.0 conc=0.25 cg=None",
     "cynical.reason   CULTURE    d=119 60=+0.0 90=+0.0 conc=1.0 cg=None",
@@ -33,9 +33,11 @@
     "BrownBees        OTHER      d=107 60=+8.8 90=+3.6 conc=1.0 cg=None",
     "jacky00          OTHER      d=295 60=+19.6 90=+19.6 conc=0.5 cg=None",
     "Rumpelstiltskin  OTHER      d=477 60=+1.2 90=+1.2 conc=0.52 cg=None",
+    "0x207ca4dE770E81 POLITICS   d=117 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "0x687b4cf1       POLITICS   d=228 60=+0.0 90=+0.0 conc=0.84 cg=None",
-    "BabyGroot        POLITICS   d=89 60=+0.0 90=+0.0 conc=1.0 cg=Avoid",
+    "teran162         POLITICS   d=129 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "lifeswhatyoumake CULTURE    d=92 60=+0.0 90=+0.0 conc=1.0 cg=None",
+    "BabyGroot        POLITICS   d=89 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "Q96s3kwozynxpau  POLITICS   d=247 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "erokha           POLITICS   d=220 60=+7.5 90=+7.5 conc=0.56 cg=None",
     "bogdanc1         POLITICS   d=141 60=+3.3 90=+21.1 conc=1.0 cg=None",
@@ -149,7 +151,7 @@
       "wallet": "0xfde6d3106320cf7d22fa64822fdec909fa3f7ed6",
       "cat": "POLITICS",
       "domain": "other",
-      "history_days": 141.1,
+      "history_days": 141.3,
       "w60": 3.33,
       "w90": 21.06,
       "w60_copies": 4,
@@ -161,7 +163,7 @@
       "copygrade": {
         "status": "rate_limit"
       },
-      "score": -39.6,
+      "score": -39.5,
       "lane": "vol"
     },
     {
@@ -206,33 +208,13 @@
     "lane": "stale"
   },
   "journal": {
-    "checked": 1157,
-    "queued": 37,
+    "checked": 1165,
+    "queued": 39,
     "drops": {
-      "pre_sim": 1120
+      "pre_sim": 1126
     },
     "wait_n": 1,
     "items": [
-      {
-        "name": "ClaudeAI",
-        "cat": "ECONOMICS",
-        "tone": "no",
-        "why": "one_event",
-        "w60": 0.0,
-        "w90": 0.0,
-        "days": 85.0,
-        "conc": 0.53
-      },
-      {
-        "name": "0xc938fejdifuiwf",
-        "cat": "OTHER",
-        "tone": "wait",
-        "why": "partial",
-        "w60": 31.2,
-        "w90": 31.2,
-        "days": 159.0,
-        "conc": 0.31
-      },
       {
         "name": "BrownBees",
         "cat": "OTHER",
@@ -264,6 +246,16 @@
         "conc": 0.52
       },
       {
+        "name": "0x207ca4dE770E81",
+        "cat": "POLITICS",
+        "tone": "no",
+        "why": "one_event",
+        "w60": 0.0,
+        "w90": 0.0,
+        "days": 117.0,
+        "conc": 1.0
+      },
+      {
         "name": "0x687b4cf1",
         "cat": "POLITICS",
         "tone": "no",
@@ -274,13 +266,13 @@
         "conc": 0.84
       },
       {
-        "name": "BabyGroot",
+        "name": "teran162",
         "cat": "POLITICS",
         "tone": "no",
-        "why": "avoid",
+        "why": "one_event",
         "w60": 0.0,
         "w90": 0.0,
-        "days": 89.0,
+        "days": 129.0,
         "conc": 1.0
       },
       {
@@ -291,6 +283,16 @@
         "w60": 0.0,
         "w90": 0.0,
         "days": 92.0,
+        "conc": 1.0
+      },
+      {
+        "name": "BabyGroot",
+        "cat": "POLITICS",
+        "tone": "no",
+        "why": "one_event",
+        "w60": 0.0,
+        "w90": 0.0,
+        "days": 89.0,
         "conc": 1.0
       },
       {
@@ -418,5 +420,5 @@
       "conc": 0.27
     }
   ],
-  "updated_at": "2026-09-16T16:21:04.836338+00:00"
+  "updated_at": "2026-09-16T16:39:20.852083+00:00"
 }
