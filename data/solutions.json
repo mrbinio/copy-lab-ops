@@ -1,36 +1,53 @@
 {
   "enable": false,
-  "source": "hunt_tick41",
+  "source": "lab",
   "model": null,
   "verb_pl": "NIE WŁĄCZAJ",
   "verb_en": "DO NOT ENABLE",
-  "now_pl": "Tick 41: 1149 nazw, enable 0. Antblack 60d +$8.4 / 90d −$6.4. 86shin +$9.3, za mało zakładów. Najbliżej 0xc938fejdifuiwfs +$31 / $5, ale CopyGrade bez oceny.",
-  "now_en": "Tick 41: 1149 names, enable 0. Antblack +$8.4 / −$6.4. 86shin +$9.3 too few bets. Closest 0xc938fejdifuiwfs +$31 at $5, CopyGrade not indexed.",
-  "path_pl": "Najbliżej: 0xc938fejdifuiwfs. Brakuje: strona CopyGrade go nie oceniła. W Telegramie nic nie klikasz.",
-  "path_en": "Closest: 0xc938fejdifuiwfs. Missing: CopyGrade not indexed. Do nothing in Telegram.",
-  "hunt_next_pl": "Następny bieg: taśma na żywo + stare plusy, bez sportu i bez Top 8.",
-  "hunt_next_en": "Next: live tape + stale pluses, skip sport and Top 8.",
+  "now_pl": "Żaden tor nie przeszedł sitów do włączenia. $39 zostaje. Najbliższa ścieżka to hunt pod książkę $5 / $15, nie dokupowanie i nie All Copy.",
+  "now_en": "No lane cleared the gates. Leave the $39. Closest path is hunt for a $5 / $15 book, not more cash and not All Copy.",
+  "path_pl": "Najbliżej: golfpro2025 (CULTURE). Brakuje: jeden event (conc 0.68); za mało filli (5). Patrz w Symulacji. W Telegramie nic nie klikasz.",
+  "path_en": "Closest: golfpro2025 (CULTURE). Missing: jeden event (conc 0.68); za mało filli (5). Look in Simulation. Do nothing in Telegram.",
+  "hunt_next_pl": "Następny bieg: głębiej SPORTS (offset 250/300), potem POLITICS, FINANCE. Pomijamy Top 8, świece 5 min, esport, conc=1.0 jako pick.",
+  "hunt_next_en": "Next run: deeper SPORTS (offset 250/300), then POLITICS, FINANCE. Skip Top 8, 5-min candles, esports, conc=1.0 picks.",
   "closest": {
-    "name": "0xc938fejdifuiwfs",
-    "lane": "OTHER",
-    "missing": "CopyGrade bez oceny",
-    "missing_en": "CopyGrade not indexed"
+    "name": "golfpro2025",
+    "lane": "CULTURE",
+    "missing": "jeden event (conc 0.68); za mało filli (5)"
   },
-  "next_cats": ["ECONOMICS", "POLITICS", "FINANCE", "CULTURE", "TECH"],
+  "next_cats": [
+    "SPORTS",
+    "POLITICS",
+    "FINANCE",
+    "CULTURE",
+    "TECH",
+    "ECONOMICS"
+  ],
+  "extra_offsets": {
+    "SPORTS": [
+      250,
+      300
+    ]
+  },
   "dead_pl": [
-    "Antblack · 90 dni na minusie (−$6.4)",
-    "86shin · za mało zakładów",
-    "jacky00 · jeden temat"
+    "golfpro2025 · CULTURE · jeden event / veto",
+    "xeroror · ECONOMICS · jeden event / veto",
+    "cassino · FINANCE · jeden event / veto",
+    "SSCCAAMM · TECH · jeden event / veto"
   ],
   "dead_en": [
-    "Antblack · 90d red (−$6.4)",
-    "86shin · too few bets",
-    "jacky00 · one theme"
+    "golfpro2025 · CULTURE · jeden event / veto",
+    "xeroror · ECONOMICS · jeden event / veto",
+    "cassino · FINANCE · jeden event / veto",
+    "SSCCAAMM · TECH · jeden event / veto"
   ],
-  "updated_at": "2026-09-16T17:50:00+00:00",
-  "hunt_updated_at": "2026-09-16T17:50:00+00:00",
-  "x_source": "off",
+  "error": "http 404 claude-sonnet-4-20250514",
+  "updated_at": "2026-09-11T21:44:20.982057+00:00",
+  "hunt_updated_at": "2026-09-11T21:44:06.581070+00:00",
+  "x_source": "error",
   "x_model": null,
-  "x_pl": "Filtr X wyłączony. Copy off.",
-  "x_en": "X filter off. Copy off."
+  "x_error": "http 403 grok-4.6 {\"code\":\"permission-denied\",\"error\":\"Your newly created team doesn't have any credits or licenses yet. You can purchase those on https://conso",
+  "x_pl": "Filtr X: błąd API. Zostają sity. Copy off.",
+  "x_en": "X filter: API error. Gates stand. Copy off.",
+  "x_updated_at": "2026-09-11T21:44:21.149436+00:00"
 }
