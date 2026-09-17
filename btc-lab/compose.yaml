@@ -1,0 +1,44 @@
+services:
+  lab:
+    build:
+      context: ..
+      dockerfile: btc-lab/Dockerfile
+    restart: on-failure:5
+    init: true
+    environment:
+      LAB_USERNAME: ${LAB_USERNAME:-damian}
+      LAB_PASSWORD_SHA256: ${LAB_PASSWORD_SHA256:?Set dashboard password hash}
+    volumes:
+      - lab-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 1g
+    cpus: 1.5
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+  proxy:
+    image: caddy:2.10.2-alpine
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+    environment:
+      LAB_DOMAIN: ${LAB_DOMAIN:?Set dashboard domain}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - lab
+volumes:
+  lab-data:
+  caddy-data:
+  caddy-config:
