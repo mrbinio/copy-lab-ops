@@ -24,6 +24,8 @@ Infrastructure planning ceiling: EUR 15/month. No purchase made. Virtual researc
 
 ## Next bounded task
 
+2026-09-18 follow-up: settlement supervision runs independently of current-market collection failures. Reconciliation failures block new paper entries, accounting conflicts persist a pause, and the empty-chart indicator is corrected. Regression coverage added for these failure paths.
+
 Connect a persistent host in a permitted location; deploy this release; validate real API contracts, fee metadata, rule recognition and reference opening coverage; enable backups and independent monitoring. Begin with recording quality. Do not infer successful paper trading from a running dashboard.
 
 ## Research backlog

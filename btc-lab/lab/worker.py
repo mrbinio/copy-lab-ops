@@ -64,6 +64,8 @@ class Worker:
         self.last_registry=0
         self.feed_error=None
         self.last_decisions={}
+        self.last_reconcile=0
+        self.reconciliation_ok=False
 
     def decision(self,strategy,market,reason,body,now):
         # Persist changes immediately, repeated skip reasons at most once per minute.
@@ -157,7 +159,8 @@ class Worker:
         self.store.redeem(time.time())
         self.store.audit()
 
-    async def cycle(self):
+    async def cycle(self, entries_allowed=True):
+        self.store.audit()
         now=time.time()
         start=int(now)//900*900
         if not self.market or self.market['start']!=start or now-self.last_registry>=30:
@@ -185,7 +188,7 @@ class Worker:
         self.store.set('price_history',list(self.history)[-900:])
         model=self.store.get('model',{})
         signals=[]
-        paused=(self.data/'PAUSE').exists()
+        paused=(self.data/'PAUSE').exists() or not entries_allowed
         for strategy in STRATEGIES:
             intent,reason=choose(strategy,m,self.reference,model,now) if not paused else (None,'MANUAL_PAUSE')
             if intent: signals.append(intent)
@@ -212,27 +215,44 @@ class Worker:
         self.store.set('worker',{'status':'PAUSED' if paused else 'RECORDING','heartbeat':time.time(),
             'reference_error':self.feed_error,'version':'0.1.0','execution':'PAPER ONLY'})
 
+    async def iteration(self):
+        errors=[]
+        def failure(stage,error):
+            errors.append({'stage':stage,'error':type(error).__name__})
+            LOG.warning('%s halted: %s',stage,type(error).__name__)
+            if isinstance(error,LedgerError):
+                (self.data/'PAUSE').touch()
+        # Settlement must keep running when current-market discovery/books fail.
+        # A failed reconciliation blocks fresh entries until a successful retry.
+        if time.time()-self.last_reconcile>60:
+            self.last_reconcile=time.time()
+            try:
+                await self.reconcile()
+                self.reconciliation_ok=True
+            except Exception as e:
+                self.reconciliation_ok=False
+                failure('reconciliation',e)
+        try:
+            await self.cycle(entries_allowed=self.reconciliation_ok)
+        except Exception as e:
+            failure('collection',e)
+        if time.time()-self.last_research>3600:
+            try:
+                train(self.store)
+                self.store.set('report',report(self.store))
+                self.last_research=time.time()
+            except Exception as e:
+                failure('research',e)
+        if errors:
+            self.store.set('worker',{'status':'DEGRADED','heartbeat':time.time(),
+                'errors':errors,'version':'0.1.0'})
+
     async def run(self):
         self.store.audit()
         reference=asyncio.create_task(self.reference_stream())
-        last_reconcile=0
         try:
             while True:
-                try:
-                    await self.cycle()
-                    if time.time()-last_reconcile>60:
-                        await self.reconcile()
-                        last_reconcile=time.time()
-                    if time.time()-self.last_research>3600:
-                        train(self.store)
-                        self.store.set('report',report(self.store))
-                        self.last_research=time.time()
-                except Exception as e:
-                    LOG.warning('cycle halted: %s',type(e).__name__)
-                    self.store.set('worker',{'status':'DEGRADED','heartbeat':time.time(),'error':type(e).__name__,'version':'0.1.0'})
-                    if isinstance(e,LedgerError):
-                        (self.data/'PAUSE').touch()
-                    await asyncio.sleep(5)
+                await self.iteration()
                 await asyncio.sleep(2)
         finally:
             reference.cancel()

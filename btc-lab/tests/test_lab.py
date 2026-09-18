@@ -146,6 +146,26 @@ class AuthTests(unittest.TestCase):
             finally:server.shutdown();server.server_close();thread.join()
 
 class CycleTests(unittest.IsolatedAsyncioTestCase):
+    async def test_settlement_survives_collection_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            worker=Worker(Store(Path(tmp)/'db'),tmp)
+            worker.last_research=time.time()
+            worker.cycle=AsyncMock(side_effect=TimeoutError('market unavailable'))
+            worker.reconcile=AsyncMock()
+            await worker.iteration()
+            worker.reconcile.assert_awaited_once()
+            self.assertEqual(worker.store.get('worker')['errors'][0]['stage'],'collection')
+
+    async def test_reconciliation_failure_blocks_new_entries(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            worker=Worker(Store(Path(tmp)/'db'),tmp)
+            worker.last_research=time.time()
+            worker.cycle=AsyncMock()
+            worker.reconcile=AsyncMock(side_effect=LedgerError('conflict'))
+            await worker.iteration()
+            worker.cycle.assert_awaited_once_with(entries_allowed=False)
+            self.assertTrue((Path(tmp)/'PAUSE').exists())
+
     async def test_delayed_book_used_and_official_settlement(self):
         with tempfile.TemporaryDirectory() as tmp:
             store=Store(Path(tmp)/'db')
