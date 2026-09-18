@@ -13,6 +13,17 @@ from pathlib import Path
 
 LABEL='com.btc-lab.paper'
 
+def choose_port(preferred):
+    """Probe only; never stop another program. Prefer a stable nearby port."""
+    for port in [p for p in range(preferred,preferred+21) if 1024<=p<=65535]+[0]:
+        with socket.socket() as sock:
+            try:
+                sock.bind(('127.0.0.1',port))
+            except OSError:
+                continue
+            return sock.getsockname()[1]
+    raise SystemExit('Nie znaleziono wolnego portu lokalnego.')
+
 def agent_definition(root, release):
     return {'Label':LABEL,'ProgramArguments':[str(release/'venv/bin/python'),str(release/'btc-lab/deploy/macos_service.py'),str(root)],
             'WorkingDirectory':str(release/'btc-lab'),'RunAtLoad':True,
@@ -46,9 +57,11 @@ def main():
     target=f'gui/{os.getuid()}/{LABEL}'
     loaded=subprocess.run(['launchctl','print',target],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode==0
     if not loaded:
-        with socket.socket() as sock:
-            try:sock.bind(('127.0.0.1',port))
-            except OSError:raise SystemExit(f'Port {port} jest zajety. Niczego nie zatrzymano. Przeslij komunikat bledu.')
+        selected=choose_port(port)
+        if selected!=port:
+            print(f'Port {port} jest zajety. BTC Lab uzyje wolnego portu {selected}.')
+        port=selected
+        config['port']=port
     # A fresh release per installation prevents an update overwriting a running venv.
     release=root/'releases'/f'{revision[:12]}-{time.time_ns()}'
     release.mkdir(mode=0o700)

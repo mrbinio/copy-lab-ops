@@ -8,7 +8,7 @@ Pobierz `install-macos.sh` z tego katalogu i uruchom przez `/bin/bash`. Skrypt s
 
 Hasło ustawiane podczas instalacji jest nowym hasłem do dashboardu, a nie hasłem administratora Maca. Skrypt nie wymaga `sudo`. Dane i konfiguracja znajdują się w `~/Library/Application Support/BTC Lab`. W konfiguracji przechowywany jest skrót hasła; plik jest dostępny tylko dla Twojego konta.
 
-Dashboard: `http://127.0.0.1:8765`, login `damian`.
+Dashboard: adres zostanie wypisany i otwarty przez instalator, login `damian`. Domyślny port to 8765; jeśli jest zajęty, instalator wybiera wolny port i zapisuje go w konfiguracji. Nie zatrzymuje innych aplikacji.
 
 ## Działanie
 
