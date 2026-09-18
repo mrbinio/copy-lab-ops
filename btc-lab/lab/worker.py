@@ -4,6 +4,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import time
 import urllib.parse
 import urllib.request
@@ -18,12 +19,21 @@ GAMMA='https://gamma-api.polymarket.com'
 CLOB='https://clob.polymarket.com'
 RTDS='wss://ws-live-data.polymarket.com'
 
+def error_detail(error):
+    detail=str(getattr(error,'reason',error))
+    detail=re.sub(r'(://)[^/\s@]+@',r'\1[redacted]@',detail)
+    return f'{type(error).__name__}: {detail}'[:400].replace('\n',' ')
+
 def get_json(url):
     request=urllib.request.Request(url,headers={'User-Agent':'BTC-Lab-Paper/0.1','Accept':'application/json'})
-    with urllib.request.urlopen(request,timeout=8) as response:
-        raw=response.read(2_000_001)
-        if len(raw)>2_000_000: raise ValueError('oversized public response')
-        return json.loads(raw)
+    try:
+        with urllib.request.urlopen(request,timeout=8) as response:
+            raw=response.read(2_000_001)
+            if len(raw)>2_000_000: raise ValueError('oversized public response')
+            return json.loads(raw)
+    except Exception as error:
+        endpoint=urllib.parse.urlsplit(url)
+        raise RuntimeError(f'{endpoint.hostname}{endpoint.path}: {error_detail(error)}') from error
 
 def array(value):
     return json.loads(value) if isinstance(value,str) else value
@@ -113,7 +123,8 @@ class Worker:
                         task.cancel()
                         await asyncio.gather(task,return_exceptions=True)
             except Exception as e:
-                self.feed_error=type(e).__name__
+                self.feed_error=error_detail(e)
+                LOG.warning('reference halted: %s',self.feed_error)
                 self.store.record('reference_disconnect',{'error':self.feed_error})
                 self.reference=None
                 self.history.clear()
@@ -169,6 +180,7 @@ class Worker:
         m=self.market
         if not m.get('opening'):
             m['opening']=next((v for t,v in self.history if abs(t-start)<.001),None)
+        self.store.set('market',m)
         m['books']=await self.books(m)
         now=time.time()
         up=m['books']['Up']; down=m['books']['Down']
@@ -218,8 +230,8 @@ class Worker:
     async def iteration(self):
         errors=[]
         def failure(stage,error):
-            errors.append({'stage':stage,'error':type(error).__name__})
-            LOG.warning('%s halted: %s',stage,type(error).__name__)
+            errors.append({'stage':stage,'error':type(error).__name__,'detail':error_detail(error)})
+            LOG.warning('%s halted: %s',stage,error_detail(error))
             if isinstance(error,LedgerError):
                 (self.data/'PAUSE').touch()
         # Settlement must keep running when current-market discovery/books fail.

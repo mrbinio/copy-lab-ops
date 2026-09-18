@@ -98,5 +98,10 @@ def main():
     print('Zdalny dostep spoza tego Maca wymaga osobnej konfiguracji prywatnego polaczenia.')
     print('Logi:',root/'logs/service.log')
     subprocess.run(['open',f'http://127.0.0.1:{port}'],check=False)
+    print('\nSprawdzam dane rynku, oba orderbooki, RTDS i stan uslugi (do 90 sekund)...',flush=True)
+    try:
+        subprocess.run([python,str(release/'btc-lab/deploy/diagnose_macos.py')],timeout=90,check=False)
+    except subprocess.TimeoutExpired:
+        print('Diagnostyka przekroczyla 90 sekund; usluga pozostaje uruchomiona.')
 
 if __name__=='__main__':main()

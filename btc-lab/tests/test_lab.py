@@ -13,7 +13,7 @@ from pathlib import Path
 from http.server import ThreadingHTTPServer
 from lab.core import Store, LedgerError, simulate_fill, units
 from lab.strategy import choose, features
-from lab.worker import Worker, normalize_market, normalize_book
+from lab.worker import Worker, normalize_market, normalize_book, get_json, error_detail
 from lab.server import handler
 from lab.research import train
 
@@ -102,6 +102,12 @@ class LedgerTests(unittest.TestCase):
         self.assertEqual(train(self.store)['status'],'COLLECTING')
 
 class DataTests(unittest.TestCase):
+    def test_network_error_keeps_endpoint_and_reason(self):
+        with patch('lab.worker.urllib.request.urlopen',side_effect=urllib.error.URLError('CERTIFICATE_VERIFY_FAILED')):
+            with self.assertRaisesRegex(RuntimeError,'gamma-api.polymarket.com/markets: URLError: CERTIFICATE_VERIFY_FAILED'):
+                get_json('https://gamma-api.polymarket.com/markets?private=hidden')
+        self.assertNotIn('secret',error_detail(ValueError('https://user:secret@proxy.example/')))
+
     def test_token_mapping_uses_labels(self):
         raw={'slug':'btc-updown-15m-900','conditionId':'c','outcomes':'["Down","Up"]','clobTokenIds':'["d","u"]'}
         m=normalize_market(raw,900)
