@@ -10,6 +10,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from macos_launch import stop_service, start_service, wait_started, failure_report
 
 LABEL='com.btc-lab.paper'
 
@@ -77,19 +78,32 @@ def main():
     plist.parent.mkdir(parents=True,exist_ok=True)
     old_plist=plist.read_bytes() if plist.exists() else None
     old_config=config_path.read_bytes() if config_path.exists() else None
-    if loaded:
-        subprocess.run(['launchctl','bootout',target],check=True)
+    try:
+        stop_service(target,root)
+    except Exception as error:
+        failure_report(root,target)
+        raise SystemExit(f'Nie zmieniono konfiguracji: {error}')
+    port=choose_port(port)
+    config['port']=port
     config.update(release=str(release),revision=revision)
     config_path.write_text(json.dumps(config,indent=2));config_path.chmod(0o600)
     plist.write_bytes(plistlib.dumps(agent_definition(root,release)));plist.chmod(0o600)
     try:
-        subprocess.run(['launchctl','bootstrap',f'gui/{os.getuid()}',str(plist)],check=True)
-    except subprocess.CalledProcessError:
-        if old_config:config_path.write_bytes(old_config)
-        if old_plist:
-            plist.write_bytes(old_plist)
-            if loaded:subprocess.run(['launchctl','bootstrap',f'gui/{os.getuid()}',str(plist)],check=False)
-        raise SystemExit('Nie udalo sie wlaczyc uslugi. Poprzednia konfiguracja zostala przywrocona, jesli istniala.')
+        start_service(target,plist)
+        print(wait_started(target,port),flush=True)
+    except Exception as error:
+        print(f'Nowa usluga nie wystartowala: {error}',flush=True)
+        failure_report(root,target)
+        try:
+            stop_service(target,root)
+            if old_config:config_path.write_bytes(old_config)
+            if old_plist:plist.write_bytes(old_plist)
+            if old_config and old_plist:
+                start_service(target,plist)
+                print('Poprzednia wersja:',wait_started(target,int(json.loads(old_config)['port'])))
+        except Exception as rollback_error:
+            print(f'PRZYWROCENIE USLUGI NIEPOTWIERDZONE: {rollback_error}')
+        raise SystemExit('Instalacja nieudana. Zachowano baze danych; szczegoly w raporcie powyzej.')
     print('\nSkonfigurowano automatyczny start PO ZALOGOWANIU na to konto.')
     print(f'Dashboard na tym Macu: http://127.0.0.1:{port}')
     print('Login dashboardu: damian. Haslo: ustawione przez Ciebie przed chwila lub zachowane.')
