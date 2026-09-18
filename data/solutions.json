@@ -1,27 +1,27 @@
 {
   "enable": false,
-  "source": "lab",
-  "model": null,
+  "source": "claude",
+  "model": "claude-sonnet-4-5",
   "verb_pl": "NIE WŁĄCZAJ",
   "verb_en": "DO NOT ENABLE",
-  "now_pl": "Żaden tor nie przeszedł sitów do włączenia. $39 zostaje. Najbliższa ścieżka to hunt pod książkę $5 / $15, nie dokupowanie i nie All Copy.",
-  "now_en": "No lane cleared the gates. Leave the $39. Closest path is hunt for a $5 / $15 book, not more cash and not All Copy.",
-  "path_pl": "Najbliżej: sabsabinxz (ECONOMICS). Brakuje: sity prawie — nadal WAIT, nie enable. Patrz w Symulacji. W Telegramie nic nie klikasz.",
-  "path_en": "Closest: sabsabinxz (ECONOMICS). Missing: sity prawie — nadal WAIT, nie enable. Look in Simulation. Do nothing in Telegram.",
-  "hunt_next_pl": "Następny bieg: głębiej ECONOMICS (offset 250/300), potem FINANCE, SPORTS. Pomijamy Top 8, świece 5 min, esport, conc=1.0 jako pick.",
-  "hunt_next_en": "Next run: deeper ECONOMICS (offset 250/300), then FINANCE, SPORTS. Skip Top 8, 5-min candles, esports, conc=1.0 picks.",
+  "now_pl": "Gotówka $39, dziura -$13.58 (invorser esports). Antblack (tenis, 76d) i 86shin (polityka tajska, cienka próbka) na Pauzie — nie włączaj.",
+  "now_en": "Cash $39, hole -$13.58 (invorser esports). Antblack (tennis, 76d) and 86shin (politics-thai, thin sample) Paused — do not enable.",
+  "path_pl": "Polowanie. Żaden portfel na taśmie nie przechodzi: sabsabinxz rate_limit, reszta conc=1.0 lub <6 kopii lub <90d lub candles. Ścieżka to hunt, nie wpłata, nie All Copy.",
+  "path_en": "Hunt. No wallet on tape clears: sabsabinxz rate_limit, rest conc=1.0 or <6 copies or <90d or candles. Path is hunt, not deposit, not All Copy.",
+  "hunt_next_pl": "Następny cykl: ECONOMICS/FINANCE >=90d, w60 i w90 dodatnie, conc <=0.45, >=6 kopii <$15, zero candles, nie rate_limit. Sprawdź offsety ECONOMICS +50, FINANCE +30.",
+  "hunt_next_en": "Next cycle: ECONOMICS/FINANCE >=90d, w60 and w90 positive, conc <=0.45, >=6 copies <$15, zero candles, not rate_limit. Check ECONOMICS offset +50, FINANCE offset +30.",
   "closest": {
     "name": "sabsabinxz",
-    "lane": "ECONOMICS",
-    "missing": "sity prawie — nadal WAIT, nie enable"
+    "lane": "ECONOMICS/other",
+    "missing": "rate_limit copygrade blocks enable; need indexed grade and re-sim to confirm 90d profit holds with current fills"
   },
   "next_cats": [
     "ECONOMICS",
     "FINANCE",
-    "SPORTS",
+    "TECH",
     "POLITICS",
     "CULTURE",
-    "TECH"
+    "SPORTS"
   ],
   "extra_offsets": {
     "ECONOMICS": [
@@ -30,20 +30,21 @@
     ]
   },
   "dead_pl": [
-    "SSCCAAMM · TECH · jeden event / veto",
-    "KimJonEn · TECH · jeden event / veto"
+    "Mk756 · SPORTS · jeden event / veto",
+    "SaylorMoon · ECONOMICS · jeden event / veto",
+    "SSCCAAMM · TECH · jeden event / veto"
   ],
   "dead_en": [
-    "SSCCAAMM · TECH · jeden event / veto",
-    "KimJonEn · TECH · jeden event / veto"
+    "Mk756 · SPORTS · jeden event / veto",
+    "SaylorMoon · ECONOMICS · jeden event / veto",
+    "SSCCAAMM · TECH · jeden event / veto"
   ],
-  "error": "http 404 claude-sonnet-4-20250514",
-  "updated_at": "2026-09-18T16:31:15.829295+00:00",
-  "hunt_updated_at": "2026-09-18T16:31:01.372811+00:00",
+  "updated_at": "2026-09-18T21:00:59.428120+00:00",
+  "hunt_updated_at": "2026-09-18T21:00:42.306564+00:00",
   "x_source": "error",
   "x_model": null,
   "x_error": "http 403 grok-4.6 {\"code\":\"permission-denied\",\"error\":\"Your newly created team doesn't have any credits or licenses yet. You can purchase those on https://conso",
   "x_pl": "Filtr X: błąd API. Zostają sity. Copy off.",
   "x_en": "X filter: API error. Gates stand. Copy off.",
-  "x_updated_at": "2026-09-18T16:31:16.062382+00:00"
+  "x_updated_at": "2026-09-18T21:00:59.738415+00:00"
 }
