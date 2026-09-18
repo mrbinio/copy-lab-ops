@@ -9,10 +9,12 @@ import time
 import urllib.parse
 import urllib.request
 from collections import deque
+from datetime import datetime
 from pathlib import Path
 from .core import Store, STRATEGIES, simulate_fill, LedgerError
 from .strategy import choose, features
 from .research import train, report
+from .reference import classify_rule, observation, SPOT, TWAP60, TWAP30
 
 LOG=logging.getLogger('btc-lab')
 GAMMA='https://gamma-api.polymarket.com'
@@ -49,16 +51,22 @@ def normalize_market(raw, start):
     if len(names)!=2 or len(tokens)!=2 or set(names)!={'Up','Down'} or len(set(tokens))!=2:
         raise ValueError('unsupported outcome mapping')
     description=raw.get('description','')
-    lower=description.lower()
-    # Deliberately narrow parser. TWAP and changed wording are recorded but never guessed.
-    supported=('chainlink' in lower and 'bitcoin' in lower and 'beginning' in lower and 'end' in lower
-               and 'greater than or equal' in lower and not any(x in lower for x in ('average','twap')))
+    kind,topic,schema=classify_rule(description)
+    supported=topic is not None
+    if kind=='TWAP60':
+        try:
+            event_start=datetime.fromisoformat(raw['eventStartTime'].replace('Z','+00:00'))
+            event_end=datetime.fromisoformat(raw['endDate'].replace('Z','+00:00'))
+            supported=(raw['slug']==f'btc-updown-15m-{start}' and
+                       event_start.tzinfo is not None and event_end.tzinfo is not None and
+                       event_start.timestamp()==start and event_end.timestamp()==start+900)
+        except (KeyError,ValueError,TypeError):supported=False
     fees=raw.get('feeSchedule') or {}
     verified=raw.get('feesEnabled') is False or (raw.get('feesEnabled') is True and fees.get('exponent')==1 and 'rate' in fees)
     rate=0 if raw.get('feesEnabled') is False else float(fees.get('rate',0))
     if not 0<=rate<=1: raise ValueError('invalid fee schedule')
     return {'slug':raw['slug'],'condition':raw['conditionId'],'start':start,'end':start+900,
-            'rule_kind':'TWAP_UNSUPPORTED' if any(x in lower for x in ('average','twap')) else 'SPOT' if supported else 'UNKNOWN',
+            'rule_kind':kind,'reference_topic':topic,'feature_schema':schema,
             'tokens':dict(zip(names,tokens)),'rule_supported':supported,'rule_hash':hashlib.sha256(description.encode()).hexdigest(),
             'fee_rate':rate,'fee_verified':verified,'opening':None,'books':{},'title':raw.get('question',raw['slug']),
             'accepting':raw.get('active') is True and raw.get('closed') is False and raw.get('acceptingOrders') is True}
@@ -84,6 +92,43 @@ class Worker:
         self.last_reconcile=0
         self.reconciliation_ok=False
         self.reference_topics={}
+        self.references={}
+        self.twap_history=deque(maxlen=3600)
+
+    def selected_reference(self,market):
+        return self.references.get(TWAP60) if market.get('reference_topic')==TWAP60 else self.reference if market.get('reference_topic') in (None,SPOT) else None
+
+    def selected_history(self,market):
+        return [(r['source_ts'],r['price']) for r in self.twap_history] if market.get('reference_topic')==TWAP60 else list(self.history)
+
+    def capture_opening(self,market):
+        if market.get('opening') is not None:return
+        if market.get('reference_topic')==TWAP60:
+            sample=next((r for r in self.twap_history if r['source_ms']==market['start']*1000),None)
+            if sample:
+                market.update(opening=sample['price'],opening_decimal=sample['price_decimal'],opening_evidence=dict(sample))
+        else:
+            market['opening']=next((v for t,v in self.history if abs(t-market['start'])<.001),None)
+
+    def accept_reference(self,event,now):
+        value=observation(event,now)
+        if value is None:return
+        topic=value['topic']
+        previous=self.references.get(topic)
+        if previous and value['source_ts']<=previous['source_ts']:return
+        if previous and value['source_ts']-previous['source_ts']>10:
+            self.store.record('reference_gap',{'topic':topic,'from':previous['source_ts'],'to':value['source_ts']},now)
+            if topic==SPOT:self.history.clear()
+            if topic==TWAP60:self.twap_history.clear()
+        self.store.record('rtds',event,now)
+        self.references[topic]=value
+        self.reference_topics[topic]=value['source_ts']
+        self.store.set('reference_topics',self.reference_topics)
+        if topic==TWAP60:self.twap_history.append(value)
+        if topic==SPOT:
+            self.reference=value
+            self.history.append((value['source_ts'],value['price']))
+        self.feed_error=None
 
     def decision(self,strategy,market,reason,body,now):
         # Persist changes immediately, repeated skip reasons at most once per minute.
@@ -108,24 +153,10 @@ class Worker:
                         async for message in ws:
                             if message in ('PONG','PING',''): continue
                             e=json.loads(message)
-                            p=e.get('payload',{})
-                            if p.get('symbol')!='btc/usd' or 'value' not in p: continue
-                            now=time.time()
-                            source=float(p['timestamp'])/1000
-                            price=float(p['value'])
-                            if not 0<price<10_000_000 or not -.25<=now-source<=10: continue
-                            self.store.record('rtds',e,now)
-                            self.reference_topics[e.get('topic','unknown')]=source
-                            self.store.set('reference_topics',self.reference_topics)
-                            if e.get('topic')!='crypto_prices_chainlink': continue
-                            if self.reference and source<=self.reference['source_ts']: continue
-                            if self.reference and source-self.reference['source_ts']>10:
-                                self.store.record('reference_gap',{'from':self.reference['source_ts'],'to':source},now)
-                                self.history.clear()
-                            self.reference={'price':price,'source_ts':source,'received_at':now,'source':'Chainlink via RTDS'}
-                            self.history.append((source,price))
-                            self.store.set('reference',self.reference)
-                            self.feed_error=None
+                            try:self.accept_reference(e,time.time())
+                            except (ValueError,KeyError,TypeError) as error:
+                                self.feed_error=error_detail(error)
+                                self.store.record('reference_rejected',{'error':self.feed_error,'topic':e.get('topic')})
                     finally:
                         task.cancel()
                         await asyncio.gather(task,return_exceptions=True)
@@ -135,6 +166,9 @@ class Worker:
                 self.store.record('reference_disconnect',{'error':self.feed_error})
                 self.reference=None
                 self.history.clear()
+                self.references.clear()
+                self.twap_history.clear()
+                self.reference_topics.clear()
                 await asyncio.sleep(5)
 
     async def discover(self, start):
@@ -144,10 +178,10 @@ class Worker:
         m=normalize_market(raw,start)
         # Require an observed source tick exactly at the boundary; no Binance fallback,
         # no nearest-tick substitution. Missing history means this window is skipped.
-        samples=[v for t,v in self.history if abs(t-start)<.001]
-        if samples: m['opening']=samples[0]
-        if self.market and self.market['slug']==slug:
-            m['opening']=self.market.get('opening') or m['opening']
+        self.capture_opening(m)
+        if self.market and self.market['slug']==slug and self.market['rule_hash']==m['rule_hash']:
+            for key in ('opening','opening_decimal','opening_evidence'):
+                if self.market.get(key) is not None:m[key]=self.market[key]
         self.store.record('market_metadata',raw)
         return m
 
@@ -185,8 +219,10 @@ class Worker:
             self.market=await self.discover(start)
             self.last_registry=now
         m=self.market
-        if not m.get('opening'):
-            m['opening']=next((v for t,v in self.history if abs(t-start)<.001),None)
+        self.capture_opening(m)
+        reference=self.selected_reference(m)
+        history=self.selected_history(m)
+        self.store.set('reference',reference or {})
         self.store.set('market',m)
         m['books']=await self.books(m)
         now=time.time()
@@ -197,19 +233,19 @@ class Worker:
         um,dm=mid(up),mid(down)
         probability=um/(um+dm) if um is not None and dm is not None and um+dm>0 else None
         m['features']=None
-        if self.reference and m['opening'] and probability and now-self.reference['source_ts']<=5:
-            past=[x for x in self.history if now-600<=x[0]<=now]
-            m['features']=features(self.reference['price'],m['opening'],past,probability,m['end']-now)
+        if reference and m['opening'] and probability and -.25<=now-reference['source_ts']<=5:
+            past=[x for x in history if now-600<=x[0]<=now]
+            m['features']=features(reference['price'],m['opening'],past,probability,m['end']-now)
         if m['features'] and m['rule_supported'] and 119 <= m['end']-now <=121:
             with self.store.connect() as db:
-                db.execute('INSERT OR IGNORE INTO examples VALUES (?,?,?)',(m['slug'],now,json.dumps({'features':m['features'],'book_probability':probability,'rule_hash':m['rule_hash']})))
+                db.execute('INSERT OR IGNORE INTO examples VALUES (?,?,?)',(m['slug'],now,json.dumps({'features':m['features'],'book_probability':probability,'rule_hash':m['rule_hash'],'feature_schema':m['feature_schema']})))
         self.store.set('market',m)
-        self.store.set('price_history',list(self.history)[-900:])
+        self.store.set('price_history',history[-900:])
         model=self.store.get('model',{})
         signals=[]
         paused=(self.data/'PAUSE').exists() or not entries_allowed
         for strategy in STRATEGIES:
-            intent,reason=choose(strategy,m,self.reference,model,now) if not paused else (None,'MANUAL_PAUSE')
+            intent,reason=choose(strategy,m,reference,model,now) if not paused else (None,'MANUAL_PAUSE')
             if intent: signals.append(intent)
             else: self.decision(strategy,m['slug'],reason,{},now)
         if signals:
@@ -220,7 +256,8 @@ class Worker:
                 at=time.time()
                 book=arrival[intent['side']]
                 reason='ARRIVAL_INVALID'
-                if not (self.data/'PAUSE').exists() and at < m['end']-30 and self.reference and -.25 <= at-self.reference['source_ts']<=5:
+                reference=self.selected_reference(m)
+                if not (self.data/'PAUSE').exists() and at < m['end']-30 and reference and -.25 <= at-reference['source_ts']<=5:
                     fill=simulate_fill(book['asks'],'5',str(intent['limit']),str(m['fee_rate']),book['min_shares'],book['tick'])
                     reason='NO_FULL_FILL'
                     if fill:
@@ -228,13 +265,16 @@ class Worker:
                             reason='EDGE_LOST'
                         else:
                             reason=self.store.open(intent['strategy'],m['slug'],intent['side'],fill,
-                                {**intent,'arrival_at':at,'rule_hash':m['rule_hash'],'reference':self.reference,
+                                {**intent,'arrival_at':at,'rule_hash':m['rule_hash'],'reference':reference,
+                                 'feature_schema':m['feature_schema'],'opening_evidence':m.get('opening_evidence'),
                                  'opening':m['opening'],'model_id':model.get('model_id'),'depth_fraction':.5},at)
                 self.decision(intent['strategy'],m['slug'],reason,intent,at)
-        reference_fresh=self.reference and -.25<=time.time()-self.reference['source_ts']<=5
+        reference=self.selected_reference(m)
+        self.store.set('reference',reference or {})
+        reference_fresh=reference and -.25<=time.time()-reference['source_ts']<=5
         self.store.set('worker',{'status':('PAUSED' if paused else 'RECORDING') if reference_fresh else 'DEGRADED','heartbeat':time.time(),
             'reference_status':'FRESH' if reference_fresh else 'MISSING_OR_STALE',
-            'reference_error':self.feed_error,'version':'0.1.0','execution':'PAPER ONLY'})
+            'reference_error':self.feed_error,'version':'0.2.0','execution':'PAPER ONLY'})
 
     async def iteration(self):
         errors=[]
@@ -257,7 +297,7 @@ class Worker:
             await self.cycle(entries_allowed=self.reconciliation_ok)
         except Exception as e:
             failure('collection',e)
-        if time.time()-self.last_research>3600:
+        if time.time()-self.last_research>3600 or self.store.get('model',{}).get('feature_schema')!=(self.store.get('market',{}).get('feature_schema') or 'spot-v1'):
             try:
                 train(self.store)
                 self.store.set('report',report(self.store))
@@ -266,7 +306,7 @@ class Worker:
                 failure('research',e)
         if errors:
             self.store.set('worker',{'status':'DEGRADED','heartbeat':time.time(),
-                'errors':errors,'version':'0.1.0'})
+                'errors':errors,'version':'0.2.0'})
 
     async def run(self):
         self.store.audit()

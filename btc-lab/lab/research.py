@@ -15,15 +15,17 @@ def fit(rows):
     return weights
 
 def train(store):
+    schema=store.get('market',{}).get('feature_schema') or 'spot-v1'
     with store.connect() as db:
         rows=db.execute("SELECT e.body,l.winner FROM examples e JOIN labels l ON e.market=l.market ORDER BY e.ts").fetchall()
     examples=[]
     for r in rows:
         e=json.loads(r['body'])
-        if e.get('features'):
+        if e.get('features') and e.get('feature_schema','spot-v1')==schema:
             examples.append((e['features'],int(r['winner']=='Up'),e['book_probability']))
     n=len(examples)
     result={"status":"COLLECTING","samples":n,"required":200,"trained_at":time.time(),
+            "feature_schema":schema,
             "notice":"Experimental paper challenger; no live promotion. Forward results are the evaluation."}
     if n >= 200:
         # Freeze the first 200-window model. Additional data is untouched forward evidence.
@@ -34,7 +36,7 @@ def train(store):
         baseline=sum((p-y)**2 for _,y,p in validation)/len(validation)
         result.update(status="PAPER_CANDIDATE" if brier<baseline else "VALIDATION_FAILED",weights=weights,
                       validation_brier=brier,book_brier=baseline,training_samples=140,validation_samples=60,
-                      model_id="logistic-first200-v1",horizon_seconds=[115,125])
+                      model_id="logistic-first200-"+schema,horizon_seconds=[115,125])
     store.set('model',result)
     return result
 

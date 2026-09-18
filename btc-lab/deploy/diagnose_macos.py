@@ -28,10 +28,10 @@ async def reference_probe():
             deadline=time.monotonic()+15
             while time.monotonic()<deadline and not (worker.reference and 'crypto_prices_twap_sixty' in worker.reference_topics):
                 await asyncio.sleep(.25)
-            if worker.reference:
-                print('RTDS OK: fresh BTC observation received',flush=True)
+            if worker.references.get('crypto_prices_twap_sixty'):
+                print('RTDS TWAP60 OK: exact E18 BTC observation received',flush=True)
             else:
-                print('RTDS FAIL:',worker.feed_error or 'no valid BTC observation within 15 seconds',flush=True)
+                print('RTDS TWAP60 FAIL:',worker.feed_error or 'no valid TWAP60 observation within 15 seconds',flush=True)
             print('RTDS received topics:',json.dumps(worker.reference_topics),flush=True)
         finally:
             task.cancel()
@@ -55,6 +55,10 @@ def main():
                 print(key+':',row[0] if row else 'missing',flush=True)
                 if key=='worker' and row:
                     print('Worker heartbeat age seconds:',round(time.time()-json.loads(row[0]).get('heartbeat',0),1),flush=True)
+            row=db.execute("SELECT body FROM state WHERE key='market'").fetchone()
+            if row:
+                m=json.loads(row[0])
+                print('Active market:',json.dumps({key:m.get(key) for key in ('slug','rule_kind','rule_supported','reference_topic','opening','feature_schema')}),flush=True)
             print('Latest decisions:',db.execute('SELECT strategy,reason FROM decisions ORDER BY id DESC LIMIT 3').fetchall(),flush=True)
         finally:db.close()
     check('Runtime state',database)

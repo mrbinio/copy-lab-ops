@@ -1,8 +1,8 @@
-# BTC Lab — paper research v0.1
+# BTC Lab — paper research v0.2
 
 A standalone BTC 15-minute research service and bilingual dashboard. This directory and the sibling `/lab` website are independent of the older dashboards and the sports/copy-trading project.
 
-**Status: implemented and locally tested; the always-on host is not provisioned. Public Pages is an interface preview, not an active trading service.** No wallet, Kraken integration, signing key, deposits, withdrawals or live order submission are implemented. There is no switch in this version that can enable real-money orders.
+**Status: v0.2 adds rule-specific TWAP60 paper research. The user has confirmed local macOS startup and feed connectivity for v0.1; v0.2 still requires the local update. Public Pages remains an interface preview.** No wallet, Kraken integration, signing key, deposits, withdrawals or live order submission are implemented. There is no switch in this version that can enable real-money orders.
 
 ## Run locally
 
@@ -28,7 +28,7 @@ The collector needs public HTTPS to `gamma-api.polymarket.com` and `clob.polymar
 ## What is implemented
 
 - Public Gamma market discovery, explicit outcome/token mapping, source rule hash, current fee metadata.
-- Chainlink spot and 30/60-second TWAP collection over RTDS, receive/source timestamps and disconnect markers. TWAP is recorded for further research; **TWAP-based trading rules are not enabled in this release**.
+- Chainlink spot and 30/60-second TWAP collection over RTDS, receive/source timestamps and disconnect markers. TWAP60 is used only for the exact supported BTC 15-minute market description and matching event start/end timestamps. TWAP30 remains recording-only. Spot and TWAP60 use separate reference histories and model datasets.
 - Both outcome depth snapshots; delayed arrival snapshot, fixed price cap, 50% depth haircut, full-notional-or-no-fill simulation, minimum size and tick checks.
 - A transactional SQLite ledger with integer microdollar amounts, independent virtual accounts, duplicate protection, single writer process lock and restart persistence.
 - Official CLOB winner reconciliation. Provisional BTC moves never settle tickets. Five-minute delayed **simulated** cash release, separate pending payout and cash balances.
@@ -45,7 +45,7 @@ For the value candidate: price .80–.92, fixed limit at most decision ask + .01
 
 The late baseline buys the leading side with a $50 reference distance, 30–300 seconds remaining, price .80–.955. The early baseline uses the same distance, 600–780 seconds remaining, price .60–.64. Both are hypotheses without an asserted probability or profitability.
 
-The opening reference must be a captured Chainlink source observation exactly at the market opening timestamp (1 ms tolerance). No nearest tick, Binance fallback or zero-price substitution. Only narrowly recognised Chainlink spot rules with greater-than-or-equal wording are eligible. Unknown rules/fee schedules and unsupported fee exponents skip entries. This may substantially reduce participation until real feed/rule compatibility is validated. The metadata parser must be reviewed against actual current market payloads before claiming readiness.
+For TWAP60, the opening reference must be a captured observation from `crypto_prices_twap_sixty` at the exact opening millisecond. Prices retain the E18 decimal string for direction/distance comparisons; floating-point values are used for charting and research features only. The recognized rule is pinned to the complete Gamma description observed on 2026-09-18, including the BTC/USD 60-second Chainlink stream URL, with matching event start/end times. Unknown or changed rules remain blocked. No nearest tick, spot substitution or inferred historical opening is used. Starting mid-window normally skips that window; a new opening can be captured at the next boundary if the feed is intact. Official CLOB winners, not predicted TWAP endpoints, settle positions.
 
 A $100 live account under a 1% all-in risk rule has a $1 risk budget. A five-share order at .80–.92 costs approximately $4–$4.60 before fees, if that market's current minimum is five shares. The service must not silently round up the future live budget. The right next step is to measure minimum-order feasibility in paper, not move money now.
 
@@ -91,7 +91,7 @@ Local automated tests cover fee arithmetic, price caps, full-size fills, depth h
 Remaining before a trustworthy forward experiment:
 
 1. Deploy to a persistent host, verify actual public endpoints and payloads. The development environment's public API connection timed out; production connectivity has not been demonstrated.
-2. Audit per-market opening/settlement rules against the actual market and measure opening-tick coverage. Implement verified TWAP trading semantics as a separate version, not a guessed fallback.
+2. Audit per-market opening/settlement rules against the actual market and measure opening-tick coverage. The TWAP60 route is implemented in v0.2; measure exact-boundary coverage and verify behavior on the Mac after updating.
 3. External heartbeat alerts, encrypted backup restore, disk/clock monitoring and raw-data retention.
 4. Full websocket CLOB capture and independent Nautilus golden-replay parity. Nautilus is **not yet integrated**, and this release does not claim exchange-exact fills.
 5. Whole-window chronological research, blocked uncertainty estimates, execution stress, fees/rounding validation against actual responses, and untouched forward results. The small model's holdout Brier gate is an initial diagnostic, not evidence of profit.
@@ -107,3 +107,9 @@ Remaining before a trustworthy forward experiment:
 - [GitHub Pages is static hosting](https://docs.github.com/en/pages/getting-started-with-github-pages/what-is-github-pages)
 
 Daily assistant reviews should read this file and `PROJECT_STATE.md`, inspect code/status, and propose improvements. They are research reviews, not host uptime monitoring or a license to change live risk.
+
+## v0.2 TWAP research interpretation
+
+The early/late baselines keep the existing price/time/distance and risk limits, now applied to the market-specific reference. They may produce paper signals before the logistic model has 200 labelled TWAP windows. The logistic model uses only rows with the same `feature_schema`; old spot rows never train a TWAP candidate. Its features remain an empirical research hypothesis, not an analytical TWAP probability formula. Histories reset on disconnection or a source gap above ten seconds; missing data is never replayed synthetically.
+
+Accounts and ledger history are preserved across upgrades. Each new paper position records config version, reference topic, feature schema and exact opening evidence. Account totals may span versions; do not attribute legacy totals to v0.2. No profitability or Nautilus replay parity is established.

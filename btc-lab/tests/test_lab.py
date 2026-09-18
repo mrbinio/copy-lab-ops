@@ -111,7 +111,7 @@ class DataTests(unittest.TestCase):
              'description':'Bitcoin Chainlink TWAP at the end greater than or equal to beginning.'}
         market=normalize_market(raw,900)
         self.assertFalse(market['rule_supported'])
-        self.assertEqual(market['rule_kind'],'TWAP_UNSUPPORTED')
+        self.assertEqual(market['rule_kind'],'UNKNOWN')
 
     def test_network_error_keeps_endpoint_and_reason(self):
         with patch('lab.worker.urllib.request.urlopen',side_effect=urllib.error.URLError('CERTIFICATE_VERIFY_FAILED')):

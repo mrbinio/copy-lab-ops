@@ -1,6 +1,6 @@
 # BTC Lab — current state
 
-Release: 0.1.0. Scope: BTC paper research only. Sports, wallet copying, PolyCop and Telegram project excluded.
+Release: 0.2.0. Scope: BTC paper research only. Sports, wallet copying, PolyCop and Telegram project excluded.
 
 ## Implemented
 
@@ -11,13 +11,13 @@ Release: 0.1.0. Scope: BTC paper research only. Sports, wallet copying, PolyCop 
 
 ## Operational truth
 
-- A user-local macOS Intel/Monterey installer is available in `deploy/install-macos.sh`. It configures authenticated loopback access, a launch agent, bounded restart attempts and rotating logs. It has not yet been run on the user's Mac. Remote access remains a separate setup step.
+- A user-local macOS Intel/Monterey installer is available in `deploy/install-macos.sh`. It configures authenticated loopback access, a launch agent, bounded restart attempts and rotating logs. The user confirmed startup, HTTP 200, orderbooks, verified fee metadata and RTDS spot/TWAP streams on their Mac on 2026-09-18 (v0.1). Remote access remains a separate setup step.
 
-- No always-on host has been provisioned through this work session.
+- The user runs the service on their private Mac. No direct remote host access or external availability monitoring has been established.
 - No actual private dashboard endpoint or external heartbeat monitor exists yet.
 - No runtime wallet or Kraken connection exists. No money was moved.
 - No profitability claim. Any design preview is synthetic.
-- Public-data connectivity from the development shell timed out. End-to-end tests use controlled fixtures.
+- Development public-data access is intermittent; real RTDS and Gamma were received during debugging. Transaction lifecycle tests use controlled fixtures; this is not a forward performance record.
 - GitHub is code and static hosting. It is not the continuous Python runtime.
 
 ## Budget
@@ -33,7 +33,7 @@ Connect a persistent host in a permitted location; deploy this release; validate
 ## Research backlog
 
 1. Golden dataset and Nautilus parity.
-2. Exact rule-driven Chainlink TWAP strategy support.
+2. Validate v0.2 TWAP60 forward recording, exact opening coverage and execution on the Mac.
 3. CLOB websocket recording with resync and gap handling.
 4. Compressed event archive, disk/clock monitoring, external heartbeat and backup restore.
 5. Multiweek untouched forward evaluation, daily-block confidence intervals and operating-cost accounting.
@@ -42,3 +42,7 @@ Connect a persistent host in a permitted location; deploy this release; validate
 ## Change discipline
 
 Store source/config/model versions with the experiment. Freeze tested definitions. Never reset losing trades, relabel provisional outcomes as final, hide fees, promote a paper candidate to real orders, increase stakes or transfer funds autonomously. This code has no real-order path.
+
+## v0.2 update
+
+Rule-specific TWAP60 reference selection, exact E18 prices and opening evidence, separate model dataset schema, safe gap handling and explicit dashboard reference label. Baseline paper strategies retain existing risk and signal thresholds; no live orders. The complete supported rule text and 15-minute event times are checked. Unknown descriptions and absent exact opening observations still skip trades. v0.2 has not yet been installed or observed on the user's Mac. Local tests include TWAP versus spot divergence and official winner overriding provisional direction.
