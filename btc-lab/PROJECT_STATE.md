@@ -11,6 +11,8 @@ Release: 0.1.0. Scope: BTC paper research only. Sports, wallet copying, PolyCop 
 
 ## Operational truth
 
+- A user-local macOS Intel/Monterey installer is available in `deploy/install-macos.sh`. It configures authenticated loopback access, a launch agent, bounded restart attempts and rotating logs. It has not yet been run on the user's Mac. Remote access remains a separate setup step.
+
 - No always-on host has been provisioned through this work session.
 - No actual private dashboard endpoint or external heartbeat monitor exists yet.
 - No runtime wallet or Kraken connection exists. No money was moved.

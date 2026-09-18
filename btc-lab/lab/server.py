@@ -67,7 +67,7 @@ def main():
         raise SystemExit('Set LAB_PASSWORD_SHA256. Production fails closed without authentication.')
     data=Path(os.environ.get('LAB_DATA','./runtime'))
     web=Path(os.environ.get('LAB_WEB',str(Path(__file__).resolve().parents[2]/'lab')))
-    host='127.0.0.1' if local else '0.0.0.0'
+    host='127.0.0.1' if local else os.environ.get('LAB_BIND','0.0.0.0')
     server=ThreadingHTTPServer((host,int(os.environ.get('LAB_PORT','8080'))),handler(Store(data/'lab.sqlite'),web,digest,os.environ.get('LAB_USERNAME','damian'),local))
     server.serve_forever()
 
