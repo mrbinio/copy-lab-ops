@@ -8,8 +8,8 @@
   "now_en": "No lane cleared the gates. Leave the $39. Closest path is hunt for a $5 / $15 book, not more cash and not All Copy.",
   "path_pl": "Najbliżej: sabsabinxz (ECONOMICS). Brakuje: sity prawie — nadal WAIT, nie enable. Patrz w Symulacji. W Telegramie nic nie klikasz.",
   "path_en": "Closest: sabsabinxz (ECONOMICS). Missing: sity prawie — nadal WAIT, nie enable. Look in Simulation. Do nothing in Telegram.",
-  "hunt_next_pl": "Następny bieg: głębiej ECONOMICS (offset 250/300), potem SPORTS, POLITICS. Pomijamy Top 8, świece 5 min, esport, conc=1.0 jako pick.",
-  "hunt_next_en": "Next run: deeper ECONOMICS (offset 250/300), then SPORTS, POLITICS. Skip Top 8, 5-min candles, esports, conc=1.0 picks.",
+  "hunt_next_pl": "Następny bieg: głębiej ECONOMICS (offset 250/300), potem FINANCE, SPORTS. Pomijamy Top 8, świece 5 min, esport, conc=1.0 jako pick.",
+  "hunt_next_en": "Next run: deeper ECONOMICS (offset 250/300), then FINANCE, SPORTS. Skip Top 8, 5-min candles, esports, conc=1.0 picks.",
   "closest": {
     "name": "sabsabinxz",
     "lane": "ECONOMICS",
@@ -17,9 +17,9 @@
   },
   "next_cats": [
     "ECONOMICS",
+    "FINANCE",
     "SPORTS",
     "POLITICS",
-    "FINANCE",
     "CULTURE",
     "TECH"
   ],
@@ -30,22 +30,20 @@
     ]
   },
   "dead_pl": [
-    "retordedgremlin125 · SPORTS · jeden event / veto",
-    "SSCCAAMM · TECH · jeden event / veto",
-    "KimJonEn · TECH · jeden event / veto"
+    "0x8c66E28FbE7Ede7F57bA6CBc70408DfF442944F3-1777220320442 · ECONOMICS · jeden event / veto",
+    "retordedgremlin125 · SPORTS · jeden event / veto"
   ],
   "dead_en": [
-    "retordedgremlin125 · SPORTS · jeden event / veto",
-    "SSCCAAMM · TECH · jeden event / veto",
-    "KimJonEn · TECH · jeden event / veto"
+    "0x8c66E28FbE7Ede7F57bA6CBc70408DfF442944F3-1777220320442 · ECONOMICS · jeden event / veto",
+    "retordedgremlin125 · SPORTS · jeden event / veto"
   ],
   "error": "http 404 claude-sonnet-4-20250514",
-  "updated_at": "2026-09-17T21:29:15.640083+00:00",
-  "hunt_updated_at": "2026-09-17T21:29:00.864368+00:00",
+  "updated_at": "2026-09-18T04:48:21.279548+00:00",
+  "hunt_updated_at": "2026-09-18T04:48:07.017629+00:00",
   "x_source": "error",
   "x_model": null,
   "x_error": "http 403 grok-4.6 {\"code\":\"permission-denied\",\"error\":\"Your newly created team doesn't have any credits or licenses yet. You can purchase those on https://conso",
   "x_pl": "Filtr X: błąd API. Zostają sity. Copy off.",
   "x_en": "X filter: API error. Gates stand. Copy off.",
-  "x_updated_at": "2026-09-17T21:29:15.781855+00:00"
+  "x_updated_at": "2026-09-18T04:48:21.462837+00:00"
 }
