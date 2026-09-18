@@ -26,12 +26,13 @@ async def reference_probe():
         task=asyncio.create_task(worker.reference_stream())
         try:
             deadline=time.monotonic()+15
-            while time.monotonic()<deadline and worker.reference is None:
+            while time.monotonic()<deadline and not (worker.reference and 'crypto_prices_twap_sixty' in worker.reference_topics):
                 await asyncio.sleep(.25)
             if worker.reference:
                 print('RTDS OK: fresh BTC observation received',flush=True)
             else:
                 print('RTDS FAIL:',worker.feed_error or 'no valid BTC observation within 15 seconds',flush=True)
+            print('RTDS received topics:',json.dumps(worker.reference_topics),flush=True)
         finally:
             task.cancel()
             await asyncio.gather(task,return_exceptions=True)
@@ -52,6 +53,8 @@ def main():
             for key in ('worker','reference'):
                 row=db.execute('SELECT body FROM state WHERE key=?',(key,)).fetchone()
                 print(key+':',row[0] if row else 'missing',flush=True)
+                if key=='worker' and row:
+                    print('Worker heartbeat age seconds:',round(time.time()-json.loads(row[0]).get('heartbeat',0),1),flush=True)
             print('Latest decisions:',db.execute('SELECT strategy,reason FROM decisions ORDER BY id DESC LIMIT 3').fetchall(),flush=True)
         finally:db.close()
     check('Runtime state',database)
@@ -62,6 +65,7 @@ def main():
         market=check('Market parser',lambda:normalize_market(raw,start),False)
         if market:
             print('Rule supported:',market['rule_supported'],'Fee verified:',market['fee_verified'],flush=True)
+            print('Rule kind:',market.get('rule_kind'),'Description:',str(raw.get('description',''))[:2500],flush=True)
             for side,token in market['tokens'].items():
                 def book(token=token):
                     raw_book=get_json(CLOB+'/book?token_id='+str(token))
@@ -69,6 +73,8 @@ def main():
                     return {'asks':len(normalized['asks']),'bids':len(normalized['bids'])}
                 check('Book '+side,book)
     asyncio.run(reference_probe())
+    check('Runtime state AFTER probes',database)
+    check('Local health AFTER probes',health)
     print('END BTC LAB DIAGNOSIS',flush=True)
 
 if __name__=='__main__':main()

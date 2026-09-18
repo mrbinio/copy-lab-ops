@@ -19,6 +19,12 @@ GAMMA='https://gamma-api.polymarket.com'
 CLOB='https://clob.polymarket.com'
 RTDS='wss://ws-live-data.polymarket.com'
 
+def reference_subscription():
+    filters=json.dumps({'symbol':'btc/usd'},separators=(',',':'))
+    return {'action':'subscribe','subscriptions':[
+        {'topic':topic,'type':'*' if topic=='crypto_prices_chainlink' else 'update','filters':filters}
+        for topic in ('crypto_prices_chainlink','crypto_prices_twap_thirty','crypto_prices_twap_sixty')]}
+
 def error_detail(error):
     detail=str(getattr(error,'reason',error))
     detail=re.sub(r'(://)[^/\s@]+@',r'\1[redacted]@',detail)
@@ -52,6 +58,7 @@ def normalize_market(raw, start):
     rate=0 if raw.get('feesEnabled') is False else float(fees.get('rate',0))
     if not 0<=rate<=1: raise ValueError('invalid fee schedule')
     return {'slug':raw['slug'],'condition':raw['conditionId'],'start':start,'end':start+900,
+            'rule_kind':'TWAP_UNSUPPORTED' if any(x in lower for x in ('average','twap')) else 'SPOT' if supported else 'UNKNOWN',
             'tokens':dict(zip(names,tokens)),'rule_supported':supported,'rule_hash':hashlib.sha256(description.encode()).hexdigest(),
             'fee_rate':rate,'fee_verified':verified,'opening':None,'books':{},'title':raw.get('question',raw['slug']),
             'accepting':raw.get('active') is True and raw.get('closed') is False and raw.get('acceptingOrders') is True}
@@ -76,6 +83,7 @@ class Worker:
         self.last_decisions={}
         self.last_reconcile=0
         self.reconciliation_ok=False
+        self.reference_topics={}
 
     def decision(self,strategy,market,reason,body,now):
         # Persist changes immediately, repeated skip reasons at most once per minute.
@@ -90,10 +98,7 @@ class Worker:
         while True:
             try:
                 async with websockets.connect(RTDS,open_timeout=10,max_size=1_000_000) as ws:
-                    await ws.send(json.dumps({'action':'subscribe','subscriptions':[
-                        {'topic':'crypto_prices_chainlink','type':'*','filters':json.dumps({'symbol':'btc/usd'})},
-                        {'topic':'crypto_prices_twap_thirty','type':'update','filters':json.dumps({'symbol':'btc/usd'})},
-                        {'topic':'crypto_prices_twap_sixty','type':'update','filters':json.dumps({'symbol':'btc/usd'})}]}))
+                    await ws.send(json.dumps(reference_subscription()))
                     async def ping():
                         while True:
                             await ws.send('PING')
@@ -110,6 +115,8 @@ class Worker:
                             price=float(p['value'])
                             if not 0<price<10_000_000 or not -.25<=now-source<=10: continue
                             self.store.record('rtds',e,now)
+                            self.reference_topics[e.get('topic','unknown')]=source
+                            self.store.set('reference_topics',self.reference_topics)
                             if e.get('topic')!='crypto_prices_chainlink': continue
                             if self.reference and source<=self.reference['source_ts']: continue
                             if self.reference and source-self.reference['source_ts']>10:
@@ -224,7 +231,9 @@ class Worker:
                                 {**intent,'arrival_at':at,'rule_hash':m['rule_hash'],'reference':self.reference,
                                  'opening':m['opening'],'model_id':model.get('model_id'),'depth_fraction':.5},at)
                 self.decision(intent['strategy'],m['slug'],reason,intent,at)
-        self.store.set('worker',{'status':'PAUSED' if paused else 'RECORDING','heartbeat':time.time(),
+        reference_fresh=self.reference and -.25<=time.time()-self.reference['source_ts']<=5
+        self.store.set('worker',{'status':('PAUSED' if paused else 'RECORDING') if reference_fresh else 'DEGRADED','heartbeat':time.time(),
+            'reference_status':'FRESH' if reference_fresh else 'MISSING_OR_STALE',
             'reference_error':self.feed_error,'version':'0.1.0','execution':'PAPER ONLY'})
 
     async def iteration(self):

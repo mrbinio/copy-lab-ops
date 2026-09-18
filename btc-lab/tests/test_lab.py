@@ -13,7 +13,7 @@ from pathlib import Path
 from http.server import ThreadingHTTPServer
 from lab.core import Store, LedgerError, simulate_fill, units
 from lab.strategy import choose, features
-from lab.worker import Worker, normalize_market, normalize_book, get_json, error_detail
+from lab.worker import Worker, normalize_market, normalize_book, get_json, error_detail, reference_subscription
 from lab.server import handler
 from lab.research import train
 
@@ -102,6 +102,17 @@ class LedgerTests(unittest.TestCase):
         self.assertEqual(train(self.store)['status'],'COLLECTING')
 
 class DataTests(unittest.TestCase):
+    def test_rtds_filters_match_required_compact_wire_format(self):
+        for subscription in reference_subscription()['subscriptions']:
+            self.assertEqual(subscription['filters'],'{"symbol":"btc/usd"}')
+
+    def test_twap_market_never_uses_spot_strategy(self):
+        raw={'slug':'btc-updown-15m-900','conditionId':'c','outcomes':['Up','Down'],'clobTokenIds':['u','d'],
+             'description':'Bitcoin Chainlink TWAP at the end greater than or equal to beginning.'}
+        market=normalize_market(raw,900)
+        self.assertFalse(market['rule_supported'])
+        self.assertEqual(market['rule_kind'],'TWAP_UNSUPPORTED')
+
     def test_network_error_keeps_endpoint_and_reason(self):
         with patch('lab.worker.urllib.request.urlopen',side_effect=urllib.error.URLError('CERTIFICATE_VERIFY_FAILED')):
             with self.assertRaisesRegex(RuntimeError,'gamma-api.polymarket.com/markets: URLError: CERTIFICATE_VERIFY_FAILED'):
