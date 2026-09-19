@@ -32,20 +32,20 @@
   "dead_pl": [
     "Mk756 · SPORTS · jeden event / veto",
     "SaylorMoon · ECONOMICS · jeden event / veto",
-    "KimJonEn · TECH · jeden event / veto"
+    "SSCCAAMM · TECH · jeden event / veto"
   ],
   "dead_en": [
     "Mk756 · SPORTS · jeden event / veto",
     "SaylorMoon · ECONOMICS · jeden event / veto",
-    "KimJonEn · TECH · jeden event / veto"
+    "SSCCAAMM · TECH · jeden event / veto"
   ],
   "error": "http 404 claude-sonnet-4-20250514",
-  "updated_at": "2026-09-18T23:24:57.569807+00:00",
-  "hunt_updated_at": "2026-09-18T23:24:40.339252+00:00",
+  "updated_at": "2026-09-19T05:00:36.651812+00:00",
+  "hunt_updated_at": "2026-09-19T05:00:18.328499+00:00",
   "x_source": "error",
   "x_model": null,
   "x_error": "http 403 grok-4.6 {\"code\":\"permission-denied\",\"error\":\"Your newly created team doesn't have any credits or licenses yet. You can purchase those on https://conso",
   "x_pl": "Filtr X: błąd API. Zostają sity. Copy off.",
   "x_en": "X filter: API error. Gates stand. Copy off.",
-  "x_updated_at": "2026-09-18T23:24:57.775960+00:00"
+  "x_updated_at": "2026-09-19T05:00:36.845599+00:00"
 }
