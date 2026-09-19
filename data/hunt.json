@@ -1,7 +1,7 @@
 {
   "status": "done",
   "goal": "Find one specialist a $39 stack can copy at $5 after 60/90d, not Top 8.",
-  "checked": 1057,
+  "checked": 1056,
   "log": [
     "plan cats=ECONOMICS,FINANCE,SPORTS,POLITICS,CULTURE,TECH extra={\"ECONOMICS\":[250,300]} x_skip=",
     "LB ECONOMICS ALL off=150 n=50",
@@ -30,41 +30,40 @@
     "LB TECH ALL off=200 n=50",
     "LB TECH MONTH off=100 n=50",
     "LB TECH MONTH off=150 n=50",
-    "new wallets to scan: 1057",
+    "new wallets to scan: 1058",
     "scanned 15, queued 6",
     "scanned 30, queued 6",
     "scanned 45, queued 6",
-    "scanned 120, queued 14",
-    "scanned 150, queued 20",
-    "scanned 180, queued 21",
-    "scanned 225, queued 24",
+    "scanned 105, queued 11",
     "scanned 240, queued 24",
     "scanned 255, queued 24",
+    "scanned 270, queued 24",
     "scanned 285, queued 24",
-    "scanned 300, queued 24",
+    "scanned 315, queued 24",
     "scanned 330, queued 24",
-    "scanned 345, queued 24",
     "scanned 390, queued 26",
+    "scanned 405, queued 30",
     "scanned 420, queued 30",
+    "scanned 435, queued 30",
     "scanned 450, queued 30",
-    "scanned 465, queued 30",
-    "scanned 480, queued 30",
-    "scanned 525, queued 30",
-    "scanned 540, queued 30",
+    "scanned 510, queued 30",
     "scanned 555, queued 30",
     "scanned 570, queued 36",
     "scanned 585, queued 36",
-    "scanned 630, queued 36",
     "scanned 660, queued 36",
-    "scanned 705, queued 36",
-    "scanned 720, queued 36",
+    "scanned 675, queued 36",
+    "scanned 690, queued 36",
+    "scanned 735, queued 36",
+    "scanned 750, queued 36",
+    "scanned 765, queued 36",
+    "scanned 780, queued 36",
     "scanned 795, queued 36",
-    "scanned 810, queued 36",
     "scanned 840, queued 36",
+    "scanned 870, queued 36",
+    "scanned 885, queued 36",
     "scanned 930, queued 36",
-    "scanned 945, queued 36",
     "scanned 975, queued 36",
-    "scanned 1035, queued 36",
+    "scanned 1005, queued 36",
     "scanned 1050, queued 36",
     "simming 36",
     "TheQuietRisk     POLITICS   d=112 60=+0.0 90=+0.0 conc=0.55 cg=Avoid",
@@ -91,18 +90,18 @@
     "yolo.master      FINANCE    d=153 60=+0.9 90=+0.9 conc=0.41 cg=None",
     "notssf3          FINANCE    d=272 60=+0.0 90=+0.0 conc=0.88 cg=None",
     "ticktocktoe      FINANCE    d=654 60=+0.0 90=+0.0 conc=0.67 cg=None",
+    "Poyo             SPORTS     d=1054 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "0xsven           SPORTS     d=160 60=+0.0 90=+0.0 conc=1.0 cg=None",
-    "DimSumConnoisseu SPORTS     d=140 60=+0.0 90=+12.1 conc=0.44 cg=None",
     "Mk756            SPORTS     d=168 60=+10.5 90=+12.4 conc=1.0 cg=None",
     "berbisminsk      SPORTS     d=90 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "bbb17367162806   SPORTS     d=78 60=+2.1 90=+4.8 conc=1.0 cg=None",
     "fastball67       SPORTS     d=129 60=+0.0 90=+0.0 conc=1.0 cg=None",
-    "sabsabinxz       ECONOMICS  d=178 60=+8.2 90=+28.0 conc=0.24 cg=None",
-    "MoronKiler       ECONOMICS  d=188 60=+0.0 90=+0.0 conc=1.0 cg=None",
+    "sabsabinxz       ECONOMICS  d=177 60=+8.2 90=+28.0 conc=0.24 cg=None",
     "hopedieslast     ECONOMICS  d=616 60=+0.0 90=+1.0 conc=0.52 cg=None",
-    "Aeglos           ECONOMICS  d=183 60=+2.4 90=+2.4 conc=0.39 cg=None",
+    "Aeglos           ECONOMICS  d=185 60=+2.4 90=+2.4 conc=0.39 cg=None",
     "SaylorMoon       ECONOMICS  d=118 60=+4.8 90=+10.7 conc=1.0 cg=None",
     "DumbMoney1       ECONOMICS  d=581 60=+0.0 90=+0.0 conc=0.78 cg=None",
+    "0x6302CDeFa498e7 ECONOMICS  d=343 60=+1.9 90=+1.9 conc=1.0 cg=None",
     "hunt finished"
   ],
   "candidates": [
@@ -111,7 +110,7 @@
       "wallet": "0xd3ecb2aee0d65622da559ff356b00e8c2e626603",
       "cat": "ECONOMICS",
       "domain": "other",
-      "history_days": 178.1,
+      "history_days": 177.0,
       "w60": 8.18,
       "w90": 28.0,
       "copies": 10,
@@ -121,7 +120,7 @@
       "copygrade": {
         "status": "rate_limit"
       },
-      "score": 45.5
+      "score": 45.4
     },
     {
       "username": "yolo.master",
@@ -145,7 +144,7 @@
       "wallet": "0xb66582886125a2a2ea966f1ea60ea60b6ecabf8f",
       "cat": "ECONOMICS",
       "domain": "other",
-      "history_days": 183.0,
+      "history_days": 184.7,
       "w60": 2.42,
       "w90": 2.42,
       "copies": 5,
@@ -209,6 +208,23 @@
       "score": -57.5
     },
     {
+      "username": "0x6302CDeFa498e7174dd0fcD6b06652A38eAe7917-1720863615256",
+      "wallet": "0x6302cdefa498e7174dd0fcd6b06652a38eae7917",
+      "cat": "ECONOMICS",
+      "domain": "other",
+      "history_days": 343.1,
+      "w60": 1.87,
+      "w90": 1.87,
+      "copies": 4,
+      "conc": 1.0,
+      "top_market": "Bank of Japan increases interest rates by 25 bps after December 2025 m",
+      "candle": 0.07,
+      "copygrade": {
+        "status": "rate_limit"
+      },
+      "score": -58.3
+    },
+    {
       "username": "KimJonEn",
       "wallet": "0x81525952f172646a4104030e9a9ef1e769c7bfda",
       "cat": "TECH",
@@ -224,7 +240,7 @@
         "status": "ok",
         "score": 51,
         "label": "Copy with caution",
-        "edge_real": -14.5,
+        "edge_real": -14.7,
         "farming": {
           "level": "watch",
           "signals": 1
@@ -255,7 +271,7 @@
     "wallet": "0xd3ecb2aee0d65622da559ff356b00e8c2e626603",
     "cat": "ECONOMICS",
     "domain": "other",
-    "history_days": 178.1,
+    "history_days": 177.0,
     "w60": 8.18,
     "w90": 28.0,
     "copies": 10,
@@ -265,7 +281,7 @@
     "copygrade": {
       "status": "rate_limit"
     },
-    "score": 45.5
+    "score": 45.4
   },
-  "updated_at": "2026-09-19T05:00:18.328499+00:00"
+  "updated_at": "2026-09-19T11:03:31.776825+00:00"
 }
