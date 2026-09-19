@@ -2,6 +2,8 @@
 import math
 from decimal import Decimal
 
+MODEL_HORIZON = (115, 125)
+
 def sigmoid(x):
     return 1/(1+math.exp(-max(-30,min(30,x))))
 
@@ -48,7 +50,7 @@ def choose(strategy, market, reference, model, now):
         cap = min(.64,ask+.01)
         probability = None
     else:
-        if not 115 <= remaining <= 125: return None,"OUTSIDE_MODEL_HORIZON"
+        if not MODEL_HORIZON[0] <= remaining <= MODEL_HORIZON[1]: return None,"OUTSIDE_MODEL_HORIZON"
         if model.get('status') != 'PAPER_CANDIDATE': return None,"MODEL_COLLECTING"
         if model.get('feature_schema','spot-v1')!=market.get('feature_schema','spot-v1'):
             return None,"MODEL_SCHEMA_MISMATCH"
@@ -68,3 +70,4 @@ def choose(strategy, market, reference, model, now):
         _,side,probability,cap = max(offers)
     return {"side":side,"limit":cap,"probability":probability,"decision_at":now,
             "strategy":strategy,"market":market['slug'],"config_version":"v0.2.0","feature_schema":market.get('feature_schema','spot-v1')},"SIGNAL"
+

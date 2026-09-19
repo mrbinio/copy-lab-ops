@@ -12,7 +12,7 @@ from collections import deque
 from datetime import datetime
 from pathlib import Path
 from .core import Store, STRATEGIES, simulate_fill, LedgerError
-from .strategy import choose, features
+from .strategy import choose, features, MODEL_HORIZON
 from .research import train, report
 from .reference import classify_rule, observation, SPOT, TWAP60, TWAP30
 
@@ -220,12 +220,15 @@ class Worker:
             self.last_registry=now
         m=self.market
         self.capture_opening(m)
-        reference=self.selected_reference(m)
-        history=self.selected_history(m)
-        self.store.set('reference',reference or {})
         self.store.set('market',m)
         m['books']=await self.books(m)
         now=time.time()
+        # RTDS continues while REST requests are in flight. Use the latest
+        # reference/history available at the actual decision time.
+        self.capture_opening(m)
+        reference=self.selected_reference(m)
+        history=self.selected_history(m)
+        self.store.set('reference',reference or {})
         up=m['books']['Up']; down=m['books']['Down']
         def mid(b):
             if not b['asks'] or not b['bids']: return None
@@ -236,9 +239,16 @@ class Worker:
         if reference and m['opening'] and probability and -.25<=now-reference['source_ts']<=5:
             past=[x for x in history if now-600<=x[0]<=now]
             m['features']=features(reference['price'],m['opening'],past,probability,m['end']-now)
-        if m['features'] and m['rule_supported'] and 119 <= m['end']-now <=121:
+        # Match the model's existing decision horizon. One causal sample per
+        # market; never backdate or fill a missed window with later data.
+        books_fresh=all(-.25 <= now-b['source_ts'] <= 3 for b in (up,down))
+        if (m['features'] and m['rule_supported'] and books_fresh
+                and MODEL_HORIZON[0] <= m['end']-now <= MODEL_HORIZON[1]):
             with self.store.connect() as db:
-                db.execute('INSERT OR IGNORE INTO examples VALUES (?,?,?)',(m['slug'],now,json.dumps({'features':m['features'],'book_probability':probability,'rule_hash':m['rule_hash'],'feature_schema':m['feature_schema']})))
+                db.execute('INSERT OR IGNORE INTO examples VALUES (?,?,?)',(m['slug'],now,json.dumps({'features':m['features'],'book_probability':probability,'rule_hash':m['rule_hash'],'feature_schema':m['feature_schema'],
+                    'sampling_policy':'first-valid-model-horizon-v2','remaining_seconds':m['end']-now,
+                    'reference_source_ts':reference['source_ts'],
+                    'book_source_ts':{side:b['source_ts'] for side,b in m['books'].items()}})))
         self.store.set('market',m)
         self.store.set('price_history',history[-900:])
         model=self.store.get('model',{})
@@ -274,7 +284,7 @@ class Worker:
         reference_fresh=reference and -.25<=time.time()-reference['source_ts']<=5
         self.store.set('worker',{'status':('PAUSED' if paused else 'RECORDING') if reference_fresh else 'DEGRADED','heartbeat':time.time(),
             'reference_status':'FRESH' if reference_fresh else 'MISSING_OR_STALE',
-            'reference_error':self.feed_error,'version':'0.2.0','execution':'PAPER ONLY'})
+            'reference_error':self.feed_error,'version':'0.2.1','execution':'PAPER ONLY'})
 
     async def iteration(self):
         errors=[]
@@ -306,7 +316,7 @@ class Worker:
                 failure('research',e)
         if errors:
             self.store.set('worker',{'status':'DEGRADED','heartbeat':time.time(),
-                'errors':errors,'version':'0.2.0'})
+                'errors':errors,'version':'0.2.1'})
 
     async def run(self):
         self.store.audit()
@@ -329,3 +339,4 @@ def main():
         asyncio.run(Worker(Store(data/'lab.sqlite'),data).run())
 
 if __name__=='__main__': main()
+

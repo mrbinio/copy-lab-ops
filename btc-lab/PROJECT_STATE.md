@@ -1,6 +1,6 @@
 # BTC Lab — current state
 
-Release: 0.2.0. Scope: BTC paper research only. Sports, wallet copying, PolyCop and Telegram project excluded.
+Release: 0.2.1. Scope: BTC paper research only. Sports, wallet copying, PolyCop and Telegram project excluded.
 
 ## Implemented
 
@@ -11,10 +11,10 @@ Release: 0.2.0. Scope: BTC paper research only. Sports, wallet copying, PolyCop 
 
 ## Operational truth
 
-- A user-local macOS Intel/Monterey installer is available in `deploy/install-macos.sh`. It configures authenticated loopback access, a launch agent, bounded restart attempts and rotating logs. The user confirmed startup, HTTP 200, orderbooks, verified fee metadata and RTDS spot/TWAP streams on their Mac on 2026-09-18 (v0.1). Remote access remains a separate setup step.
+- A user-local macOS Intel/Monterey installer is available in `deploy/install-macos.sh`. It configures authenticated loopback access, a launch agent, bounded restart attempts and rotating logs. The user confirmed startup, HTTP 200, orderbooks, verified fee metadata and RTDS spot/TWAP streams on their Mac on 2026-09-18 (v0.1). The user subsequently confirmed remote browser access through Cloudflare.
 
 - The user runs the service on their private Mac. No direct remote host access or external availability monitoring has been established.
-- No actual private dashboard endpoint or external heartbeat monitor exists yet.
+- The user confirmed browser access through Cloudflare Access/Tunnel at btc.damianbiniarz.com. This does not grant the reviewing assistant authenticated runtime access. No independent heartbeat monitoring is verified.
 - No runtime wallet or Kraken connection exists. No money was moved.
 - No profitability claim. Any design preview is synthetic.
 - Development public-data access is intermittent; real RTDS and Gamma were received during debugging. Transaction lifecycle tests use controlled fixtures; this is not a forward performance record.
@@ -45,4 +45,14 @@ Store source/config/model versions with the experiment. Freeze tested definition
 
 ## v0.2 update
 
-Rule-specific TWAP60 reference selection, exact E18 prices and opening evidence, separate model dataset schema, safe gap handling and explicit dashboard reference label. Baseline paper strategies retain existing risk and signal thresholds; no live orders. The complete supported rule text and 15-minute event times are checked. Unknown descriptions and absent exact opening observations still skip trades. v0.2 has not yet been installed or observed on the user's Mac. Local tests include TWAP versus spot divergence and official winner overriding provisional direction.
+Rule-specific TWAP60 reference selection, exact E18 prices and opening evidence, separate model dataset schema, safe gap handling and explicit dashboard reference label. Baseline paper strategies retain existing risk and signal thresholds; no live orders. The complete supported rule text and 15-minute event times are checked. Unknown descriptions and absent exact opening observations still skip trades. The user's 2026-09-18 logs and 2026-09-19 PAPER_SERVICE export confirm v0.2 ran on the Mac; v0.2.1 deployment is not yet verified. Local tests include TWAP versus spot divergence and official winner overriding provisional direction.
+
+## v0.2.1 sampling correction — 2026-09-19
+
+The training collector now uses the existing value-model horizon of 115–125 seconds remaining instead of 119–121. This is an explicit sampling-policy change, not a change to entry thresholds, sizing, risk limits or live eligibility. The first valid observation per market is retained by the database primary key, including across restarts. New rows include sampling_policy=first-valid-model-horizon-v2, actual remaining time and reference/book source timestamps. Older rows remain unchanged and identifiable by absent sampling_policy. The feature schema stays compatible: actual remaining time was already included in the feature vector. Evaluate results across the policy change; no claim of an unchanged sampling distribution.
+
+Reference/history are now selected after awaited REST book collection. Both books must still be fresh when a training example is saved. No backdating, synthetic history, or capture outside the horizon. Extended network/reconciliation stalls may still miss the full horizon; this patch reduces loss from normal polling, not a guarantee of full coverage. Future coverage metrics should count eligible windows and capture failures separately.
+
+Validation: 38 local controlled tests passed, including capture at 118 seconds, 115/125 boundaries, rejection outside the horizon, reference refresh during HTTP, stale second book, unsupported rules and duplicate prevention after restart. Not a macOS deployment test or proof of profitability.
+
+User export at 2026-09-19 13:22:03 UTC: PAPER_SERVICE, v0.2.0, RECORDING/FRESH at export time; 385522 observations, 68 official labels; last model refresh 62/200 labelled examples. Early baseline: 6 settled, 4 wins, +1.325860 USD net; late baseline: 5 settled, 3 wins, -8.480440 USD net; value model: no trades. These are independent virtual 500 USD accounts. Small samples do not establish profitability. The snapshot cannot quantify how many eligible training windows were missed.

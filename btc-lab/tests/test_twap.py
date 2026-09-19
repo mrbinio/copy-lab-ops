@@ -94,3 +94,47 @@ class TwapCycleTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(store.snapshot()['trades'][0]['payout'],0)
                 now=10301.;await w.reconcile();store.audit()
                 self.assertEqual(store.snapshot()['trades'][0]['status'],'REDEEMED')
+
+
+class SamplingTests(unittest.IsolatedAsyncioTestCase):
+    async def sample(self, remaining, stale=False, supported=True):
+        with tempfile.TemporaryDirectory() as tmp:
+            store=Store(Path(tmp)/'db');w=Worker(store,tmp);now=9900-remaining
+            w.market=normalize_market(market(),9000)
+            w.market.update(opening=70000,opening_decimal='70000',rule_supported=supported)
+            w.last_registry=now
+            for i in range(80,7,-1):
+                w.accept_reference(event(now-i,str(70000+i)),now-i)
+            async def books(m):
+                for i in range(70,-1,-1):
+                    w.accept_reference(event(now-i,str(70000+i)),now-i)
+                return {side:{'asks':[['.51','100']],'bids':[['.49','100']],
+                    'source_ts':now-(4 if stale and side=='Down' else 0),
+                    'min_shares':'5','tick':'.01'} for side in ('Up','Down')}
+            w.books=books
+            with patch('lab.worker.time.time',return_value=now):
+                await w.cycle(entries_allowed=False)
+                with store.connect() as db: first=[dict(r) for r in db.execute('SELECT * FROM examples')]
+                w2=Worker(store,tmp);w2.market=w.market;w2.last_registry=now
+                w2.references=w.references;w2.twap_history=w.twap_history;w2.books=books
+                await w2.cycle(entries_allowed=False)
+                with store.connect() as db: again=[dict(r) for r in db.execute('SELECT * FROM examples')]
+                self.assertEqual(first,again)
+            return first
+
+    async def test_skipped_old_band_and_reference_updated_during_http(self):
+        rows=await self.sample(118)
+        self.assertEqual(len(rows),1)
+        body=json.loads(rows[0]['body'])
+        self.assertEqual(body['remaining_seconds'],118)
+        self.assertEqual(body['reference_source_ts'],rows[0]['ts'])
+        self.assertAlmostEqual(body['features'][3],118/900)
+        self.assertEqual(body['sampling_policy'],'first-valid-model-horizon-v2')
+
+    async def test_horizon_boundaries_and_no_late_backfill(self):
+        for seconds,count in ((125,1),(115,1),(126,0),(114,0)):
+            with self.subTest(seconds=seconds):self.assertEqual(len(await self.sample(seconds)),count)
+
+    async def test_stale_second_book_and_unknown_rule_rejected(self):
+        self.assertEqual(len(await self.sample(120,stale=True)),0)
+        self.assertEqual(len(await self.sample(120,supported=False)),0)
