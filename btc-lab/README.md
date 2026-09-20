@@ -2,7 +2,7 @@
 
 A standalone BTC 15-minute research service and bilingual dashboard. This directory and the sibling `/lab` website are independent of the older dashboards and the sports/copy-trading project.
 
-**Status: v0.2 adds rule-specific TWAP60 paper research. The user has confirmed local macOS startup and feed connectivity for v0.1; v0.2 still requires the local update. Public Pages remains an interface preview.** No wallet, Kraken integration, signing key, deposits, withdrawals or live order submission are implemented. There is no switch in this version that can enable real-money orders.
+**Status: v0.2.1 sampling update was reported installed by the user on 2026-09-19; current host status is not independently verified. The 2026-09-20 model-freeze correction is published source, not a confirmed Mac deployment. Public Pages remains an interface preview.** No wallet, Kraken integration, signing key, deposits, withdrawals or live order submission are implemented. There is no switch in this version that can enable real-money orders.
 
 ## Run locally
 
@@ -41,7 +41,7 @@ The collector needs public HTTPS to `gamma-api.polymarket.com` and `clob.polymar
 
 Each strategy has a **separate $500 virtual research balance**, $5 entry notional and fees outside notional. These are not the user's real holdings. Entries are capped at 1.1% of initial research capital all-in, 3% rolling 24-hour gross losses, 6% rolling seven-day gross losses and an 8% realised peak drawdown budget. The prospective full loss is reserved against each limit. One open or pending-redemption position per strategy; at most one position per strategy per market. A risk pause is not automatically cured by increasing capital.
 
-For the value candidate: price .80–.92, fixed limit at most decision ask + .01, a .03 probability uncertainty deduction and .02/share remaining edge after fees. **v0.1 initially restricts the model to 115–125 seconds remaining** because training observations are recorded at 119–121 seconds. This is narrower than the proposed 180-to-30-second experiment; extrapolation to untrained horizons is not permitted.
+For the value candidate: price .80–.92, fixed limit at most decision ask + .01, a .03 probability uncertainty deduction and .02/share remaining edge after fees. **The model is restricted to 115–125 seconds remaining.** Since v0.2.1, training samples use the same interval (previously 119–121). This is narrower than the proposed 180-to-30-second experiment; extrapolation to untrained horizons is not permitted.
 
 The late baseline buys the leading side with a $50 reference distance, 30–300 seconds remaining, price .80–.955. The early baseline uses the same distance, 600–780 seconds remaining, price .60–.64. Both are hypotheses without an asserted probability or profitability.
 
@@ -113,3 +113,9 @@ Daily assistant reviews should read this file and `PROJECT_STATE.md`, inspect co
 The early/late baselines keep the existing price/time/distance and risk limits, now applied to the market-specific reference. They may produce paper signals before the logistic model has 200 labelled TWAP windows. The logistic model uses only rows with the same `feature_schema`; old spot rows never train a TWAP candidate. Its features remain an empirical research hypothesis, not an analytical TWAP probability formula. Histories reset on disconnection or a source gap above ten seconds; missing data is never replayed synthetically.
 
 Accounts and ledger history are preserved across upgrades. Each new paper position records config version, reference topic, feature schema and exact opening evidence. Account totals may span versions; do not attribute legacy totals to v0.2. No profitability or Nautilus replay parity is established.
+
+## 2026-09-20 model freeze correction
+
+Previously every research pass refitted the first 200 currently labelled rows. A delayed label for an earlier observation could change that set and its weights under the same model ID. Completed models (including failed validation) now persist per feature schema and are restored without refitting after restarts or schema switches. New models record exact training/validation market membership and freeze time. Existing completed models retain their weights and explicitly mark original membership unavailable; no historical provenance is fabricated. The samples count on a frozen model describes its frozen fitting snapshot, not the growing database. No risk thresholds or strategy horizons change. Local verification: 42 controlled tests passed; no live host or profitability verification.
+
+Next research experiment: replay identical captured inputs under documented 50 ms venue delay plus measured client latency, versus existing 250 ms stress delay plus client latency. Require timestamped arrival book evidence (REST snapshots cannot resolve 50 ms fills), identical fees and no retroactive fills; otherwise mark the comparison unavailable. Reject a candidate whose net advantage disappears under execution stress. This is a proposed test, not an implemented strategy or proof of profitability. Separately investigate documented 5-minute/4-hour crypto markets; live inventory, hourly rules and liquidity still require verification before collecting separate datasets.

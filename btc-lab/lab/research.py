@@ -16,13 +16,27 @@ def fit(rows):
 
 def train(store):
     schema=store.get('market',{}).get('feature_schema') or 'spot-v1'
+    # A late official label must not change the first completed experiment.
+    # Persist per schema so switching feeds or restarting cannot retrain it.
+    frozen_key='frozen_model:'+schema
+    frozen=store.get(frozen_key,{})
+    previous=store.get('model',{})
+    if not frozen and previous.get('feature_schema')==schema and previous.get('status') in ('PAPER_CANDIDATE','VALIDATION_FAILED'):
+        frozen=dict(previous)
+        frozen['freeze_provenance']='legacy snapshot; original training membership unavailable'
+        store.set(frozen_key,frozen)
+    if frozen:
+        store.set('model',frozen)
+        return frozen
     with store.connect() as db:
-        rows=db.execute("SELECT e.body,l.winner FROM examples e JOIN labels l ON e.market=l.market ORDER BY e.ts").fetchall()
+        rows=db.execute("SELECT e.market,e.ts,e.body,l.winner FROM examples e JOIN labels l ON e.market=l.market ORDER BY e.ts,e.market").fetchall()
     examples=[]
+    membership=[]
     for r in rows:
         e=json.loads(r['body'])
         if e.get('features') and e.get('feature_schema','spot-v1')==schema:
             examples.append((e['features'],int(r['winner']=='Up'),e['book_probability']))
+            membership.append({'market':r['market'],'ts':r['ts']})
     n=len(examples)
     result={"status":"COLLECTING","samples":n,"required":200,"trained_at":time.time(),
             "feature_schema":schema,
@@ -37,6 +51,11 @@ def train(store):
         result.update(status="PAPER_CANDIDATE" if brier<baseline else "VALIDATION_FAILED",weights=weights,
                       validation_brier=brier,book_brier=baseline,training_samples=140,validation_samples=60,
                       model_id="logistic-first200-"+schema,horizon_seconds=[115,125])
+        result.update(freeze_provenance='first 200 labelled examples available at training time',
+                      training_membership=membership[:140],validation_membership=membership[140:200],
+                      frozen_at=result['trained_at'])
+        # Save before the active pointer; recovery after a crash is idempotent.
+        store.set(frozen_key,result)
     store.set('model',result)
     return result
 
