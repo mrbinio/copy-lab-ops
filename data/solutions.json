@@ -1,27 +1,27 @@
 {
   "enable": false,
-  "source": "claude",
-  "model": "claude-sonnet-4-5",
+  "source": "lab",
+  "model": null,
   "verb_pl": "NIE WŁĄCZAJ",
   "verb_en": "DO NOT ENABLE",
-  "now_pl": "Gotówka $39, dziura -$13.58 (invorser esports). Antblack (tenis, 76d) i 86shin (polityka, cienki) na Pauzie — nie włączaj.",
-  "now_en": "Cash $39, hole -$13.58 (invorser esports). Antblack (tennis, 76d) and 86shin (politics, thin) Paused — do not enable.",
-  "path_pl": "Polowanie. Żaden kandydat nie przechodzi: sabsabinxz ma rate_limit (nie indeksowany), yolo.master słaby 60d/90d, Aeglos <6 kopii, SaylorMoon conc=1.0, KimJonEn conc=1.0. Ścieżka = więcej taśmy.",
-  "path_en": "Hunt. No candidate clears: sabsabinxz has rate_limit (not indexed), yolo.master weak 60d/90d, Aeglos <6 copies, SaylorMoon conc=1.0, KimJonEn conc=1.0. Path = more tape.",
-  "hunt_next_pl": "Szukaj ECONOMICS/FINANCE: >=90d, w60 i w90 >$5, conc <=0.45, >=6 kopii, nie rate_limit. Sprawdź offset +50 od sabsabinxz.",
-  "hunt_next_en": "Search ECONOMICS/FINANCE: >=90d, w60 and w90 >$5, conc <=0.45, >=6 copies, not rate_limit. Check offset +50 from sabsabinxz.",
+  "now_pl": "Żaden tor nie przeszedł sitów do włączenia. $39 zostaje. Najbliższa ścieżka to hunt pod książkę $5 / $15, nie dokupowanie i nie All Copy.",
+  "now_en": "No lane cleared the gates. Leave the $39. Closest path is hunt for a $5 / $15 book, not more cash and not All Copy.",
+  "path_pl": "Najbliżej: sabsabinxz (ECONOMICS). Brakuje: sity prawie — nadal WAIT, nie enable. Patrz w Symulacji. W Telegramie nic nie klikasz.",
+  "path_en": "Closest: sabsabinxz (ECONOMICS). Missing: sity prawie — nadal WAIT, nie enable. Look in Simulation. Do nothing in Telegram.",
+  "hunt_next_pl": "Następny bieg: głębiej ECONOMICS (offset 250/300), potem FINANCE, SPORTS. Pomijamy Top 8, świece 5 min, esport, conc=1.0 jako pick.",
+  "hunt_next_en": "Next run: deeper ECONOMICS (offset 250/300), then FINANCE, SPORTS. Skip Top 8, 5-min candles, esports, conc=1.0 picks.",
   "closest": {
     "name": "sabsabinxz",
     "lane": "ECONOMICS",
-    "missing": "CopyGrade rate_limit blocks (not indexed); needs full index pass to clear"
+    "missing": "sity prawie — nadal WAIT, nie enable"
   },
   "next_cats": [
     "ECONOMICS",
     "FINANCE",
+    "SPORTS",
     "POLITICS",
     "CULTURE",
-    "TECH",
-    "SPORTS"
+    "TECH"
   ],
   "extra_offsets": {
     "ECONOMICS": [
@@ -37,12 +37,13 @@
     "SaylorMoon · ECONOMICS · jeden event / veto",
     "KimJonEn · TECH · jeden event / veto"
   ],
-  "updated_at": "2026-09-21T05:02:01.176562+00:00",
-  "hunt_updated_at": "2026-09-21T05:01:47.986388+00:00",
+  "error": "http 404 claude-sonnet-4-20250514",
+  "updated_at": "2026-09-21T12:53:28.042432+00:00",
+  "hunt_updated_at": "2026-09-21T12:53:13.275041+00:00",
   "x_source": "error",
   "x_model": null,
   "x_error": "http 403 grok-4.6 {\"code\":\"permission-denied\",\"error\":\"Your newly created team doesn't have any credits or licenses yet. You can purchase those on https://conso",
   "x_pl": "Filtr X: błąd API. Zostają sity. Copy off.",
   "x_en": "X filter: API error. Gates stand. Copy off.",
-  "x_updated_at": "2026-09-21T05:02:01.337721+00:00"
+  "x_updated_at": "2026-09-21T12:53:28.194565+00:00"
 }
