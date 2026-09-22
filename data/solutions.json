@@ -32,22 +32,20 @@
   "dead_pl": [
     "ethBELIVER · SPORTS · jeden event / veto",
     "b324u · SPORTS · jeden event / veto",
-    "S55 · ECONOMICS · jeden event / veto",
-    "xeroror · ECONOMICS · jeden event / veto"
+    "S55 · ECONOMICS · jeden event / veto"
   ],
   "dead_en": [
     "ethBELIVER · SPORTS · jeden event / veto",
     "b324u · SPORTS · jeden event / veto",
-    "S55 · ECONOMICS · jeden event / veto",
-    "xeroror · ECONOMICS · jeden event / veto"
+    "S55 · ECONOMICS · jeden event / veto"
   ],
   "error": "http 404 claude-sonnet-4-20250514",
-  "updated_at": "2026-09-22T04:59:59.647646+00:00",
-  "hunt_updated_at": "2026-09-22T04:59:45.243333+00:00",
+  "updated_at": "2026-09-22T05:18:09.419127+00:00",
+  "hunt_updated_at": "2026-09-22T05:17:54.907071+00:00",
   "x_source": "error",
   "x_model": null,
   "x_error": "http 403 grok-4.6 {\"code\":\"permission-denied\",\"error\":\"Your newly created team doesn't have any credits or licenses yet. You can purchase those on https://conso",
   "x_pl": "Filtr X: błąd API. Zostają sity. Copy off.",
   "x_en": "X filter: API error. Gates stand. Copy off.",
-  "x_updated_at": "2026-09-22T04:59:59.840792+00:00"
+  "x_updated_at": "2026-09-22T05:18:09.611645+00:00"
 }
