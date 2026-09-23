@@ -6,46 +6,44 @@
   "verb_en": "DO NOT ENABLE",
   "now_pl": "Żaden tor nie przeszedł sitów do włączenia. $39 zostaje. Najbliższa ścieżka to hunt pod książkę $5 / $15, nie dokupowanie i nie All Copy.",
   "now_en": "No lane cleared the gates. Leave the $39. Closest path is hunt for a $5 / $15 book, not more cash and not All Copy.",
-  "path_pl": "Najbliżej: 0x760f1063f9f07d5125de802b16775a967b7f326a (SPORTS). Brakuje: sity prawie — nadal WAIT, nie enable. Patrz w Symulacji. W Telegramie nic nie klikasz.",
-  "path_en": "Closest: 0x760f1063f9f07d5125de802b16775a967b7f326a (SPORTS). Missing: sity prawie — nadal WAIT, nie enable. Look in Simulation. Do nothing in Telegram.",
-  "hunt_next_pl": "Następny bieg: głębiej SPORTS (offset 250/300), potem ECONOMICS, POLITICS. Pomijamy Top 8, świece 5 min, esport, conc=1.0 jako pick.",
-  "hunt_next_en": "Next run: deeper SPORTS (offset 250/300), then ECONOMICS, POLITICS. Skip Top 8, 5-min candles, esports, conc=1.0 picks.",
+  "path_pl": "Najbliżej: ps5 (ECONOMICS). Brakuje: sity prawie — nadal WAIT, nie enable. Patrz w Symulacji. W Telegramie nic nie klikasz.",
+  "path_en": "Closest: ps5 (ECONOMICS). Missing: sity prawie — nadal WAIT, nie enable. Look in Simulation. Do nothing in Telegram.",
+  "hunt_next_pl": "Następny bieg: głębiej ECONOMICS (offset 250/300), potem SPORTS, POLITICS. Pomijamy Top 8, świece 5 min, esport, conc=1.0 jako pick.",
+  "hunt_next_en": "Next run: deeper ECONOMICS (offset 250/300), then SPORTS, POLITICS. Skip Top 8, 5-min candles, esports, conc=1.0 picks.",
   "closest": {
-    "name": "0x760f1063f9f07d5125de802b16775a967b7f326a",
-    "lane": "SPORTS",
+    "name": "ps5",
+    "lane": "ECONOMICS",
     "missing": "sity prawie — nadal WAIT, nie enable"
   },
   "next_cats": [
-    "SPORTS",
     "ECONOMICS",
+    "SPORTS",
     "POLITICS",
     "FINANCE",
     "CULTURE",
     "TECH"
   ],
   "extra_offsets": {
-    "SPORTS": [
+    "ECONOMICS": [
       250,
       300
     ]
   },
   "dead_pl": [
-    "b324u · SPORTS · jeden event / veto",
     "S55 · ECONOMICS · jeden event / veto",
     "xeroror · ECONOMICS · jeden event / veto"
   ],
   "dead_en": [
-    "b324u · SPORTS · jeden event / veto",
     "S55 · ECONOMICS · jeden event / veto",
     "xeroror · ECONOMICS · jeden event / veto"
   ],
   "error": "http 404 claude-sonnet-4-20250514",
-  "updated_at": "2026-09-23T05:08:16.434898+00:00",
-  "hunt_updated_at": "2026-09-23T05:08:02.079658+00:00",
+  "updated_at": "2026-09-23T11:42:02.338268+00:00",
+  "hunt_updated_at": "2026-09-23T11:41:47.489364+00:00",
   "x_source": "error",
   "x_model": null,
   "x_error": "http 403 grok-4.6 {\"code\":\"permission-denied\",\"error\":\"Your newly created team doesn't have any credits or licenses yet. You can purchase those on https://conso",
   "x_pl": "Filtr X: błąd API. Zostają sity. Copy off.",
   "x_en": "X filter: API error. Gates stand. Copy off.",
-  "x_updated_at": "2026-09-23T05:08:16.622114+00:00"
+  "x_updated_at": "2026-09-23T11:42:02.549130+00:00"
 }
