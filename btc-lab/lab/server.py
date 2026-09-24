@@ -8,7 +8,8 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from .core import Store
-from .research import report
+from .daily_report import build_report
+from urllib.parse import parse_qs, urlsplit
 
 def handler(store, web, password_hash, username='damian', local_dev=False):
     class Handler(BaseHTTPRequestHandler):
@@ -49,7 +50,10 @@ def handler(store, web, password_hash, username='damian', local_dev=False):
                 self.send(401,b'Authentication required','text/plain',{'WWW-Authenticate':'Basic realm="BTC Lab", charset="UTF-8"'})
                 return
             if path in ('/api/state','/api/report'):
-                value=store.snapshot() if path=='/api/state' else report(store)
+                try:
+                    value=store.snapshot() if path=='/api/state' else build_report(store,parse_qs(urlsplit(self.path).query).get('date',[None])[0])
+                except ValueError:
+                    self.send(400,b'Invalid completed report date','text/plain'); return
                 self.send(200,json.dumps(value,allow_nan=False).encode(),'application/json')
                 return
             allowed={'/':'index.html','/index.html':'index.html','/style.css':'style.css','/app.js':'app.js'}
@@ -72,3 +76,4 @@ def main():
     server.serve_forever()
 
 if __name__=='__main__': main()
+

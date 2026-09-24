@@ -22,7 +22,7 @@ class ReportingTests(unittest.TestCase):
         with patch.object(r.time,'time',return_value=200):result=r.snapshot(self.root)
         self.assertEqual(result['heartbeat_age_seconds'],100)
         self.assertNotIn('DO_NOT_EXPORT',json.dumps(result))
-        self.assertEqual(len(result['accounts']),3)
+        self.assertEqual(len(result['accounts']),4)
         with self.store.connect() as db:self.assertEqual(before,list(db.iterdump()))
 
     def test_public_destination_rejected_before_reading_db(self):
@@ -42,3 +42,18 @@ class ReportingTests(unittest.TestCase):
         with patch.object(r,'api',side_effect=error) as call:
             with self.assertRaises(r.urllib.error.HTTPError):r.publish(self.root,'secret')
         self.assertEqual(call.call_count,1)
+
+
+    def test_sale_fees_match_dashboard_and_daily(self):
+        from lab.core import simulate_fill
+        from lab.mid_window import simulate_sale
+        start=1800000000
+        fill=simulate_fill([['.60','100']],'5','.60','.07','5','.01')
+        self.store.open('mid-window-v1',f'btc-updown-15m-{start}','Up',fill,{},start+200)
+        sale=simulate_sale({'bids':[['.65','100']],'tick':'.01','min_shares':'5'},fill['shares'],'.07')
+        self.store.close_paper(1,sale,{},start+300)
+        report=r.snapshot(self.root)
+        a=next(a for a in report['accounts'] if a['id']=='mid-window-v1')
+        b=next(a for a in self.store.snapshot()['accounts'] if a['id']=='mid-window-v1')
+        self.assertEqual(a['pnl'],b['pnl']);self.assertEqual(a['fees'],b['fees'])
+        self.assertEqual(a['wins'],b['wins']);self.assertGreater(report['trades'][0]['exit_fee'],0)

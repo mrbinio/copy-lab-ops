@@ -41,7 +41,8 @@ def main():
     for part in ('','releases','data','logs'):
         (root/part).mkdir(parents=True,exist_ok=True,mode=0o700)
     config_path=root/'config.json'
-    if config_path.exists():
+    existing_install=config_path.exists()
+    if existing_install:
         config=json.loads(config_path.read_text())
         print('Zachowuje dotychczasowe haslo i baze danych.')
     else:
@@ -57,7 +58,7 @@ def main():
     port=int(config['port'])
     target=f'gui/{os.getuid()}/{LABEL}'
     loaded=subprocess.run(['launchctl','print',target],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode==0
-    if not loaded:
+    if not loaded and not existing_install:
         selected=choose_port(port)
         if selected!=port:
             print(f'Port {port} jest zajety. BTC Lab uzyje wolnego portu {selected}.')
@@ -83,7 +84,29 @@ def main():
     except Exception as error:
         failure_report(root,target)
         raise SystemExit(f'Nie zmieniono konfiguracji: {error}')
-    port=choose_port(port)
+    # Preserve Cloudflare origin port on updates; never silently choose another.
+    if existing_install:
+        try:
+            with socket.socket() as probe:
+                probe.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
+                probe.bind(('127.0.0.1',port))
+        except OSError:
+            if old_config and old_plist:
+                start_service(target,plist)
+            raise SystemExit(f'Port {port} nadal zajety. Zachowano stara konfiguracje; nie zmieniono portu tunelu.')
+    else:
+        port=choose_port(port)
+    # Consistent backup before the new release performs additive migrations.
+    import sqlite3
+    db_path=root/'data/lab.sqlite'
+    if db_path.exists():
+        backup_dir=root/'backups';backup_dir.mkdir(mode=0o700,exist_ok=True)
+        try:
+            with sqlite3.connect(db_path) as src, sqlite3.connect(backup_dir/f'pre-{revision[:12]}-{time.time_ns()}.sqlite') as dst:
+                src.backup(dst)
+        except Exception:
+            if old_config and old_plist:start_service(target,plist)
+            raise
     config['port']=port
     config.update(release=str(release),revision=revision)
     config_path.write_text(json.dumps(config,indent=2));config_path.chmod(0o600)
@@ -96,6 +119,12 @@ def main():
         failure_report(root,target)
         try:
             stop_service(target,root)
+            # Older releases do not know the new account name. Never run them
+            # over an experiment ledger they cannot interpret.
+            with sqlite3.connect(root/'data/lab.sqlite') as db:
+                count=db.execute("SELECT COUNT(*) FROM positions WHERE strategy='mid-window-v1'").fetchone()[0]
+                if count: raise RuntimeError('Zachowano nowa baze i konfiguracje: stara wersja nie obsluguje transakcji mid-window-v1. Wymagana naprawa nowej wersji, bez cofania danych.')
+                db.execute("DELETE FROM accounts WHERE strategy='mid-window-v1' AND NOT EXISTS (SELECT 1 FROM ledger WHERE strategy='mid-window-v1')")
             if old_config:config_path.write_bytes(old_config)
             if old_plist:plist.write_bytes(old_plist)
             if old_config and old_plist:
@@ -104,6 +133,12 @@ def main():
         except Exception as rollback_error:
             print(f'PRZYWROCENIE USLUGI NIEPOTWIERDZONE: {rollback_error}')
         raise SystemExit('Instalacja nieudana. Zachowano baze danych; szczegoly w raporcie powyzej.')
+    # Refresh the already-installed hourly publisher without changing its token or schedule.
+    reporter=root/'reporting/publish_report_macos.py'
+    if reporter.exists():
+        staged=reporter.with_suffix('.new')
+        shutil.copyfile(release/'btc-lab/deploy/publish_report_macos.py',staged)
+        staged.chmod(0o600);os.replace(staged,reporter)
     print('\nSkonfigurowano automatyczny start PO ZALOGOWANIU na to konto.')
     print(f'Dashboard na tym Macu: http://127.0.0.1:{port}')
     print('Login dashboardu: damian. Haslo: ustawione przez Ciebie przed chwila lub zachowane.')
@@ -119,3 +154,4 @@ def main():
         print('Diagnostyka przekroczyla 90 sekund; usluga pozostaje uruchomiona.')
 
 if __name__=='__main__':main()
+

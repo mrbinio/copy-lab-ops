@@ -2,13 +2,15 @@
 import json
 import sqlite3
 import time
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from contextlib import contextmanager
 from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR
 from pathlib import Path
 
 D = Decimal
 SCALE = D(1_000_000)
-STRATEGIES = {"value-v1": "Reference-aware value", "late-v1": "Late direction baseline", "early-v1": "Early direction baseline"}
+STRATEGIES = {"value-v1": "Reference-aware value", "late-v1": "Late direction baseline", "early-v1": "Early direction baseline", "mid-window-v1": "Mitch 3–7 / 50–80c (experimental)"}
 
 class LedgerError(ValueError):
     """Requires explicit operator review before entries resume."""
@@ -80,6 +82,11 @@ class Store:
               CREATE TABLE IF NOT EXISTS labels (market TEXT PRIMARY KEY, winner TEXT NOT NULL, ts REAL NOT NULL, evidence TEXT NOT NULL);
               CREATE TABLE IF NOT EXISTS examples (market TEXT PRIMARY KEY, ts REAL NOT NULL, body TEXT NOT NULL);
             ''')
+            db.execute('BEGIN IMMEDIATE')
+            columns = {r[1] for r in db.execute('PRAGMA table_info(positions)')}
+            if 'exit_fee' not in columns:
+                db.execute('ALTER TABLE positions ADD COLUMN exit_fee INTEGER NOT NULL DEFAULT 0')
+            db.execute('CREATE INDEX IF NOT EXISTS decisions_time ON decisions(ts)')
             for strategy in STRATEGIES:
                 db.execute("INSERT OR IGNORE INTO accounts VALUES (?,?,?)", (strategy, units(initial), units(initial)))
 
@@ -129,7 +136,7 @@ class Store:
             # Worst-case loss is included in day/week budgets before accepting a fill.
             losses = []
             for horizon in (86400, 7*86400):
-                row = db.execute("SELECT COALESCE(SUM(MIN(0,payout-cost-fee)),0) FROM positions WHERE strategy=? AND resolved>=?", (strategy,ts-horizon)).fetchone()
+                row = db.execute("SELECT COALESCE(SUM(MIN(0,payout-cost-fee-exit_fee)),0) FROM positions WHERE strategy=? AND resolved>=?", (strategy,ts-horizon)).fetchone()
                 losses.append(-row[0])
             if amount > a['initial'] * .011 or losses[0]+amount > a['initial']*.03 or losses[1]+amount > a['initial']*.06:
                 return "RISK_LIMIT"
@@ -137,7 +144,7 @@ class Store:
                 return "INSUFFICIENT_CASH"
             equity = peak = a['initial']
             # Realised P&L drawdown, evaluated after complete redemptions below.
-            pnls = db.execute("SELECT payout-cost-fee FROM positions WHERE strategy=? AND status='REDEEMED' ORDER BY redeemed", (strategy,)).fetchall()
+            pnls = db.execute("SELECT payout-cost-fee-exit_fee FROM positions WHERE strategy=? AND status IN ('REDEEMED','CLOSED') ORDER BY redeemed", (strategy,)).fetchall()
             for row in pnls:
                 equity += row[0]
                 peak = max(peak,equity)
@@ -148,6 +155,26 @@ class Store:
             db.execute("UPDATE accounts SET cash=cash-? WHERE strategy=?", (amount,strategy))
             db.execute("INSERT INTO ledger(event_key,strategy,kind,amount,ts) VALUES (?,?,?,?,?)", (f"entry:{strategy}:{market}",strategy,"ENTRY",-amount,ts))
         return "FILLED"
+
+    def close_paper(self, position_id, fill, evidence, ts):
+        """Atomic full sale; official settlement cannot pay a closed position twice."""
+        with self.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            p = db.execute('SELECT * FROM positions WHERE id=?', (position_id,)).fetchone()
+            if not p or p['status'] != 'OPEN': return 'ALREADY_CLOSED'
+            if p['strategy'] != 'mid-window-v1': raise ValueError('exit experiment only')
+            start = int(p['market'].rsplit('-',1)[1])
+            if not p['opened'] <= ts < start+600: return 'EXIT_CUTOFF'
+            if fill['shares'] != p['shares'] or not 0 <= fill['fee'] <= fill['proceeds']:
+                raise LedgerError('invalid sale')
+            net = fill['proceeds']-fill['fee']
+            body = json.loads(p['evidence']); body['exit'] = {**evidence, 'execution':fill}
+            db.execute("UPDATE positions SET status='CLOSED', payout=?, exit_fee=?, resolved=?, redeemed=?, evidence=? WHERE id=?",
+                       (fill['proceeds'],fill['fee'],ts,ts,json.dumps(body),position_id))
+            db.execute('UPDATE accounts SET cash=cash+? WHERE strategy=?',(net,p['strategy']))
+            db.execute('INSERT INTO ledger(event_key,strategy,kind,amount,ts) VALUES (?,?,?,?,?)',
+                       (f'sale:{position_id}',p['strategy'],'PAPER_SALE',net,ts))
+        return 'SOLD'
 
     def resolve(self, market, winner, evidence, ts):
         if winner not in ("Up","Down") or evidence.get("source") != "clob_official_winner" or evidence.get("closed") is not True:
@@ -184,15 +211,23 @@ class Store:
                 settled = [p for p in positions if p['payout'] is not None]
                 curve, cumulative = [],0
                 for p in sorted(settled,key=lambda p:p['resolved']):
-                    cumulative += p['payout']-p['cost']-p['fee']
+                    cumulative += p['payout']-p['cost']-p['fee']-p['exit_fee']
                     curve.append({"ts":p['resolved'],"pnl":cumulative/1e6})
                 exposure = sum(p['cost']+p['fee'] for p in positions if p['status']=='OPEN')
                 pending = sum(p['payout'] for p in positions if p['status']=='RESOLVED')
                 accounts.append({"id":a['strategy'],"name":STRATEGIES[a['strategy']],"cash":a['cash']/1e6,
-                    "initial":a['initial']/1e6,"pnl":cumulative/1e6,"fees":sum(p['fee'] for p in positions)/1e6,
+                    "initial":a['initial']/1e6,"pnl":cumulative/1e6,"fees":sum(p['fee']+p['exit_fee'] for p in positions)/1e6,
                     "open_cost":exposure/1e6,"pending":pending/1e6,"trades":len(positions),"settled":len(settled),
-                    "wins":sum(p['payout']>0 for p in settled),"curve":curve[-300:]})
-            trades = [dict(p) for p in db.execute("SELECT id,strategy,market,side,shares,cost,fee,opened,status,payout,resolved FROM positions ORDER BY id DESC LIMIT 100")]
+                    "wins":sum(p['payout']-p['cost']-p['fee']-p['exit_fee']>0 for p in settled),"curve":curve[-300:]})
+            now=time.time()
+            for a in accounts:
+                rows=db.execute('SELECT payout,cost,fee,exit_fee,resolved FROM positions WHERE strategy=? AND payout IS NOT NULL',(a['id'],)).fetchall()
+                a['losses_7d']=sum(max(0,r['cost']+r['fee']+r['exit_fee']-r['payout']) for r in rows if now-7*86400<=r['resolved']<=now)/1e6
+                a['losses_24h']=sum(max(0,r['cost']+r['fee']+r['exit_fee']-r['payout']) for r in rows if now-86400<=r['resolved']<=now)/1e6
+                a['week_limit']=a['initial']*.06
+                a['day_limit']=a['initial']*.03
+                a['today_pnl']=sum((r['payout']-r['cost']-r['fee']-r['exit_fee']) for r in rows if datetime.fromtimestamp(r['resolved'],ZoneInfo('Europe/Stockholm')).date()==datetime.fromtimestamp(now,ZoneInfo('Europe/Stockholm')).date())/1e6
+            trades = [dict(p) for p in db.execute("SELECT id,strategy,market,side,shares,cost,fee,exit_fee,opened,status,payout,resolved FROM positions ORDER BY id DESC LIMIT 100")]
             decisions = [dict(d) for d in db.execute("SELECT ts,strategy,market,reason FROM decisions ORDER BY id DESC LIMIT 25")]
             count = db.execute("SELECT COUNT(*) FROM observations").fetchone()[0]
             labels = db.execute("SELECT COUNT(*) FROM labels").fetchone()[0]
@@ -200,3 +235,4 @@ class Store:
                 "observations":count,"labels":labels,"worker":self.get("worker",{}),"market":self.get("market",{}),
                 "reference":self.get("reference",{}),"model":self.get("model",{"status":"COLLECTING","samples":0}),
                 "price_history":self.get("price_history",[]),"generated_at":time.time()}
+

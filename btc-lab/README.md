@@ -1,3 +1,20 @@
+# v0.3.0 — 2026-09-24: source ready, Mac deployment unconfirmed
+
+Daily export now fetches authenticated /api/report afresh, never a cached browser snapshot or preview. Default: previous completed Europe/Stockholm day; optional date selector, DST-aware boundaries and dated filenames. Daily entries, realized results, both fees, recorded skip reasons and data counts are separate from lifetime balances. Full daily trades and up to 10,000 lifetime rows with explicit truncation. Deduplicate overlaps by trade id and period. Repeated cumulative balances with no new trades are valid.
+
+Three existing baseline accounts and their histories remain; one new isolated mid-window-v1 PAPER account implements the authorized 3–7 minute, 50–80 cent hypothesis. Read EXPERIMENT-MID-WINDOW.md for exact frozen signal and sale rules and limitations. No proprietary Mitch model, calibrated probability or profitability is claimed. No real orders.
+
+Schema adds positions.exit_fee default zero and CLOSED for full simulated sales. Both fees count in PnL, cash and gross-loss limits; official settlement cannot pay a sold position again. Dashboard win rate means profitable realized positions. The hourly publisher supports both schemas and is refreshed by the installer if installed already.
+
+Dashboard adds today's net PnL and rolling gross-loss budget usage plus an EN/PL guide for the experiment. Installer preserves the existing port, tests first, backs up SQLite before migration, preserves credentials and data, and refuses incompatible rollback after experimental trades exist. It accepts a pinned commit argument.
+
+Verification: 59 controlled Python tests, three JS export cases, syntax checks; all 32 historical trades in the user's Sept24 export reconcile unchanged in a temporary database. This is not Mac deployment or actual venue fill verification.
+
+Latest inspected runtime: Sept24 18:59 UTC, v0.2.1, DEGRADED/MISSING_OR_STALE with recent worker heartbeat, 429 labels, model samples419; early -2.437825 USD/13 trades, late -16.204976 USD/19 trades, value0. This is a timestamped snapshot, not continuous monitoring. Private report reads succeeded Sept20 and Sept24; uninterrupted hourly coverage has not been audited. Require v0.3.0 in a new export to confirm deployment.
+
+---
+Historical documentation below; this update takes precedence.
+
 # BTC Lab — paper research v0.2
 
 A standalone BTC 15-minute research service and bilingual dashboard. This directory and the sibling `/lab` website are independent of the older dashboards and the sports/copy-trading project.
@@ -119,3 +136,4 @@ Accounts and ledger history are preserved across upgrades. Each new paper positi
 Previously every research pass refitted the first 200 currently labelled rows. A delayed label for an earlier observation could change that set and its weights under the same model ID. Completed models (including failed validation) now persist per feature schema and are restored without refitting after restarts or schema switches. New models record exact training/validation market membership and freeze time. Existing completed models retain their weights and explicitly mark original membership unavailable; no historical provenance is fabricated. The samples count on a frozen model describes its frozen fitting snapshot, not the growing database. No risk thresholds or strategy horizons change. Local verification: 42 controlled tests passed; no live host or profitability verification.
 
 Next research experiment: replay identical captured inputs under documented 50 ms venue delay plus measured client latency, versus existing 250 ms stress delay plus client latency. Require timestamped arrival book evidence (REST snapshots cannot resolve 50 ms fills), identical fees and no retroactive fills; otherwise mark the comparison unavailable. Reject a candidate whose net advantage disappears under execution stress. This is a proposed test, not an implemented strategy or proof of profitability. Separately investigate documented 5-minute/4-hour crypto markets; live inventory, hourly rules and liquidity still require verification before collecting separate datasets.
+

@@ -14,6 +14,7 @@ from pathlib import Path
 from .core import Store, STRATEGIES, simulate_fill, LedgerError
 from .strategy import choose, features, MODEL_HORIZON
 from .research import train, report
+from .mid_window import exit_intent, simulate_sale
 from .reference import classify_rule, observation, SPOT, TWAP60, TWAP30
 
 LOG=logging.getLogger('btc-lab')
@@ -211,6 +212,26 @@ class Worker:
         self.store.redeem(time.time())
         self.store.audit()
 
+    async def paper_exits(self, market, reconciliation_ok):
+        if not reconciliation_ok or not market.get('accepting') or not market.get('fee_verified') or not market.get('rule_supported'):return
+        with self.store.connect() as db:
+            rows=[dict(r) for r in db.execute("SELECT * FROM positions WHERE strategy='mid-window-v1' AND status='OPEN' AND market=?",(market['slug'],))]
+        for p in rows:
+            intent,reason=exit_intent(p,market,time.time())
+            if intent:
+                await asyncio.sleep(.25)
+                arrival=await self.books(market)
+                at=time.time();book=arrival[p['side']]
+                reason='EXIT_CUTOFF'
+                if at<market['start']+600:
+                    reason='EXIT_BOOK_STALE'
+                    if -.25<=at-book['source_ts']<=3:
+                        fill=simulate_sale(book,p['shares'],market['fee_rate'],intent['floor'])
+                        reason='EXIT_NO_FULL_FILL'
+                        if fill:
+                            reason=self.store.close_paper(p['id'],fill,{**intent,'arrival_at':at,'book_source_ts':book['source_ts']},at)
+            self.decision('mid-window-v1',market['slug'],reason, intent or {},time.time())
+
     async def cycle(self, entries_allowed=True):
         self.store.audit()
         now=time.time()
@@ -235,6 +256,7 @@ class Worker:
             return (min(float(x[0]) for x in b['asks'])+max(float(x[0]) for x in b['bids']))/2
         um,dm=mid(up),mid(down)
         probability=um/(um+dm) if um is not None and dm is not None and um+dm>0 else None
+        m['causal_history']=[x for x in history if now-35<=x[0]<=now]
         m['features']=None
         if reference and m['opening'] and probability and -.25<=now-reference['source_ts']<=5:
             past=[x for x in history if now-600<=x[0]<=now]
@@ -251,6 +273,7 @@ class Worker:
                     'book_source_ts':{side:b['source_ts'] for side,b in m['books'].items()}})))
         self.store.set('market',m)
         self.store.set('price_history',history[-900:])
+        await self.paper_exits(m, entries_allowed)
         model=self.store.get('model',{})
         signals=[]
         paused=(self.data/'PAUSE').exists() or not entries_allowed
@@ -267,9 +290,13 @@ class Worker:
                 book=arrival[intent['side']]
                 reason='ARRIVAL_INVALID'
                 reference=self.selected_reference(m)
-                if not (self.data/'PAUSE').exists() and at < m['end']-30 and reference and -.25 <= at-reference['source_ts']<=5:
+                time_valid=(intent['strategy']!='mid-window-v1' or 180<=at-m['start']<=420)
+                book_valid=all(-.25<=at-b['source_ts']<=3 for b in arrival.values())
+                if time_valid and book_valid and not (self.data/'PAUSE').exists() and at < m['end']-30 and reference and -.25 <= at-reference['source_ts']<=5:
                     fill=simulate_fill(book['asks'],'5',str(intent['limit']),str(m['fee_rate']),book['min_shares'],book['tick'])
                     reason='NO_FULL_FILL'
+                    if fill and intent['strategy']=='mid-window-v1' and any(not .50<=float(f['price'])<=.80 for f in fill['fills']):
+                        fill=None;reason='ARRIVAL_PRICE_OUTSIDE_RANGE'
                     if fill:
                         if intent['probability'] is not None and intent['probability']-fill['vwap']-fill['fee']/fill['shares']-.03<.02:
                             reason='EDGE_LOST'
@@ -284,7 +311,7 @@ class Worker:
         reference_fresh=reference and -.25<=time.time()-reference['source_ts']<=5
         self.store.set('worker',{'status':('PAUSED' if paused else 'RECORDING') if reference_fresh else 'DEGRADED','heartbeat':time.time(),
             'reference_status':'FRESH' if reference_fresh else 'MISSING_OR_STALE',
-            'reference_error':self.feed_error,'version':'0.2.1','execution':'PAPER ONLY'})
+            'reference_error':self.feed_error,'version':'0.3.0','execution':'PAPER ONLY'})
 
     async def iteration(self):
         errors=[]
@@ -316,7 +343,7 @@ class Worker:
                 failure('research',e)
         if errors:
             self.store.set('worker',{'status':'DEGRADED','heartbeat':time.time(),
-                'errors':errors,'version':'0.2.1'})
+                'errors':errors,'version':'0.3.0'})
 
     async def run(self):
         self.store.audit()
@@ -339,4 +366,5 @@ def main():
         asyncio.run(Worker(Store(data/'lab.sqlite'),data).run())
 
 if __name__=='__main__': main()
+
 

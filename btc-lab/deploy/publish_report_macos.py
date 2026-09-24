@@ -48,13 +48,14 @@ def snapshot(root):
         now=time.time()
         worker=selected(state('worker'),'status heartbeat reference_status version execution')
         model=selected(state('model'),'status samples required trained_at feature_schema model_id frozen_at validation_brier book_brier freeze_provenance')
+        exit_fee='exit_fee' if any(r[1]=='exit_fee' for r in db.execute('PRAGMA table_info(positions)')) else '0'
         accounts=[]
         for a in db.execute('SELECT strategy,initial,cash FROM accounts'):
-            p=db.execute('SELECT COUNT(*) n, SUM(payout IS NOT NULL) settled, SUM(payout>0) wins, COALESCE(SUM(CASE WHEN payout IS NOT NULL THEN payout-cost-fee ELSE 0 END),0) pnl, COALESCE(SUM(fee),0) fees, COALESCE(SUM(CASE WHEN status="OPEN" THEN cost+fee ELSE 0 END),0) open_cost, COALESCE(SUM(CASE WHEN status="RESOLVED" THEN payout ELSE 0 END),0) pending FROM positions WHERE strategy=?',(a['strategy'],)).fetchone()
+            p=db.execute(f'SELECT COUNT(*) n, SUM(payout IS NOT NULL) settled, SUM(payout-cost-fee-{exit_fee}>0) wins, COALESCE(SUM(CASE WHEN payout IS NOT NULL THEN payout-cost-fee-{exit_fee} ELSE 0 END),0) pnl, COALESCE(SUM(fee+{exit_fee}),0) fees, COALESCE(SUM(CASE WHEN status="OPEN" THEN cost+fee ELSE 0 END),0) open_cost, COALESCE(SUM(CASE WHEN status="RESOLVED" THEN payout ELSE 0 END),0) pending FROM positions WHERE strategy=?',(a['strategy'],)).fetchone()
             accounts.append({'id':a['strategy'],'cash':a['cash']/1e6,'initial':a['initial']/1e6,
                 **{k:p[k]/1e6 for k in ('pnl','fees','open_cost','pending')},
                 'trades':p['n'],'settled':p['settled'] or 0,'wins':p['wins'] or 0})
-        trades=[dict(r) for r in db.execute('SELECT id,strategy,market,side,shares,cost,fee,opened,status,payout,resolved FROM positions ORDER BY id DESC LIMIT 1000')]
+        trades=[dict(r) for r in db.execute(f'SELECT id,strategy,market,side,shares,cost,fee,{exit_fee} AS exit_fee,opened,status,payout,resolved FROM positions ORDER BY id DESC LIMIT 1000')]
         decisions=[dict(r) for r in db.execute('SELECT strategy,reason,COUNT(*) recorded_events FROM decisions WHERE ts>=? GROUP BY strategy,reason',(now-86400,))]
         counts={k:db.execute('SELECT COUNT(*) FROM '+v).fetchone()[0] for k,v in [('observations','observations'),('labels','labels'),('examples','examples'),('total_trades','positions')]}
         policies={}
@@ -119,7 +120,9 @@ def install():
 
 def main():
     os.umask(0o077)
-    if '--install' in sys.argv:return install()
+    args=[a.replace('—','--').replace('–','--') for a in sys.argv[1:]]
+    if args==['--install']:return install()
+    if args!=['--send']:raise ValueError('Use --install or --send')
     folder=ROOT/'reporting'
     with (folder/'lock').open('w') as lock:
         try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
@@ -139,3 +142,4 @@ if __name__=='__main__':
     except Exception as e:
         print('BLAD: '+type(e).__name__+((' HTTP '+str(e.code)) if isinstance(e,urllib.error.HTTPError) else '')+'. Instalacja lub wysylka niepotwierdzona.',file=sys.stderr)
         sys.exit(1)
+

@@ -157,6 +157,15 @@ class AuthTests(unittest.TestCase):
                     self.assertFalse(s['live_enabled'])
                     self.assertEqual(s['mode'],'PAPER')
                     self.assertEqual(r.headers['Cache-Control'],'no-store')
+                req=urllib.request.Request(url+'/api/report?date=2026-01-01',headers={'Authorization':auth})
+                with urllib.request.urlopen(req) as r:
+                    report=json.load(r)
+                    self.assertEqual(report['schema'],'btc-daily-report-v2')
+                    self.assertEqual(report['period']['date'],'2026-01-01')
+                    self.assertEqual(len(report['daily']),4)
+                with self.assertRaises(urllib.error.HTTPError) as invalid:
+                    urllib.request.urlopen(urllib.request.Request(url+'/api/report?date=invalid',headers={'Authorization':auth}))
+                self.assertEqual(invalid.exception.code,400)
                 with self.assertRaises(urllib.error.HTTPError) as e:
                     urllib.request.urlopen(urllib.request.Request(url+'/api/trade',data=b'{}',headers={'Authorization':auth}))
                 self.assertEqual(e.exception.code,501)
@@ -218,3 +227,4 @@ class CycleTests(unittest.IsolatedAsyncioTestCase):
                 store.audit()
 
 if __name__=='__main__': unittest.main()
+

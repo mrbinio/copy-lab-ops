@@ -37,6 +37,9 @@ def choose(strategy, market, reference, model, now):
     if not book.get('asks') or not (-.25 <= now-book['source_ts'] <= 3):
         return None,"BOOK_STALE"
     ask = min(float(x[0]) for x in book['asks'])
+    if strategy == 'mid-window-v1':
+        from .mid_window import entry
+        return entry(market,reference,market.get('causal_history',[]),now)
     if strategy == 'late-v1':
         if not 30 < remaining <= 300: return None,"OUTSIDE_ENTRY_WINDOW"
         if abs(current-opening) < 50: return None,"DISTANCE_TOO_SMALL"
@@ -70,4 +73,5 @@ def choose(strategy, market, reference, model, now):
         _,side,probability,cap = max(offers)
     return {"side":side,"limit":cap,"probability":probability,"decision_at":now,
             "strategy":strategy,"market":market['slug'],"config_version":"v0.2.0","feature_schema":market.get('feature_schema','spot-v1')},"SIGNAL"
+
 
