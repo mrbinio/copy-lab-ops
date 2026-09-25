@@ -9,7 +9,7 @@ import sys
 import tempfile
 import urllib.request
 
-EXPECTED = {'index.html': '37ca0be360c708da6a4b67942c7cbe16ffd4a7bff8b44c383bf2ed3a90c27dc3', 'app.js': '0b9b87c58884167b46d00721ae6922d8f6b7fc2a10c77e11189b9240d2e2a2aa', 'style.css': '068821c8d0151b364bc9ee45c57063d920d32764f100d4940787b57f7ad4847c'}
+EXPECTED = {"app.js":"d77722a3586a4b83d60a24538ad1c9b97c573e73d8a6d7bc4775be573e67d5d9","index.html":"35cae7d501818e6226bc45eacf62e230238492f41eca9af20518b64eb018ba53","style.css":"068821c8d0151b364bc9ee45c57063d920d32764f100d4940787b57f7ad4847c"}
 
 def update(root, revision):
     if not re.fullmatch(r'[0-9a-f]{40}', revision):
@@ -50,8 +50,8 @@ def update(root, revision):
         for name, data in originals.items():
             replace(name, data)
         raise
-    print('Przewodnik PL/EN zainstalowany. Kolektor nie byl restartowany.')
-    print(f'Odswiez dashboard: http://127.0.0.1:{config["port"]}/#guide')
+    print('Dziennik z filtrem Mitch 3-7 zaktualizowany. Kolektor nie byl restartowany.')
+    print(f'Odswiez dashboard: http://127.0.0.1:{config["port"]}/#activity')
     print(f'Kopia poprzedniego interfejsu: {backup}')
 
 if __name__ == '__main__':
