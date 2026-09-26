@@ -70,6 +70,8 @@ def build_report(store, day=None, now=None):
                 'worker':worker,'heartbeat_age_seconds':now-heartbeat if heartbeat else None,
                 'worker_fresh_at_export':heartbeat is not None and 0<=now-heartbeat<30,
                 'reference':state('reference'),'model':model,'counts':counts,
+                'exit_comparison_cumulative':state('exit_comparison'),
+                'exit_comparison_error':state('exit_comparison_error'),
                 'daily':daily,'accounts':accounts,'trades':trades,'period_trades':day_trades,
                 'trades_truncated':total>len(trades),'total_trades':total,'trade_integer_scale':1000000,
                 'recorded_data_in_period':recorded,'experiment':SPEC,

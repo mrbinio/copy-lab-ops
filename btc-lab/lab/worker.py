@@ -15,6 +15,7 @@ from .core import Store, STRATEGIES, simulate_fill, LedgerError
 from .strategy import choose, features, MODEL_HORIZON
 from .research import train, report
 from .mid_window import exit_intent, simulate_sale
+from .exit_comparison import ExitComparison
 from .reference import classify_rule, observation, SPOT, TWAP60, TWAP30
 
 LOG=logging.getLogger('btc-lab')
@@ -95,6 +96,7 @@ class Worker:
         self.reference_topics={}
         self.references={}
         self.twap_history=deque(maxlen=3600)
+        self.exit_comparison=ExitComparison(store)
 
     def selected_reference(self,market):
         return self.references.get(TWAP60) if market.get('reference_topic')==TWAP60 else self.reference if market.get('reference_topic') in (None,SPOT) else None
@@ -198,6 +200,10 @@ class Worker:
     async def reconcile(self):
         with self.store.connect() as db:
             rows=db.execute("SELECT DISTINCT market FROM positions WHERE status='OPEN' UNION SELECT market FROM examples WHERE market NOT IN (SELECT market FROM labels)").fetchall()
+            shadow_markets={json.loads(r[0])['market'] for r in db.execute('SELECT body FROM exit_comparison')
+                            if json.loads(r[0])['status']=='OPEN'}
+            known={r[0] for r in rows}
+            rows=list(rows)+[(slug,) for slug in sorted(shadow_markets-known)]
         for row in rows[:100]:
             slug=row[0]
             if int(slug.rsplit('-',1)[1])+900>time.time(): continue
@@ -273,6 +279,14 @@ class Worker:
                     'book_source_ts':{side:b['source_ts'] for side,b in m['books'].items()}})))
         self.store.set('market',m)
         self.store.set('price_history',history[-900:])
+        # Isolated paired research uses the already collected snapshot: no extra
+        # HTTP calls or sleeps, no mutation of trading accounts or risk limits.
+        try:
+            self.exit_comparison.step(m,time.time(),entries_allowed)
+            self.store.set('exit_comparison_error',{})
+        except Exception as error:
+            self.store.set('exit_comparison_error',{'at':time.time(),'error':error_detail(error)})
+            LOG.warning('exit comparison halted: %s',error_detail(error))
         await self.paper_exits(m, entries_allowed)
         model=self.store.get('model',{})
         signals=[]
@@ -305,13 +319,15 @@ class Worker:
                                 {**intent,'arrival_at':at,'rule_hash':m['rule_hash'],'reference':reference,
                                  'feature_schema':m['feature_schema'],'opening_evidence':m.get('opening_evidence'),
                                  'opening':m['opening'],'model_id':model.get('model_id'),'depth_fraction':.5},at)
+                            if reason=='FILLED' and intent['strategy']=='mid-window-v1':
+                                self.exit_comparison.capture(m,at)
                 self.decision(intent['strategy'],m['slug'],reason,intent,at)
         reference=self.selected_reference(m)
         self.store.set('reference',reference or {})
         reference_fresh=reference and -.25<=time.time()-reference['source_ts']<=5
         self.store.set('worker',{'status':('PAUSED' if paused else 'RECORDING') if reference_fresh else 'DEGRADED','heartbeat':time.time(),
             'reference_status':'FRESH' if reference_fresh else 'MISSING_OR_STALE',
-            'reference_error':self.feed_error,'version':'0.3.0','execution':'PAPER ONLY'})
+            'reference_error':self.feed_error,'version':'0.3.1','execution':'PAPER ONLY'})
 
     async def iteration(self):
         errors=[]
@@ -343,7 +359,7 @@ class Worker:
                 failure('research',e)
         if errors:
             self.store.set('worker',{'status':'DEGRADED','heartbeat':time.time(),
-                'errors':errors,'version':'0.3.0'})
+                'errors':errors,'version':'0.3.1'})
 
     async def run(self):
         self.store.audit()
@@ -366,5 +382,4 @@ def main():
         asyncio.run(Worker(Store(data/'lab.sqlite'),data).run())
 
 if __name__=='__main__': main()
-
 

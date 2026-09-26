@@ -1,3 +1,11 @@
+# v0.3.1 — 2026-09-26: paired PAPER exit experiment; Mac deployment unconfirmed
+
+Adds `paired-exits-v1`: two separate shadow exits on each newly accepted mid-window-v1 entry. Baseline TP +10% / SL -20%; candidate TP +15% / SL -10%. Existing accounts, risk limits, entries and history remain unchanged. Both arms use subsequent polling snapshots, full-fill depth checks and both fees. Gaps/stale quotes invalidate primary paired comparisons. No historical backfill. See EXPERIMENT-PAIRED-EXITS.md for frozen criteria and limitations, including conditional entry selection and polling latency.
+
+Private hourly exports include `exit_comparison`; dashboard downloads include `exit_comparison_cumulative`. No new chart/card is added in this release. Read worker version, comparison updated_at, valid/invalid pairs separately; successful publication is not Mac deployment.
+
+Verification: 67 Python tests passed locally, including delayed execution, fixed limit/depth rejection, duplicate/restart safety, official settlement, unchanged account ledger, and both report exports. These tests do not establish profitability. Last inspected Mac export (2026-09-26T12:01:19Z) still used v0.3.0: mid-window-v1 31 trades, net -11.531324 USD, fees 7.395302 USD. Keep PAPER.
+
 # v0.3.0 — 2026-09-24: source ready, Mac deployment unconfirmed
 
 Daily export now fetches authenticated /api/report afresh, never a cached browser snapshot or preview. Default: previous completed Europe/Stockholm day; optional date selector, DST-aware boundaries and dated filenames. Daily entries, realized results, both fees, recorded skip reasons and data counts are separate from lifetime balances. Full daily trades and up to 10,000 lifetime rows with explicit truncation. Deduplicate overlaps by trade id and period. Repeated cumulative balances with no new trades are valid.

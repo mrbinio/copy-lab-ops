@@ -68,6 +68,8 @@ def snapshot(root):
             'exported_at':datetime.datetime.fromtimestamp(now,datetime.timezone.utc).isoformat(),
             'generated_at':now,'worker':worker,'heartbeat_age_seconds':now-worker['heartbeat'] if worker.get('heartbeat') else None,
             'model':model,'accounts':accounts,'trades':trades,'trades_truncated':counts['total_trades']>len(trades),
+            'exit_comparison':state('exit_comparison'),
+            'exit_comparison_error':state('exit_comparison_error'),
             'trade_integer_scale':1000000,'counts':counts,'sampling_policies':policies,
             'recorded_decision_events_24h':decisions,'market':market,'reference':reference,
             'limitations':['Decision counts are throttled recorded events, not every evaluation.',
