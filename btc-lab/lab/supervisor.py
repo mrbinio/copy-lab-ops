@@ -1,11 +1,13 @@
 """Exit if either process exits; container restart policy restarts the pair."""
+import os
 import signal
 import subprocess
 import sys
 import time
 
 def main():
-    processes=[subprocess.Popen([sys.executable,'-m',name]) for name in ('lab.worker','lab.server')]
+    processes=[subprocess.Popen([sys.executable,'-m','lab.worker'],env={**os.environ,'LAB_ASSET':asset}) for asset in ('BTC','ETH')]
+    processes.append(subprocess.Popen([sys.executable,'-m','lab.server']))
     stopping=False
     def stop(*args):
         nonlocal stopping
@@ -23,3 +25,4 @@ def main():
     return 0 if stopping else 1
 
 if __name__=='__main__': sys.exit(main())
+

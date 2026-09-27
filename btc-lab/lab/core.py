@@ -12,6 +12,8 @@ D = Decimal
 SCALE = D(1_000_000)
 STRATEGIES = {"value-v1": "Reference-aware value", "late-v1": "Late direction baseline", "early-v1": "Early direction baseline", "mid-window-v1": "Mitch 3–7 / 50–80c (experimental)"}
 
+ETH_STRATEGIES = {"eth-mid-window-v1": "ETH 3–7 · PAPER experiment"}
+
 class LedgerError(ValueError):
     """Requires explicit operator review before entries resume."""
 
@@ -60,7 +62,10 @@ def simulate_fill(asks, notional, limit, fee_rate, min_shares, tick, depth_fract
             "vwap": float(spent / shares), "limit": str(cap), "fills": fills}
 
 class Store:
-    def __init__(self, path, initial=500):
+    def __init__(self, path, initial=500, asset="BTC"):
+        if asset not in ("BTC", "ETH"): raise ValueError("unsupported asset")
+        self.asset=asset
+        self.strategies=STRATEGIES if asset=="BTC" else ETH_STRATEGIES
         self.path = str(path)
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         with self.connect() as db:
@@ -87,7 +92,7 @@ class Store:
             if 'exit_fee' not in columns:
                 db.execute('ALTER TABLE positions ADD COLUMN exit_fee INTEGER NOT NULL DEFAULT 0')
             db.execute('CREATE INDEX IF NOT EXISTS decisions_time ON decisions(ts)')
-            for strategy in STRATEGIES:
+            for strategy in self.strategies:
                 db.execute("INSERT OR IGNORE INTO accounts VALUES (?,?,?)", (strategy, units(initial), units(initial)))
 
     @contextmanager
@@ -122,8 +127,10 @@ class Store:
             db.execute("INSERT INTO decisions(ts,strategy,market,reason,body) VALUES (?,?,?,?,?)", (ts,strategy,market,reason,json.dumps(body,allow_nan=False)))
 
     def open(self, strategy, market, side, fill, evidence, ts):
-        if strategy not in STRATEGIES or side not in ("Up","Down"):
+        if strategy not in self.strategies or side not in ("Up","Down"):
             raise ValueError("invalid strategy/side")
+        if self.asset=="ETH" and not market.startswith("eth-updown-15m-"):
+            raise ValueError("asset market mismatch")
         if fill["shares"] <= 0 or fill["cost"] <= 0 or fill["fee"] < 0:
             raise ValueError("invalid fill")
         amount = fill["cost"] + fill["fee"]
@@ -162,7 +169,7 @@ class Store:
             db.execute('BEGIN IMMEDIATE')
             p = db.execute('SELECT * FROM positions WHERE id=?', (position_id,)).fetchone()
             if not p or p['status'] != 'OPEN': return 'ALREADY_CLOSED'
-            if p['strategy'] != 'mid-window-v1': raise ValueError('exit experiment only')
+            if p['strategy'] not in ('mid-window-v1','eth-mid-window-v1'): raise ValueError('exit experiment only')
             start = int(p['market'].rsplit('-',1)[1])
             if not p['opened'] <= ts < start+600: return 'EXIT_CUTOFF'
             if fill['shares'] != p['shares'] or not 0 <= fill['fee'] <= fill['proceeds']:
@@ -215,7 +222,7 @@ class Store:
                     curve.append({"ts":p['resolved'],"pnl":cumulative/1e6})
                 exposure = sum(p['cost']+p['fee'] for p in positions if p['status']=='OPEN')
                 pending = sum(p['payout'] for p in positions if p['status']=='RESOLVED')
-                accounts.append({"id":a['strategy'],"name":STRATEGIES[a['strategy']],"cash":a['cash']/1e6,
+                accounts.append({"id":a['strategy'],"name":self.strategies[a['strategy']],"cash":a['cash']/1e6,
                     "initial":a['initial']/1e6,"pnl":cumulative/1e6,"fees":sum(p['fee']+p['exit_fee'] for p in positions)/1e6,
                     "open_cost":exposure/1e6,"pending":pending/1e6,"trades":len(positions),"settled":len(settled),
                     "wins":sum(p['payout']-p['cost']-p['fee']-p['exit_fee']>0 for p in settled),"curve":curve[-300:]})
@@ -231,8 +238,9 @@ class Store:
             decisions = [dict(d) for d in db.execute("SELECT ts,strategy,market,reason FROM decisions ORDER BY id DESC LIMIT 25")]
             count = db.execute("SELECT COUNT(*) FROM observations").fetchone()[0]
             labels = db.execute("SELECT COUNT(*) FROM labels").fetchone()[0]
-        return {"mode":"PAPER","live_enabled":False,"accounts":accounts,"trades":trades,"decisions":decisions,
+        return {"asset":self.asset,"mode":"PAPER","live_enabled":False,"accounts":accounts,"trades":trades,"decisions":decisions,
                 "observations":count,"labels":labels,"worker":self.get("worker",{}),"market":self.get("market",{}),
                 "reference":self.get("reference",{}),"model":self.get("model",{"status":"COLLECTING","samples":0}),
                 "price_history":self.get("price_history",[]),"generated_at":time.time()}
+
 

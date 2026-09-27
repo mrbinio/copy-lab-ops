@@ -63,7 +63,7 @@ def build_report(store, day=None, now=None):
                 'examples':db.execute('SELECT COUNT(*) FROM examples').fetchone()[0]}
         recorded=[dict(r) for r in db.execute('SELECT kind,COUNT(*) count,MIN(ts) first_ts,MAX(ts) last_ts FROM observations WHERE ts>=? AND ts<? GROUP BY kind',(start,end))]
         heartbeat=worker.get('heartbeat')
-        return {'schema':'btc-daily-report-v2','report_id':f'{day}-Europe-Stockholm',
+        return {'schema':'btc-daily-report-v2','asset':store.asset,'report_id':(f'ETH-{day}-Europe-Stockholm' if store.asset=='ETH' else f'{day}-Europe-Stockholm'),
                 'source':'PAPER_SERVICE','mode':'PAPER','live_enabled':False,
                 'exported_at':dt.datetime.fromtimestamp(now,dt.timezone.utc).isoformat(),'generated_at':now,
                 'period':{'date':str(day),'timezone':'Europe/Stockholm','start':start,'end_exclusive':end},
@@ -74,9 +74,10 @@ def build_report(store, day=None, now=None):
                 'exit_comparison_error':state('exit_comparison_error'),
                 'daily':daily,'accounts':accounts,'trades':trades,'period_trades':day_trades,
                 'trades_truncated':total>len(trades),'total_trades':total,'trade_integer_scale':1000000,
-                'recorded_data_in_period':recorded,'experiment':SPEC,
+                'recorded_data_in_period':recorded,'experiment':({**SPEC,'id':'eth-mid-window-v1','asset':'ETH'} if store.asset=='ETH' else SPEC),
                 'limitations':['Lifetime balances repeat when no trades close; daily is a separate period.',
                     'Decision events are throttled; counts are not opportunity counts or uptime.',
                     'Exports overlap: deduplicate trades by id, daily summaries by strategy and period.',
                     'No raw orderbook replay in this export. CLOSED is a simulated sale, not official settlement.',
                     'Model validation is not net profitability. Never compare different strategy start dates as equal exposure.']}
+

@@ -1,3 +1,14 @@
+# v0.4.0 — BTC + ETH PAPER, 2026-09-27
+
+The private dashboard now has a BTC/ETH selector. ETH uses its own Chainlink ETH/USD TWAP60 data, order books, `eth-mid-window-v1` virtual account and database at `data/eth/lab.sqlite`. Read [EXPERIMENT-ETH.md](EXPERIMENT-ETH.md) and [PROJECT_STATE.md](PROJECT_STATE.md) first for current status. BTC strategies and the paired exit comparison remain intact. No real-money execution exists.
+
+`python3 -m lab.supervisor` starts BTC worker, ETH worker and authenticated server. For isolated development, `LAB_ASSET=ETH python3 -m lab.worker` starts only ETH under the configured LAB_DATA/eth directory. Default API responses are BTC; append `?asset=ETH` for ETH. Hourly private reports add `assets.ETH` with separate heartbeat; daily exports follow the selected asset. Account balances are isolated virtual500USD, not a single real100USDC portfolio.
+
+73 Python tests and5 JS export cases passed; real public ETH feed smoke check passed in development. Mac deployment of0.4.0 is unconfirmed. Mac0.3.1 was independently confirmed by the2026-09-27T06:02:13Z export. Current source readiness, historical runtime checks and trading performance are different claims.
+
+---
+Historical documentation below; the latest PROJECT_STATE.md and experiment specification take precedence.
+
 # v0.3.0 — 2026-09-24: source ready, Mac deployment unconfirmed
 
 Daily export now fetches authenticated /api/report afresh, never a cached browser snapshot or preview. Default: previous completed Europe/Stockholm day; optional date selector, DST-aware boundaries and dated filenames. Daily entries, realized results, both fees, recorded skip reasons and data counts are separate from lifetime balances. Full daily trades and up to 10,000 lifetime rows with explicit truncation. Deduplicate overlaps by trade id and period. Repeated cumulative balances with no new trades are valid.
@@ -136,4 +147,5 @@ Accounts and ledger history are preserved across upgrades. Each new paper positi
 Previously every research pass refitted the first 200 currently labelled rows. A delayed label for an earlier observation could change that set and its weights under the same model ID. Completed models (including failed validation) now persist per feature schema and are restored without refitting after restarts or schema switches. New models record exact training/validation market membership and freeze time. Existing completed models retain their weights and explicitly mark original membership unavailable; no historical provenance is fabricated. The samples count on a frozen model describes its frozen fitting snapshot, not the growing database. No risk thresholds or strategy horizons change. Local verification: 42 controlled tests passed; no live host or profitability verification.
 
 Next research experiment: replay identical captured inputs under documented 50 ms venue delay plus measured client latency, versus existing 250 ms stress delay plus client latency. Require timestamped arrival book evidence (REST snapshots cannot resolve 50 ms fills), identical fees and no retroactive fills; otherwise mark the comparison unavailable. Reject a candidate whose net advantage disappears under execution stress. This is a proposed test, not an implemented strategy or proof of profitability. Separately investigate documented 5-minute/4-hour crypto markets; live inventory, hourly rules and liquidity still require verification before collecting separate datasets.
+
 

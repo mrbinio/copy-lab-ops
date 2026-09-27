@@ -11,7 +11,7 @@ from .core import Store
 from .daily_report import build_report
 from urllib.parse import parse_qs, urlsplit
 
-def handler(store, web, password_hash, username='damian', local_dev=False):
+def handler(store, web, password_hash, username='damian', local_dev=False, eth_store=None):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, fmt, *args):
             # Do not log request headers or query strings.
@@ -51,7 +51,13 @@ def handler(store, web, password_hash, username='damian', local_dev=False):
                 return
             if path in ('/api/state','/api/report'):
                 try:
-                    value=store.snapshot() if path=='/api/state' else build_report(store,parse_qs(urlsplit(self.path).query).get('date',[None])[0])
+                    query=parse_qs(urlsplit(self.path).query)
+                    asset=query.get('asset',['BTC'])[0]
+                    if asset not in ('BTC','ETH'):raise ValueError('unsupported asset')
+                    selected=eth_store if asset=='ETH' else store
+                    if selected is None:
+                        self.send(503,b'ETH worker not installed','text/plain');return
+                    value=selected.snapshot() if path=='/api/state' else build_report(selected,query.get('date',[None])[0])
                 except ValueError:
                     self.send(400,b'Invalid completed report date','text/plain'); return
                 self.send(200,json.dumps(value,allow_nan=False).encode(),'application/json')
@@ -72,8 +78,9 @@ def main():
     data=Path(os.environ.get('LAB_DATA','./runtime'))
     web=Path(os.environ.get('LAB_WEB',str(Path(__file__).resolve().parents[2]/'lab')))
     host='127.0.0.1' if local else os.environ.get('LAB_BIND','0.0.0.0')
-    server=ThreadingHTTPServer((host,int(os.environ.get('LAB_PORT','8080'))),handler(Store(data/'lab.sqlite'),web,digest,os.environ.get('LAB_USERNAME','damian'),local))
+    server=ThreadingHTTPServer((host,int(os.environ.get('LAB_PORT','8080'))),handler(Store(data/'lab.sqlite'),web,digest,os.environ.get('LAB_USERNAME','damian'),local,eth_store=Store(data/'eth/lab.sqlite',asset='ETH')))
     server.serve_forever()
 
 if __name__=='__main__': main()
+
 

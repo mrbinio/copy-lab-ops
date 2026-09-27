@@ -23,8 +23,9 @@ GAMMA='https://gamma-api.polymarket.com'
 CLOB='https://clob.polymarket.com'
 RTDS='wss://ws-live-data.polymarket.com'
 
-def reference_subscription():
-    filters=json.dumps({'symbol':'btc/usd'},separators=(',',':'))
+def reference_subscription(asset="BTC"):
+    if asset not in ("BTC", "ETH"): raise ValueError("unsupported asset")
+    filters=json.dumps({'symbol':asset.lower()+'/usd'},separators=(',',':'))
     return {'action':'subscribe','subscriptions':[
         {'topic':topic,'type':'*' if topic=='crypto_prices_chainlink' else 'update','filters':filters}
         for topic in ('crypto_prices_chainlink','crypto_prices_twap_thirty','crypto_prices_twap_sixty')]}
@@ -48,18 +49,19 @@ def get_json(url):
 def array(value):
     return json.loads(value) if isinstance(value,str) else value
 
-def normalize_market(raw, start):
+def normalize_market(raw, start, asset="BTC"):
+    if asset not in ("BTC", "ETH"): raise ValueError("unsupported asset")
     names,tokens=array(raw['outcomes']),array(raw['clobTokenIds'])
     if len(names)!=2 or len(tokens)!=2 or set(names)!={'Up','Down'} or len(set(tokens))!=2:
         raise ValueError('unsupported outcome mapping')
     description=raw.get('description','')
-    kind,topic,schema=classify_rule(description)
+    kind,topic,schema=classify_rule(description,asset)
     supported=topic is not None
     if kind=='TWAP60':
         try:
             event_start=datetime.fromisoformat(raw['eventStartTime'].replace('Z','+00:00'))
             event_end=datetime.fromisoformat(raw['endDate'].replace('Z','+00:00'))
-            supported=(raw['slug']==f'btc-updown-15m-{start}' and
+            supported=(raw['slug']==f'{asset.lower()}-updown-15m-{start}' and
                        event_start.tzinfo is not None and event_end.tzinfo is not None and
                        event_start.timestamp()==start and event_end.timestamp()==start+900)
         except (KeyError,ValueError,TypeError):supported=False
@@ -67,7 +69,7 @@ def normalize_market(raw, start):
     verified=raw.get('feesEnabled') is False or (raw.get('feesEnabled') is True and fees.get('exponent')==1 and 'rate' in fees)
     rate=0 if raw.get('feesEnabled') is False else float(fees.get('rate',0))
     if not 0<=rate<=1: raise ValueError('invalid fee schedule')
-    return {'slug':raw['slug'],'condition':raw['conditionId'],'start':start,'end':start+900,
+    return {'asset':asset,'slug':raw['slug'],'condition':raw['conditionId'],'start':start,'end':start+900,
             'rule_kind':kind,'reference_topic':topic,'feature_schema':schema,
             'tokens':dict(zip(names,tokens)),'rule_supported':supported,'rule_hash':hashlib.sha256(description.encode()).hexdigest(),
             'fee_rate':rate,'fee_verified':verified,'opening':None,'books':{},'title':raw.get('question',raw['slug']),
@@ -84,6 +86,8 @@ def normalize_book(raw, token, now):
 class Worker:
     def __init__(self, store, data):
         self.store,self.data=store,Path(data)
+        self.asset=store.asset
+        self.entry_strategy="mid-window-v1" if self.asset=="BTC" else "eth-mid-window-v1"
         self.reference=None
         self.history=deque(maxlen=3600)
         self.market=None
@@ -97,6 +101,9 @@ class Worker:
         self.references={}
         self.twap_history=deque(maxlen=3600)
         self.exit_comparison=ExitComparison(store)
+
+    def is_paused(self):
+        return (self.data/"PAUSE").exists() or (self.asset=="ETH" and (self.data.parent/"PAUSE").exists())
 
     def selected_reference(self,market):
         return self.references.get(TWAP60) if market.get('reference_topic')==TWAP60 else self.reference if market.get('reference_topic') in (None,SPOT) else None
@@ -114,7 +121,7 @@ class Worker:
             market['opening']=next((v for t,v in self.history if abs(t-market['start'])<.001),None)
 
     def accept_reference(self,event,now):
-        value=observation(event,now)
+        value=observation(event,now,self.asset)
         if value is None:return
         topic=value['topic']
         previous=self.references.get(topic)
@@ -146,7 +153,7 @@ class Worker:
         while True:
             try:
                 async with websockets.connect(RTDS,open_timeout=10,max_size=1_000_000) as ws:
-                    await ws.send(json.dumps(reference_subscription()))
+                    await ws.send(json.dumps(reference_subscription(self.asset)))
                     async def ping():
                         while True:
                             await ws.send('PING')
@@ -175,10 +182,11 @@ class Worker:
                 await asyncio.sleep(5)
 
     async def discover(self, start):
-        slug=f'btc-updown-15m-{start}'
+        asset=self.asset
+        slug=f'{asset.lower()}-updown-15m-{start}'
         raw=await asyncio.to_thread(get_json,f'{GAMMA}/markets/slug/{slug}')
         if raw.get('slug')!=slug: raise ValueError('market slug mismatch')
-        m=normalize_market(raw,start)
+        m=normalize_market(raw,start,self.asset)
         # Require an observed source tick exactly at the boundary; no Binance fallback,
         # no nearest-tick substitution. Missing history means this window is skipped.
         self.capture_opening(m)
@@ -221,7 +229,7 @@ class Worker:
     async def paper_exits(self, market, reconciliation_ok):
         if not reconciliation_ok or not market.get('accepting') or not market.get('fee_verified') or not market.get('rule_supported'):return
         with self.store.connect() as db:
-            rows=[dict(r) for r in db.execute("SELECT * FROM positions WHERE strategy='mid-window-v1' AND status='OPEN' AND market=?",(market['slug'],))]
+            rows=[dict(r) for r in db.execute("SELECT * FROM positions WHERE strategy=? AND status='OPEN' AND market=?",(self.entry_strategy,market['slug']))]
         for p in rows:
             intent,reason=exit_intent(p,market,time.time())
             if intent:
@@ -236,7 +244,7 @@ class Worker:
                         reason='EXIT_NO_FULL_FILL'
                         if fill:
                             reason=self.store.close_paper(p['id'],fill,{**intent,'arrival_at':at,'book_source_ts':book['source_ts']},at)
-            self.decision('mid-window-v1',market['slug'],reason, intent or {},time.time())
+            self.decision(self.entry_strategy,market['slug'],reason, intent or {},time.time())
 
     async def cycle(self, entries_allowed=True):
         self.store.audit()
@@ -270,7 +278,7 @@ class Worker:
         # Match the model's existing decision horizon. One causal sample per
         # market; never backdate or fill a missed window with later data.
         books_fresh=all(-.25 <= now-b['source_ts'] <= 3 for b in (up,down))
-        if (m['features'] and m['rule_supported'] and books_fresh
+        if (self.asset=='BTC' and m['features'] and m['rule_supported'] and books_fresh
                 and MODEL_HORIZON[0] <= m['end']-now <= MODEL_HORIZON[1]):
             with self.store.connect() as db:
                 db.execute('INSERT OR IGNORE INTO examples VALUES (?,?,?)',(m['slug'],now,json.dumps({'features':m['features'],'book_probability':probability,'rule_hash':m['rule_hash'],'feature_schema':m['feature_schema'],
@@ -282,7 +290,7 @@ class Worker:
         # Isolated paired research uses the already collected snapshot: no extra
         # HTTP calls or sleeps, no mutation of trading accounts or risk limits.
         try:
-            self.exit_comparison.step(m,time.time(),entries_allowed)
+            if self.asset=='BTC':self.exit_comparison.step(m,time.time(),entries_allowed)
             self.store.set('exit_comparison_error',{})
         except Exception as error:
             self.store.set('exit_comparison_error',{'at':time.time(),'error':error_detail(error)})
@@ -290,10 +298,13 @@ class Worker:
         await self.paper_exits(m, entries_allowed)
         model=self.store.get('model',{})
         signals=[]
-        paused=(self.data/'PAUSE').exists() or not entries_allowed
-        for strategy in STRATEGIES:
-            intent,reason=choose(strategy,m,reference,model,now) if not paused else (None,'MANUAL_PAUSE')
-            if intent: signals.append(intent)
+        paused=self.is_paused() or not entries_allowed
+        for strategy in self.store.strategies:
+            intent,reason=choose("mid-window-v1" if self.asset=="ETH" else strategy,m,reference,model,now) if not paused else (None,'MANUAL_PAUSE')
+            if intent:
+                if self.asset=="ETH":
+                    intent.update(strategy=strategy,config_version="eth-mid-window-v1",asset="ETH",hypothesis={**intent["hypothesis"],"id":"eth-mid-window-v1","asset":"ETH"})
+                signals.append(intent)
             else: self.decision(strategy,m['slug'],reason,{},now)
         if signals:
             # New arrival books after explicit latency: never fill on the decision snapshot.
@@ -304,12 +315,12 @@ class Worker:
                 book=arrival[intent['side']]
                 reason='ARRIVAL_INVALID'
                 reference=self.selected_reference(m)
-                time_valid=(intent['strategy']!='mid-window-v1' or 180<=at-m['start']<=420)
+                time_valid=(intent['strategy']!=self.entry_strategy or 180<=at-m['start']<=420)
                 book_valid=all(-.25<=at-b['source_ts']<=3 for b in arrival.values())
-                if time_valid and book_valid and not (self.data/'PAUSE').exists() and at < m['end']-30 and reference and -.25 <= at-reference['source_ts']<=5:
+                if time_valid and book_valid and not self.is_paused() and at < m['end']-30 and reference and -.25 <= at-reference['source_ts']<=5:
                     fill=simulate_fill(book['asks'],'5',str(intent['limit']),str(m['fee_rate']),book['min_shares'],book['tick'])
                     reason='NO_FULL_FILL'
-                    if fill and intent['strategy']=='mid-window-v1' and any(not .50<=float(f['price'])<=.80 for f in fill['fills']):
+                    if fill and intent['strategy']==self.entry_strategy and any(not .50<=float(f['price'])<=.80 for f in fill['fills']):
                         fill=None;reason='ARRIVAL_PRICE_OUTSIDE_RANGE'
                     if fill:
                         if intent['probability'] is not None and intent['probability']-fill['vwap']-fill['fee']/fill['shares']-.03<.02:
@@ -319,7 +330,7 @@ class Worker:
                                 {**intent,'arrival_at':at,'rule_hash':m['rule_hash'],'reference':reference,
                                  'feature_schema':m['feature_schema'],'opening_evidence':m.get('opening_evidence'),
                                  'opening':m['opening'],'model_id':model.get('model_id'),'depth_fraction':.5},at)
-                            if reason=='FILLED' and intent['strategy']=='mid-window-v1':
+                            if self.asset=='BTC' and reason=='FILLED' and intent['strategy']==self.entry_strategy:
                                 self.exit_comparison.capture(m,at)
                 self.decision(intent['strategy'],m['slug'],reason,intent,at)
         reference=self.selected_reference(m)
@@ -327,7 +338,7 @@ class Worker:
         reference_fresh=reference and -.25<=time.time()-reference['source_ts']<=5
         self.store.set('worker',{'status':('PAUSED' if paused else 'RECORDING') if reference_fresh else 'DEGRADED','heartbeat':time.time(),
             'reference_status':'FRESH' if reference_fresh else 'MISSING_OR_STALE',
-            'reference_error':self.feed_error,'version':'0.3.1','execution':'PAPER ONLY'})
+            'reference_error':self.feed_error,'version':'0.4.0','asset':self.asset,'execution':'PAPER ONLY'})
 
     async def iteration(self):
         errors=[]
@@ -350,7 +361,7 @@ class Worker:
             await self.cycle(entries_allowed=self.reconciliation_ok)
         except Exception as e:
             failure('collection',e)
-        if time.time()-self.last_research>3600 or self.store.get('model',{}).get('feature_schema')!=(self.store.get('market',{}).get('feature_schema') or 'spot-v1'):
+        if self.asset=='BTC' and (time.time()-self.last_research>3600 or self.store.get('model',{}).get('feature_schema')!=(self.store.get('market',{}).get('feature_schema') or 'spot-v1')):
             try:
                 train(self.store)
                 self.store.set('report',report(self.store))
@@ -359,7 +370,7 @@ class Worker:
                 failure('research',e)
         if errors:
             self.store.set('worker',{'status':'DEGRADED','heartbeat':time.time(),
-                'errors':errors,'version':'0.3.1'})
+                'errors':errors,'version':'0.4.0','asset':self.asset})
 
     async def run(self):
         self.store.audit()
@@ -376,10 +387,16 @@ def main():
     import fcntl
     logging.basicConfig(level=logging.INFO)
     data=Path(os.environ.get('LAB_DATA','./runtime'))
+    asset=os.environ.get('LAB_ASSET','BTC')
+    if asset not in ('BTC','ETH'):raise SystemExit('unsupported asset')
+    if asset=='ETH':data=data/'eth'
     data.mkdir(parents=True,exist_ok=True)
     with (data/'worker.lock').open('w') as lock:
         fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
-        asyncio.run(Worker(Store(data/'lab.sqlite'),data).run())
+        store=Store(data/'lab.sqlite',asset=asset)
+        if asset=='ETH':store.set('model',{'status':'NOT_USED','samples':0,'reason':'Separate normalized-momentum PAPER hypothesis; no BTC-trained model.'})
+        asyncio.run(Worker(store,data).run())
 
 if __name__=='__main__': main()
+
 

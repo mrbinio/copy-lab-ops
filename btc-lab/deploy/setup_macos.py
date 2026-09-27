@@ -98,15 +98,15 @@ def main():
         port=choose_port(port)
     # Consistent backup before the new release performs additive migrations.
     import sqlite3
-    db_path=root/'data/lab.sqlite'
-    if db_path.exists():
-        backup_dir=root/'backups';backup_dir.mkdir(mode=0o700,exist_ok=True)
-        try:
-            with sqlite3.connect(db_path) as src, sqlite3.connect(backup_dir/f'pre-{revision[:12]}-{time.time_ns()}.sqlite') as dst:
-                src.backup(dst)
-        except Exception:
-            if old_config and old_plist:start_service(target,plist)
-            raise
+    for asset,db_path in [('btc',root/'data/lab.sqlite'),('eth',root/'data/eth/lab.sqlite')]:
+        if db_path.exists():
+            backup_dir=root/'backups';backup_dir.mkdir(mode=0o700,exist_ok=True)
+            try:
+                with sqlite3.connect(db_path) as src, sqlite3.connect(backup_dir/f'pre-{asset}-{revision[:12]}-{time.time_ns()}.sqlite') as dst:
+                    src.backup(dst)
+            except Exception:
+                if old_config and old_plist:start_service(target,plist)
+                raise
     config['port']=port
     config.update(release=str(release),revision=revision)
     config_path.write_text(json.dumps(config,indent=2));config_path.chmod(0o600)
@@ -154,4 +154,5 @@ def main():
         print('Diagnostyka przekroczyla 90 sekund; usluga pozostaje uruchomiona.')
 
 if __name__=='__main__':main()
+
 

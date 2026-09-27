@@ -36,8 +36,9 @@ def api(token,path,body=None):
 def selected(value,keys):
     return {k:value[k] for k in keys.split() if k in value}
 
-def snapshot(root):
-    path=root/'data/lab.sqlite'
+def snapshot(root, asset="BTC"):
+    if asset not in ("BTC","ETH"):raise ValueError("unsupported asset")
+    path=root/("data/lab.sqlite" if asset=="BTC" else "data/eth/lab.sqlite")
     db=sqlite3.connect(path.resolve().as_uri()+'?mode=ro',uri=True,timeout=10)
     db.row_factory=sqlite3.Row
     try:
@@ -64,7 +65,7 @@ def snapshot(root):
             policies[policy]=policies.get(policy,0)+1
         market=selected(state('market'),'slug start end rule_kind rule_supported feature_schema opening')
         reference=selected(state('reference'),'source_ts received_at topic price')
-        return {'schema':'btc-private-report-v1','source':'MAC_SQLITE_READ_ONLY','mode':'PAPER',
+        return {'asset':asset,'schema':'btc-private-report-v1','source':'MAC_SQLITE_READ_ONLY','mode':'PAPER',
             'exported_at':datetime.datetime.fromtimestamp(now,datetime.timezone.utc).isoformat(),
             'generated_at':now,'worker':worker,'heartbeat_age_seconds':now-worker['heartbeat'] if worker.get('heartbeat') else None,
             'model':model,'accounts':accounts,'trades':trades,'trades_truncated':counts['total_trades']>len(trades),
@@ -82,6 +83,10 @@ def publish(root,token):
     if meta.get('private') is not True or meta.get('full_name')!=REPO:
         raise RuntimeError('Destination must be the expected PRIVATE repository')
     report=snapshot(root)
+    try:
+        report["assets"]={"ETH":snapshot(root,"ETH")}
+    except Exception as error:
+        report["assets"]={"ETH":{"asset":"ETH","status":"REPORT_UNAVAILABLE","error":type(error).__name__}}
     raw=json.dumps(report,ensure_ascii=False,separators=(',',':'),allow_nan=False).encode()
     if len(raw)>700000:raise RuntimeError('Report too large; nothing uploaded')
     body={'message':'Hourly BTC paper report','content':base64.b64encode(raw).decode(),'branch':meta['default_branch']}
@@ -144,4 +149,5 @@ if __name__=='__main__':
     except Exception as e:
         print('BLAD: '+type(e).__name__+((' HTTP '+str(e.code)) if isinstance(e,urllib.error.HTTPError) else '')+'. Instalacja lub wysylka niepotwierdzona.',file=sys.stderr)
         sys.exit(1)
+
 

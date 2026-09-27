@@ -1,3 +1,14 @@
+# v0.4.0 — 2026-09-27: ETH PAPER source ready; Mac deployment unconfirmed
+
+Adds an isolated ETH 15-minute normalized-momentum experiment `eth-mid-window-v1`, separate worker and `data/eth/lab.sqlite`, authenticated BTC/ETH dashboard selector, per-asset daily downloads and `assets.ETH` in hourly private reports. Existing BTC accounts, paired exits, thresholds and history are preserved. Read EXPERIMENT-ETH.md for frozen entry/exit/execution rules, isolation boundaries and review criteria. ETH is an unvalidated experiment, not Mitch's corrected v8 and not proven diversification.
+
+Local verification:73 Python tests and5 JS export cases passed, plus DOM interaction checks for asset switching, distinct account/cards, PL guide and returning to BTC. Public-data smoke check on2026-09-27 confirmed ETH rule/fee parsing, both books and fresh ETH/USD TWAP60. Missing mid-window opening correctly blocked entry. Browser visual rendering was not independently checked (browser binary download unavailable). No Mac or profitability claim follows from these tests.
+
+Last Mac export independently read:2026-09-27T06:02:13Z, worker0.3.1 RECORDING/FRESH, heartbeat age0.829s at export. BTC mid44trades net-10.496186USD, early19 net-1.092873, late42(41closed) net-8.352144 with5.0175USDopencost, value0. Paired13valid/0invalid:baseline+1.249467USD/DD2.641679;candidate+2.442427/DD2.798124. This confirms v0.3.1 deployment and initial forward comparisons, not statistical edge. Continue frozen comparison; do not replace active thresholds after13windows.
+
+Installer preserves origin port and password; backs up both existing databases. Publication alone does not update Mac. ETH deployment proof requires worker0.4.0 and `assets.ETH.worker`, its heartbeat freshness and ETH market/reference identity in a subsequent export. Dashboard selector shows a separate ETH account; it is not a combined100USDC wallet. The existing diagnostic command primarily checks BTC.
+
+---
 # v0.3.1 — 2026-09-26: paired PAPER exit experiment; Mac deployment unconfirmed
 
 Adds `paired-exits-v1`: two separate shadow exits on each newly accepted mid-window-v1 entry. Baseline TP +10% / SL -20%; candidate TP +15% / SL -10%. Existing accounts, risk limits, entries and history remain unchanged. Both arms use subsequent polling snapshots, full-fill depth checks and both fees. Gaps/stale quotes invalidate primary paired comparisons. No historical backfill. See EXPERIMENT-PAIRED-EXITS.md for frozen criteria and limitations, including conditional entry selection and polling latency.
@@ -81,4 +92,5 @@ Reference/history are now selected after awaited REST book collection. Both book
 Validation: 38 local controlled tests passed, including capture at 118 seconds, 115/125 boundaries, rejection outside the horizon, reference refresh during HTTP, stale second book, unsupported rules and duplicate prevention after restart. Not a macOS deployment test or proof of profitability.
 
 User export at 2026-09-19 13:22:03 UTC: PAPER_SERVICE, v0.2.0, RECORDING/FRESH at export time; 385522 observations, 68 official labels; last model refresh 62/200 labelled examples. Early baseline: 6 settled, 4 wins, +1.325860 USD net; late baseline: 5 settled, 3 wins, -8.480440 USD net; value model: no trades. These are independent virtual 500 USD accounts. Small samples do not establish profitability. The snapshot cannot quantify how many eligible training windows were missed.
+
 
