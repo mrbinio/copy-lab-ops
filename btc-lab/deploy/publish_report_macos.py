@@ -71,6 +71,8 @@ def snapshot(root, asset="BTC"):
             'model':model,'accounts':accounts,'trades':trades,'trades_truncated':counts['total_trades']>len(trades),
             'exit_comparison':state('exit_comparison'),
             'exit_comparison_error':state('exit_comparison_error'),
+                'complete_set_observer':state('complete_set_observer'),
+                'complete_set_error':state('complete_set_error'),
             'trade_integer_scale':1000000,'counts':counts,'sampling_policies':policies,
             'recorded_decision_events_24h':decisions,'market':market,'reference':reference,
             'limitations':['Decision counts are throttled recorded events, not every evaluation.',

@@ -16,6 +16,7 @@ from .strategy import choose, features, MODEL_HORIZON
 from .research import train, report
 from .mid_window import exit_intent, simulate_sale
 from .exit_comparison import ExitComparison
+from .complete_set import CompleteSetObserver
 from .reference import classify_rule, observation, SPOT, TWAP60, TWAP30
 
 LOG=logging.getLogger('btc-lab')
@@ -101,6 +102,7 @@ class Worker:
         self.references={}
         self.twap_history=deque(maxlen=3600)
         self.exit_comparison=ExitComparison(store)
+        self.complete_set=CompleteSetObserver(store)
 
     def is_paused(self):
         return (self.data/"PAUSE").exists() or (self.asset=="ETH" and (self.data.parent/"PAUSE").exists())
@@ -258,6 +260,11 @@ class Worker:
         self.store.set('market',m)
         m['books']=await self.books(m)
         now=time.time()
+        try:
+            self.complete_set.step(m,now)
+            self.store.set('complete_set_error',{})
+        except Exception as error:
+            self.store.set('complete_set_error',{'at':now,'error':error_detail(error)})
         # RTDS continues while REST requests are in flight. Use the latest
         # reference/history available at the actual decision time.
         self.capture_opening(m)
@@ -338,7 +345,7 @@ class Worker:
         reference_fresh=reference and -.25<=time.time()-reference['source_ts']<=5
         self.store.set('worker',{'status':('PAUSED' if paused else 'RECORDING') if reference_fresh else 'DEGRADED','heartbeat':time.time(),
             'reference_status':'FRESH' if reference_fresh else 'MISSING_OR_STALE',
-            'reference_error':self.feed_error,'version':'0.4.0','asset':self.asset,'execution':'PAPER ONLY'})
+            'reference_error':self.feed_error,'version':'0.4.1','asset':self.asset,'execution':'PAPER ONLY'})
 
     async def iteration(self):
         errors=[]
@@ -370,7 +377,7 @@ class Worker:
                 failure('research',e)
         if errors:
             self.store.set('worker',{'status':'DEGRADED','heartbeat':time.time(),
-                'errors':errors,'version':'0.4.0','asset':self.asset})
+                'errors':errors,'version':'0.4.1','asset':self.asset})
 
     async def run(self):
         self.store.audit()

@@ -72,6 +72,8 @@ def build_report(store, day=None, now=None):
                 'reference':state('reference'),'model':model,'counts':counts,
                 'exit_comparison_cumulative':state('exit_comparison'),
                 'exit_comparison_error':state('exit_comparison_error'),
+                'complete_set_observer':state('complete_set_observer'),
+                'complete_set_error':state('complete_set_error'),
                 'daily':daily,'accounts':accounts,'trades':trades,'period_trades':day_trades,
                 'trades_truncated':total>len(trades),'total_trades':total,'trade_integer_scale':1000000,
                 'recorded_data_in_period':recorded,'experiment':({**SPEC,'id':'eth-mid-window-v1','asset':'ETH'} if store.asset=='ETH' else SPEC),

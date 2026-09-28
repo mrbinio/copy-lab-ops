@@ -1,3 +1,10 @@
+# v0.4.1 — 2026-09-28: complete-set observer, source ready
+
+Adds observation-only BTC/ETH UP+DOWN cost and delayed quote probes, per-window records and both report exports. No orders, simulated ledger fills or changes to existing strategies/risk. Read EXPERIMENT-COMPLETE-SET.md. 78 Python tests passed across the suite; an additional export/isolation test is checked separately. Mac update required; publication is not deployment.
+
+Mac0.4.0 confirmed by private export2026-09-28T06:03:36Z, BTC/ETH fresh. BTC mid weekly gross losses25.426114USD plus next5USD+fee exceed30USD limit, explaining risk pause. ETH26closed net-2.240430USD fees5.097477. These are paper results, not live eligibility.
+
+---
 # v0.4.0 — 2026-09-27: ETH PAPER source ready; Mac deployment unconfirmed
 
 Adds an isolated ETH 15-minute normalized-momentum experiment `eth-mid-window-v1`, separate worker and `data/eth/lab.sqlite`, authenticated BTC/ETH dashboard selector, per-asset daily downloads and `assets.ETH` in hourly private reports. Existing BTC accounts, paired exits, thresholds and history are preserved. Read EXPERIMENT-ETH.md for frozen entry/exit/execution rules, isolation boundaries and review criteria. ETH is an unvalidated experiment, not Mitch's corrected v8 and not proven diversification.

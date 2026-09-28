@@ -1,3 +1,10 @@
+# v0.4.1 — 2026-09-28: complete-set observer, source ready
+
+Adds observation-only BTC/ETH UP+DOWN cost and delayed quote probes, per-window records and both report exports. No orders, simulated ledger fills or changes to existing strategies/risk. Read EXPERIMENT-COMPLETE-SET.md. 78 Python tests passed across the suite; an additional export/isolation test is checked separately. Mac update required; publication is not deployment.
+
+Mac0.4.0 confirmed by private export2026-09-28T06:03:36Z, BTC/ETH fresh. BTC mid weekly gross losses25.426114USD plus next5USD+fee exceed30USD limit, explaining risk pause. ETH26closed net-2.240430USD fees5.097477. These are paper results, not live eligibility.
+
+---
 # v0.4.0 — BTC + ETH PAPER, 2026-09-27
 
 The private dashboard now has a BTC/ETH selector. ETH uses its own Chainlink ETH/USD TWAP60 data, order books, `eth-mid-window-v1` virtual account and database at `data/eth/lab.sqlite`. Read [EXPERIMENT-ETH.md](EXPERIMENT-ETH.md) and [PROJECT_STATE.md](PROJECT_STATE.md) first for current status. BTC strategies and the paired exit comparison remain intact. No real-money execution exists.
