@@ -1,3 +1,10 @@
+# v0.4.2 — 2026-09-28: target-reference watchdog
+
+Confirmed code defect: an open RTDS socket with PONG/unrelated messages but no advancing valid TWAP60 could remain stale indefinitely. A20-second monotonic deadline now forces reconnect through existing disconnect cleanup/backoff. Only an advancing accepted TWAP60 source timestamp extends the deadline; PONG, rejected data and other topics do not. Applies separately to BTC and ETH. No strategy/risk/history changes. Fresh data and exact next opening are still required for trading. Sept28 11:03UTC export showed BTC reference4215s old while worker heartbeat was fresh; this is consistent with the defect, not proof of the remote root cause.
+
+83 Python tests passed locally, including silence, PONG/duplicate flood, advancing target and socket failure. Mac deployment and recovery remain unconfirmed until a new export shows0.4.2 and advancing fresh BTC TWAP60. Publication is not a Mac update.
+
+---
 # v0.4.1 — 2026-09-28: complete-set observer, source ready
 
 Adds observation-only BTC/ETH UP+DOWN cost and delayed quote probes, per-window records and both report exports. No orders, simulated ledger fills or changes to existing strategies/risk. Read EXPERIMENT-COMPLETE-SET.md. 78 Python tests passed across the suite; an additional export/isolation test is checked separately. Mac update required; publication is not deployment.

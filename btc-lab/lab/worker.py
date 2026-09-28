@@ -17,6 +17,7 @@ from .research import train, report
 from .mid_window import exit_intent, simulate_sale
 from .exit_comparison import ExitComparison
 from .complete_set import CompleteSetObserver
+from .feed_watchdog import fresh_messages
 from .reference import classify_rule, observation, SPOT, TWAP60, TWAP30
 
 LOG=logging.getLogger('btc-lab')
@@ -162,7 +163,7 @@ class Worker:
                             await asyncio.sleep(5)
                     task=asyncio.create_task(ping())
                     try:
-                        async for message in ws:
+                        async for message in fresh_messages(ws, lambda: self.references.get(TWAP60,{}).get('source_ts')):
                             if message in ('PONG','PING',''): continue
                             e=json.loads(message)
                             try:self.accept_reference(e,time.time())
@@ -345,7 +346,7 @@ class Worker:
         reference_fresh=reference and -.25<=time.time()-reference['source_ts']<=5
         self.store.set('worker',{'status':('PAUSED' if paused else 'RECORDING') if reference_fresh else 'DEGRADED','heartbeat':time.time(),
             'reference_status':'FRESH' if reference_fresh else 'MISSING_OR_STALE',
-            'reference_error':self.feed_error,'version':'0.4.1','asset':self.asset,'execution':'PAPER ONLY'})
+            'reference_error':self.feed_error,'version':'0.4.2','asset':self.asset,'execution':'PAPER ONLY'})
 
     async def iteration(self):
         errors=[]
