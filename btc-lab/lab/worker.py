@@ -20,6 +20,7 @@ from .complete_set import CompleteSetObserver
 from .feed_watchdog import fresh_messages
 from .wallet_observer import WalletObserver
 from .wallet_discovery import WalletDiscovery
+from .wallet_copy import WalletCopy
 from .opportunity_research import OpportunityResearch
 from .value_execution import ValueExecution
 from .reference import classify_rule, observation, SPOT, TWAP60, TWAP30
@@ -112,9 +113,9 @@ class Worker:
         self.value_execution=ValueExecution(store)
 
     def choose_entry(self, strategy, market, reference, model, now, paused=False):
-        # Retire only new BTC mid-window entries. Existing exits and settlement
+        # Retire new BTC mid-window and late entries. Existing exits and settlement
         # run independently and historical positions are never rewritten.
-        if self.asset == "BTC" and strategy == "mid-window-v1":
+        if self.asset == "BTC" and strategy in ("mid-window-v1", "late-v1"):
             return None, "STRATEGY_RETIRED"
         if paused:
             return None, "MANUAL_PAUSE"
@@ -373,7 +374,7 @@ class Worker:
         reference_fresh=reference and -.25<=time.time()-reference['source_ts']<=5
         self.store.set('worker',{'status':('PAUSED' if paused else 'RECORDING') if reference_fresh else 'DEGRADED','heartbeat':time.time(),
             'reference_status':'FRESH' if reference_fresh else 'MISSING_OR_STALE',
-            'reference_error':self.feed_error,'version':'0.5.3','asset':self.asset,'execution':'PAPER ONLY'})
+            'reference_error':self.feed_error,'version':'0.6.0','asset':self.asset,'execution':'PAPER ONLY'})
 
     async def iteration(self):
         errors=[]
@@ -409,13 +410,14 @@ class Worker:
                 failure('research',e)
         if errors:
             self.store.set('worker',{'status':'DEGRADED','heartbeat':time.time(),
-                'errors':errors,'version':'0.5.3','asset':self.asset})
+                'errors':errors,'version':'0.6.0','asset':self.asset})
 
     async def run(self):
         self.store.audit()
         reference=asyncio.create_task(self.reference_stream())
         wallets=asyncio.create_task(WalletObserver(self.store,get_json).run()) if self.asset=="BTC" else None
         discovery=asyncio.create_task(WalletDiscovery(self.store,get_json).run()) if self.asset=="BTC" else None
+        copier=asyncio.create_task(WalletCopy(self.store,get_json,self.is_paused).run()) if self.asset=="BTC" else None
         try:
             while True:
                 await self.iteration()
@@ -424,7 +426,8 @@ class Worker:
             reference.cancel()
             if wallets:wallets.cancel()
             if discovery:discovery.cancel()
-            await asyncio.gather(reference,*([wallets] if wallets else []),*([discovery] if discovery else []),return_exceptions=True)
+            if copier:copier.cancel()
+            await asyncio.gather(reference,*([wallets] if wallets else []),*([discovery] if discovery else []),*([copier] if copier else []),return_exceptions=True)
 
 def main():
     import fcntl

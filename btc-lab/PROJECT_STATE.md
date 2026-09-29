@@ -1,3 +1,12 @@
+# v0.6.0 — 2026-09-29: forward wallet-signal PAPER copying
+
+Implemented isolated buy/sell copy experiment for the three original public wallets, recognized BTC/ETH5m/15m markets. Three virtual500USD benchmarks, <=5USD all-in, one position each,15/30USD gross-loss caps. First source SELL exits full copied lot; NOT exact proportional source sizing or partial exits and NOT Mitch v8 Binance model. Delayed new-book FOK simulation,50% depth, both fees, no historical backfill, official resolution plus300s cash delay. No real orders. After the user requested analysis/correction of losing late-v1 on Sept29, its new BTC entries are also suspended (STRATEGY_RETIRED); thresholds and loss history retained, no claim of repaired profitability. Early and value baselines remain unchanged. Read EXPERIMENT-WALLET-COPY.md.
+
+Dashboard exposes Copy accounts, charts/journal and Wallets copy decisions/errors; reports separate cumulative vs daily outcomes. Wallet discovery continues hourly without auto-copying candidates. Synthetic preview remains removed. Publication and Mac deployment are separate; require0.6.0 plus current wallet_copy_execution to confirm operation. Earliest trades only after activation; no fabricated pre-install history.
+
+Validation:118 Python tests including12 copy tests passed;5 JS export and8 wallet panel scenarios passed; JS syntax valid. This does not validate actual exchange fills or guarantee profits.
+
+---
 # v0.5.3 — 2026-09-29: visible wallet observation and discovery; BTC baseline retired
 
 106 Python tests passed;7 wallet panel rendering scenarios,5 JS export cases and app.js syntax passed. Full browser rendering and Mac deployment are not yet confirmed. Supersedes prepared but unpublished0.5.2 below.

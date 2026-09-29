@@ -196,6 +196,9 @@ class CycleTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp:
             store=Store(Path(tmp)/'db')
             worker=Worker(store,tmp)
+            # Exercise the preserved legacy execution/settlement pipeline.
+            # Production retirement is independently asserted in test_retirement.
+            worker.choose_entry=lambda strategy,m,r,model,now,paused=False: (None,"MANUAL_PAUSE") if paused else choose(strategy,m,r,model,now)
             now=9800.;start=9000
             worker.reference={'price':70100,'source_ts':now,'received_at':now,'source':'fixture'}
             worker.history.append((start,70000))

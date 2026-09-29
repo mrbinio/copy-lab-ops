@@ -10,7 +10,7 @@ from pathlib import Path
 
 D = Decimal
 SCALE = D(1_000_000)
-STRATEGIES = {"value-v1": "Reference-aware value", "late-v1": "Late direction baseline", "early-v1": "Early direction baseline", "mid-window-v1": "BTC 3–7 · RETIRED / WYCOFANA"}
+STRATEGIES = {"value-v1": "Reference-aware value", "late-v1": "Late direction · PAUSED / WSTRZYMANA", "early-v1": "Early direction baseline", "mid-window-v1": "BTC 3–7 · RETIRED / WYCOFANA"}
 
 ETH_STRATEGIES = {"eth-mid-window-v1": "ETH 3–7 · PAPER experiment"}
 
@@ -260,7 +260,14 @@ class Store:
                     "resolved":t.get("closed_at"),"payout":t.get("payout")})
             trades=sorted(trades,key=lambda t:t["opened"],reverse=True)[:200]
             decisions.insert(0,{"ts":experiment["updated_at"],"strategy":sid,"market":"","reason":experiment["status"]})
-        return {"wallet_observer":wallets,"wallet_activity_recent":wallet_events,"wallet_discovery":self.get("wallet_discovery",{}),"opportunity_research":self.get("opportunity_research",{}),"value_surface_execution":experiment,"asset":self.asset,"mode":"PAPER","live_enabled":False,"accounts":accounts,"trades":trades,"decisions":decisions,
+        copies=self.get("wallet_copy_execution",{}) if self.asset=="BTC" else {}
+        for a in copies.get('accounts',[]):
+            accounts.append(a)
+            decisions.insert(0,{'ts':a.get('last_decision_at') or copies.get('updated_at'), 'strategy':a['id'],'market':'','reason':a.get('last_reason','NO_NEW_SOURCE_TRADE')})
+        for t in copies.get('recent_trades',[]):
+            trades.append({**{k:t.get(k) for k in ('strategy','market','side','shares','cost','fee','exit_fee','opened','status','payout')},'id':'copy:'+t['id'],'resolved':t.get('closed_at')})
+        trades=sorted(trades,key=lambda t:t['opened'],reverse=True)[:300]
+        return {"wallet_copy_execution":copies,"wallet_copy_error":self.get("wallet_copy_error",{}),"wallet_observer":wallets,"wallet_activity_recent":wallet_events,"wallet_discovery":self.get("wallet_discovery",{}),"opportunity_research":self.get("opportunity_research",{}),"value_surface_execution":experiment,"asset":self.asset,"mode":"PAPER","live_enabled":False,"accounts":accounts,"trades":trades,"decisions":decisions,
                 "observations":count,"labels":labels,"worker":self.get("worker",{}),"market":self.get("market",{}),
                 "reference":self.get("reference",{}),"model":self.get("model",{"status":"COLLECTING","samples":0}),
                 "price_history":self.get("price_history",[]),"generated_at":time.time()}

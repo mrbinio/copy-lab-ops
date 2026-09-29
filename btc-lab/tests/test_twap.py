@@ -72,6 +72,9 @@ class TwapCycleTests(unittest.IsolatedAsyncioTestCase):
     async def test_twap_signal_delayed_fill_and_official_settlement(self):
         with tempfile.TemporaryDirectory() as tmp:
             store=Store(Path(tmp)/'db');w=Worker(store,tmp);raw=market();now=9800.
+            # Exercise the preserved legacy execution/settlement pipeline.
+            # Production retirement is independently asserted in test_retirement.
+            w.choose_entry=lambda strategy,m,r,model,now,paused=False: (None,"MANUAL_PAUSE") if paused else choose(strategy,m,r,model,now)
             w.market=normalize_market(raw,9000)
             w.accept_reference(event(9000),9000.1);w.capture_opening(w.market)
             w.accept_reference(event(now,'70100'),now)
@@ -138,3 +141,4 @@ class SamplingTests(unittest.IsolatedAsyncioTestCase):
     async def test_stale_second_book_and_unknown_rule_rejected(self):
         self.assertEqual(len(await self.sample(120,stale=True)),0)
         self.assertEqual(len(await self.sample(120,supported=False)),0)
+

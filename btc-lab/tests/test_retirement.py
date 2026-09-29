@@ -11,6 +11,7 @@ class RetirementTests(unittest.TestCase):
             worker=Worker(Store(Path(d)/'lab.db'),d)
             with patch('lab.worker.choose',side_effect=AssertionError('must not evaluate')):
                 self.assertEqual(worker.choose_entry('mid-window-v1',{},None,{},200),(None,'STRATEGY_RETIRED'))
+                self.assertEqual(worker.choose_entry('late-v1',{},None,{},200),(None,'STRATEGY_RETIRED'))
 
     def test_eth_and_other_baselines_unchanged_and_pause_respected(self):
         with tempfile.TemporaryDirectory() as d:

@@ -72,8 +72,22 @@ def build_report(store, day=None, now=None):
             'entry_fees_paid_usd':sum(r['fee'] for r in surface_entries)/1e6,
             'exit_fees_paid_usd':sum(r.get('exit_fee',0) for r in surface_closed)/1e6,
             'period_trades':[r for r in surface if r in surface_entries or r in surface_closed]}
+        from .wallet_copy import public_trade
+        copy_rows=[]
+        if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='wallet_copy_positions'").fetchone():
+            copy_rows=[json.loads(r[0]) for r in db.execute('SELECT body FROM wallet_copy_positions')]
+        copy_daily=[]
+        for wallet in sorted({r['wallet'] for r in copy_rows}):
+            rows=[r for r in copy_rows if r['wallet']==wallet]
+            entries=[r for r in rows if start<=r['opened']<end]
+            closes=[r for r in rows if r['status'] in ('CLOSED','SETTLED') and start<=r['closed_at']<end]
+            copy_daily.append({'wallet':wallet,'entries':len(entries),'closed':len(closes),
+                'net_pnl_usd':sum(r['pnl_micro'] for r in closes)/1e6,
+                'entry_fees_paid_usd':sum(r['fee'] for r in entries)/1e6,
+                'exit_fees_paid_usd':sum(r.get('exit_fee',0) for r in closes)/1e6,
+                'period_trades':[public_trade(r) for r in rows if r in entries or r in closes]})
         heartbeat=worker.get('heartbeat')
-        return {'schema':'btc-daily-report-v2','asset':store.asset,'report_id':(f'ETH-{day}-Europe-Stockholm' if store.asset=='ETH' else f'{day}-Europe-Stockholm'),
+        return {'wallet_copy_daily':copy_daily,'wallet_copy_cumulative':state('wallet_copy_execution'),'wallet_copy_error':state('wallet_copy_error'),'schema':'btc-daily-report-v2','asset':store.asset,'report_id':(f'ETH-{day}-Europe-Stockholm' if store.asset=='ETH' else f'{day}-Europe-Stockholm'),
                 'source':'PAPER_SERVICE','mode':'PAPER','live_enabled':False,
                 'exported_at':dt.datetime.fromtimestamp(now,dt.timezone.utc).isoformat(),'generated_at':now,
                 'period':{'date':str(day),'timezone':'Europe/Stockholm','start':start,'end_exclusive':end},
