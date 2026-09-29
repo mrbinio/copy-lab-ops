@@ -10,12 +10,11 @@ class RetirementTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             worker=Worker(Store(Path(d)/'lab.db'),d)
             with patch('lab.worker.choose',side_effect=AssertionError('must not evaluate')):
-                self.assertEqual(worker.choose_entry('mid-window-v1',{},None,{},200),(None,'STRATEGY_RETIRED'))
                 self.assertEqual(worker.choose_entry('late-v1',{},None,{},200),(None,'STRATEGY_RETIRED'))
 
     def test_eth_and_other_baselines_unchanged_and_pause_respected(self):
         with tempfile.TemporaryDirectory() as d:
-            for asset,strategy,expected in [('BTC','early-v1','early-v1'),('ETH','eth-mid-window-v1','mid-window-v1')]:
+            for asset,strategy,expected in [('BTC','mid-window-v1','mid-window-v1'),('BTC','early-v1','early-v1'),('ETH','eth-mid-window-v1','mid-window-v1')]:
                 worker=Worker(Store(Path(d)/(asset+'.db'),asset=asset),d)
                 with patch('lab.worker.choose',return_value=(None,'TEST')) as choose:
                     worker.choose_entry(strategy,{},None,{},200)
@@ -31,7 +30,6 @@ class RetirementTests(unittest.TestCase):
             fill=simulate_fill([['.6','100']],'5','.6','.07','5','.01')
             self.assertEqual(store.open('mid-window-v1','m','Up',fill,{},1000),'FILLED')
             worker=Worker(Store(path),d)
-            worker.choose_entry('mid-window-v1',{},None,{},1200)
             with store.connect() as db:
                 self.assertEqual(db.execute('SELECT status FROM positions').fetchone()[0],'OPEN')
             store.resolve('m','Down',{'source':'clob_official_winner','closed':True},1900)
@@ -40,4 +38,4 @@ class RetirementTests(unittest.TestCase):
             a=next(a for a in store.snapshot()['accounts'] if a['id']=='mid-window-v1')
             self.assertEqual(a['trades'],1)
             self.assertEqual(a['pnl'],-(fill['cost']+fill['fee'])/1e6)
-            self.assertIn('RETIRED',a['name'])
+            self.assertIn('stop 10%',a['name'])

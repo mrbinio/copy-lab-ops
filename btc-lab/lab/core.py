@@ -10,7 +10,7 @@ from pathlib import Path
 
 D = Decimal
 SCALE = D(1_000_000)
-STRATEGIES = {"value-v1": "Reference-aware value", "late-v1": "Late direction · PAUSED / WSTRZYMANA", "early-v1": "Early direction baseline", "mid-window-v1": "BTC 3–7 · RETIRED / WYCOFANA"}
+STRATEGIES = {"value-v1": "Reference-aware value", "late-v1": "Late direction · PAUSED / WSTRZYMANA", "early-v1": "Early direction baseline", "mid-window-v1": "BTC 3–7 · PAPER · stop 10%"}
 
 ETH_STRATEGIES = {"eth-mid-window-v1": "ETH 3–7 · PAPER experiment"}
 
@@ -169,9 +169,10 @@ class Store:
             db.execute('BEGIN IMMEDIATE')
             p = db.execute('SELECT * FROM positions WHERE id=?', (position_id,)).fetchone()
             if not p or p['status'] != 'OPEN': return 'ALREADY_CLOSED'
-            if p['strategy'] not in ('mid-window-v1','eth-mid-window-v1'): raise ValueError('exit experiment only')
+            protected=json.loads(p['evidence']).get('risk_policy')=='btc-stop10-v1'
+            if p['strategy'] not in ('mid-window-v1','eth-mid-window-v1') and not (p['strategy']=='early-v1' and protected): raise ValueError('exit experiment only')
             start = int(p['market'].rsplit('-',1)[1])
-            if not p['opened'] <= ts < start+600: return 'EXIT_CUTOFF'
+            if not p['opened'] <= ts < start+(900 if protected else 600): return 'EXIT_CUTOFF'
             if fill['shares'] != p['shares'] or not 0 <= fill['fee'] <= fill['proceeds']:
                 raise LedgerError('invalid sale')
             net = fill['proceeds']-fill['fee']

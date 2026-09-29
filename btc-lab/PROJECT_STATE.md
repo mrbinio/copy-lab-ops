@@ -1,3 +1,10 @@
+# v0.6.1 — 2026-09-29: restore BTC 3–7 and version loss exits
+
+User explicitly corrected retirement: restore mid-window-v1 entries 180–420 seconds, original 50–80c signal filters. New BTC mid-window and early entries carry risk_policy btc-stop10-v1 and config_version in durable entry evidence. Trigger sale at 10% net loss using executable bids including buy/sell fees; mid-window retains +10% take profit and deadline from590s. Protective/deadline retries may execute after600s until900s, an explicitly disclosed exception to old cutoff. Early has stop only, otherwise holds to settlement. Entry cost+fee <=5USD; conservative fee reserve may reduce size or reject orders below minimum. Full-sale delayed FOK can fail; stop is not a guaranteed maximum loss. Old entries retain old definitions, old results never rewritten. Late stays paused; ETH and wallet-copy rules unchanged. This is user-requested PAPER risk policy, not optimized or proven profitable and not exact Mitch Binance v8.
+
+120 Python tests passed including tighter threshold versus legacy, stale/no-depth rejection, failed arrival/retry after minute10, fees and no double settlement; JS syntax and wallet/export cases pass. Publication does not confirm Mac deployment. Require worker0.6.1 and fresh export. No live orders.
+
+---
 # v0.6.0 — 2026-09-29: forward wallet-signal PAPER copying
 
 Implemented isolated buy/sell copy experiment for the three original public wallets, recognized BTC/ETH5m/15m markets. Three virtual500USD benchmarks, <=5USD all-in, one position each,15/30USD gross-loss caps. First source SELL exits full copied lot; NOT exact proportional source sizing or partial exits and NOT Mitch v8 Binance model. Delayed new-book FOK simulation,50% depth, both fees, no historical backfill, official resolution plus300s cash delay. No real orders. After the user requested analysis/correction of losing late-v1 on Sept29, its new BTC entries are also suspended (STRATEGY_RETIRED); thresholds and loss history retained, no claim of repaired profitability. Early and value baselines remain unchanged. Read EXPERIMENT-WALLET-COPY.md.

@@ -1,4 +1,5 @@
 """Frozen PAPER hypothesis, not Mitch's proprietary model or calibrated probability."""
+import json
 from decimal import Decimal, ROUND_FLOOR, ROUND_CEILING
 from .core import number, units
 
@@ -56,14 +57,18 @@ def simulate_sale(book, shares_micro, fee_rate, floor=None):
 
 def exit_intent(position, market, now):
     elapsed=now-market['start']
-    if elapsed>=600:return None,'HOLD_TO_OFFICIAL_RESOLUTION'
+    protected=json.loads(position.get('evidence','{}')).get('risk_policy')=='btc-stop10-v1'
+    if elapsed>=900 or (elapsed>=600 and not protected):return None,'HOLD_TO_OFFICIAL_RESOLUTION'
     book=market['books'][position['side']]
     if not -.25<=now-book['source_ts']<=3:return None,'EXIT_BOOK_STALE'
     fill=simulate_sale(book,position['shares'],market['fee_rate'])
     if not fill:return None,'EXIT_NO_FULL_FILL'
     basis=position['cost']+position['fee']
     net=fill['proceeds']-fill['fee']-basis
-    why='EXIT_DEADLINE' if elapsed>=590 else 'EXIT_STOP' if net<=-.20*basis else 'EXIT_PROFIT' if net>=.10*basis else None
+    stop=.10 if protected else .20
+    mid=position.get('strategy','mid-window-v1') in ('mid-window-v1','eth-mid-window-v1')
+    why='EXIT_STOP' if net<=-stop*basis else 'EXIT_DEADLINE' if mid and elapsed>=590 else 'EXIT_PROFIT' if mid and net>=.10*basis else None
     if not why:return None,'EXIT_HOLD'
     # Fixed floor from decision depth: no chasing a deteriorating arrival quote.
     return {'reason':why,'floor':fill['fills'][-1]['price'],'decision_at':now},why
+
