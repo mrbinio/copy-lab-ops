@@ -9,13 +9,14 @@ from lab.worker import Worker
 
 class StopTests(unittest.IsolatedAsyncioTestCase):
     async def test_stop_after_minute_ten_retries_failed_arrival_and_accounts_fees(self):
-        for strategy in ('early-v1','mid-window-v1'):
+        for strategy in ('early-v1','mid-window-v1','eth-mid-window-v1'):
             with self.subTest(strategy=strategy),tempfile.TemporaryDirectory() as d:
-                store=Store(Path(d)/'db');worker=Worker(store,d);start=1800000000;now=start+650
-                slug=f'btc-updown-15m-{start}'
+                asset='ETH' if strategy.startswith('eth-') else 'BTC'
+                store=Store(Path(d)/'db',asset=asset);worker=Worker(store,d);start=1800000000;now=start+650
+                slug=f'{asset.lower()}-updown-15m-{start}'
                 fill=simulate_fill([['.60','100']],'4.67','.60','.07','5','.01')
                 self.assertLessEqual(fill['cost']+fill['fee'],5000000)
-                store.open(strategy,slug,'Up',fill,{'risk_policy':'btc-stop10-v1'},start+200)
+                store.open(strategy,slug,'Up',fill,{'risk_policy':asset.lower()+'-stop10-v1'},start+200)
                 def book(bid,size='100'):
                     return {'source_ts':now,'bids':[[bid,size]],'asks':[['.60','100']],'min_shares':'5','tick':'.01'}
                 m={'slug':slug,'start':start,'accepting':True,'fee_verified':True,'rule_supported':True,'fee_rate':.07,'books':{'Up':book('.54')}}

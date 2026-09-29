@@ -57,7 +57,7 @@ def simulate_sale(book, shares_micro, fee_rate, floor=None):
 
 def exit_intent(position, market, now):
     elapsed=now-market['start']
-    protected=json.loads(position.get('evidence','{}')).get('risk_policy')=='btc-stop10-v1'
+    protected=json.loads(position.get('evidence','{}')).get('risk_policy') in ('btc-stop10-v1','eth-stop10-v1')
     if elapsed>=900 or (elapsed>=600 and not protected):return None,'HOLD_TO_OFFICIAL_RESOLUTION'
     book=market['books'][position['side']]
     if not -.25<=now-book['source_ts']<=3:return None,'EXIT_BOOK_STALE'

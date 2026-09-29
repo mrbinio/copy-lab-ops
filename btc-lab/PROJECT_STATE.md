@@ -1,3 +1,10 @@
+# v0.6.2 — 2026-09-29: ETH 3–7 stop policy
+
+New ETH mid-window entries carry eth-stop10-v1 and config_version eth-mid-window-v1-stop10-v1. Same 10% net stop threshold as new BTC positions, fees included, <=5USD acquisition including fee. Keep entry180–420s and50–80c, existing signal filters, +10% take profit and deadline590s. Protective exits/retries allowed until900s, including after minute10; full-sale delayed FOK may fail and loss can exceed threshold. Legacy positions retain prior policy, no historical resets. BTC and wallet copies unchanged; this does not add stop-loss to wallet copies or Value Surface. Not an optimized/proven profitable ETH strategy.
+
+Validation:120 Python tests passed with added ETH entry policy/cap assertions and ETH failed-sale/retry-after-minute10/fees/no-double-settlement coverage;13 JS cases and syntax passed. Publication is not deployment; require fresh ETH worker0.6.2 plus new position policy to confirm. No real orders.
+
+---
 # v0.6.1 — 2026-09-29: restore BTC 3–7 and version loss exits
 
 User explicitly corrected retirement: restore mid-window-v1 entries 180–420 seconds, original 50–80c signal filters. New BTC mid-window and early entries carry risk_policy btc-stop10-v1 and config_version in durable entry evidence. Trigger sale at 10% net loss using executable bids including buy/sell fees; mid-window retains +10% take profit and deadline from590s. Protective/deadline retries may execute after600s until900s, an explicitly disclosed exception to old cutoff. Early has stop only, otherwise holds to settlement. Entry cost+fee <=5USD; conservative fee reserve may reduce size or reject orders below minimum. Full-sale delayed FOK can fail; stop is not a guaranteed maximum loss. Old entries retain old definitions, old results never rewritten. Late stays paused; ETH and wallet-copy rules unchanged. This is user-requested PAPER risk policy, not optimized or proven profitable and not exact Mitch Binance v8.

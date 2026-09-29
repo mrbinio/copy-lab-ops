@@ -105,6 +105,11 @@ class EthCycleTests(unittest.IsolatedAsyncioTestCase):
                 await w.iteration()
                 trades=store.snapshot()['trades'];self.assertEqual(len(trades),1)
                 self.assertEqual(trades[0]['strategy'],'eth-mid-window-v1');self.assertGreaterEqual(trades[0]['opened'],start+200.25)
+                with store.connect() as db:
+                    evidence=json.loads(db.execute('SELECT evidence FROM positions').fetchone()[0])
+                self.assertEqual(evidence['risk_policy'],'eth-stop10-v1')
+                self.assertEqual(evidence['config_version'],'eth-mid-window-v1-stop10-v1')
+                self.assertLessEqual(trades[0]['cost']+trades[0]['fee'],5000000)
                 phase.update(bid='.75',ask='.76');now[0]=start+300
                 await w.paper_exits(w.market,True) # decision snapshot from previous cycle cannot trigger
                 await w.cycle()

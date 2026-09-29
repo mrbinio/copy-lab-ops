@@ -251,7 +251,7 @@ class Worker:
         if not reconciliation_ok or not market.get('accepting') or not market.get('fee_verified') or not market.get('rule_supported'):return
         with self.store.connect() as db:
             rows=[dict(r) for r in db.execute("SELECT * FROM positions WHERE status='OPEN' AND market=?",(market['slug'],))]
-        rows=[p for p in rows if p['strategy']==self.entry_strategy or json.loads(p['evidence']).get('risk_policy')=='btc-stop10-v1']
+        rows=[p for p in rows if p['strategy']==self.entry_strategy or json.loads(p['evidence']).get('risk_policy') in ('btc-stop10-v1','eth-stop10-v1')]
         for p in rows:
             intent,reason=exit_intent(p,market,time.time())
             if intent:
@@ -259,7 +259,7 @@ class Worker:
                 arrival=await self.books(market)
                 at=time.time();book=arrival[p['side']]
                 reason='EXIT_CUTOFF'
-                protected=json.loads(p['evidence']).get('risk_policy')=='btc-stop10-v1'
+                protected=json.loads(p['evidence']).get('risk_policy') in ('btc-stop10-v1','eth-stop10-v1')
                 if at<market['start']+900 and (protected or at<market['start']+600):
                     reason='EXIT_BOOK_STALE'
                     if -.25<=at-book['source_ts']<=3:
@@ -342,8 +342,8 @@ class Worker:
             if intent:
                 if self.asset=="ETH":
                     intent.update(strategy=strategy,config_version="eth-mid-window-v1",asset="ETH",hypothesis={**intent["hypothesis"],"id":"eth-mid-window-v1","asset":"ETH"})
-                if self.asset=='BTC' and strategy in ('mid-window-v1','early-v1'):
-                    intent.update(risk_policy='btc-stop10-v1',config_version=strategy+'-stop10-v1',
+                if (self.asset=='BTC' and strategy in ('mid-window-v1','early-v1')) or (self.asset=='ETH' and strategy=='eth-mid-window-v1'):
+                    intent.update(risk_policy=self.asset.lower()+'-stop10-v1',config_version=strategy+'-stop10-v1',
                                   stop_loss_net_fraction=.10,entry_all_in_cap_usd=5)
                     if 'hypothesis' in intent:
                         intent['hypothesis']={**intent['hypothesis'],'id':intent['config_version'],
@@ -363,9 +363,9 @@ class Worker:
                 time_valid=(intent['strategy']!=self.entry_strategy or 180<=at-m['start']<=420)
                 book_valid=all(-.25<=at-b['source_ts']<=3 for b in arrival.values())
                 if time_valid and book_valid and not self.is_paused() and at < m['end']-30 and reference and -.25 <= at-reference['source_ts']<=5:
-                    budget=str(5/(1+float(m['fee_rate']))) if intent.get('risk_policy')=='btc-stop10-v1' else '5'
+                    budget=str(5/(1+float(m['fee_rate']))) if intent.get('risk_policy') in ('btc-stop10-v1','eth-stop10-v1') else '5'
                     fill=simulate_fill(book['asks'],budget,str(intent['limit']),str(m['fee_rate']),book['min_shares'],book['tick'])
-                    if fill and intent.get('risk_policy')=='btc-stop10-v1' and fill['cost']+fill['fee']>5_000_000:fill=None
+                    if fill and intent.get('risk_policy') in ('btc-stop10-v1','eth-stop10-v1') and fill['cost']+fill['fee']>5_000_000:fill=None
                     reason='NO_FULL_FILL'
                     if fill and intent['strategy']==self.entry_strategy and any(not .50<=float(f['price'])<=.80 for f in fill['fills']):
                         fill=None;reason='ARRIVAL_PRICE_OUTSIDE_RANGE'
@@ -385,7 +385,7 @@ class Worker:
         reference_fresh=reference and -.25<=time.time()-reference['source_ts']<=5
         self.store.set('worker',{'status':('PAUSED' if paused else 'RECORDING') if reference_fresh else 'DEGRADED','heartbeat':time.time(),
             'reference_status':'FRESH' if reference_fresh else 'MISSING_OR_STALE',
-            'reference_error':self.feed_error,'version':'0.6.1','asset':self.asset,'execution':'PAPER ONLY'})
+            'reference_error':self.feed_error,'version':'0.6.2','asset':self.asset,'execution':'PAPER ONLY'})
 
     async def iteration(self):
         errors=[]
@@ -421,7 +421,7 @@ class Worker:
                 failure('research',e)
         if errors:
             self.store.set('worker',{'status':'DEGRADED','heartbeat':time.time(),
-                'errors':errors,'version':'0.6.1','asset':self.asset})
+                'errors':errors,'version':'0.6.2','asset':self.asset})
 
     async def run(self):
         self.store.audit()
