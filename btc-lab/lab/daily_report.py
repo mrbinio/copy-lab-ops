@@ -62,6 +62,16 @@ def build_report(store, day=None, now=None):
                 'labels':db.execute('SELECT COUNT(*) FROM labels').fetchone()[0],
                 'examples':db.execute('SELECT COUNT(*) FROM examples').fetchone()[0]}
         recorded=[dict(r) for r in db.execute('SELECT kind,COUNT(*) count,MIN(ts) first_ts,MAX(ts) last_ts FROM observations WHERE ts>=? AND ts<? GROUP BY kind',(start,end))]
+        surface=[]
+        if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='value_surface_positions'").fetchone():
+            surface=[json.loads(r[0]) for r in db.execute('SELECT body FROM value_surface_positions')]
+        surface_closed=[r for r in surface if r['status']!='OPEN' and start<=r['closed_at']<end]
+        surface_entries=[r for r in surface if start<=r['opened']<end]
+        surface_daily={'date':str(day),'entries':len(surface_entries),'closed':len(surface_closed),
+            'net_pnl_usd':sum(r['pnl_micro'] for r in surface_closed)/1e6,
+            'entry_fees_paid_usd':sum(r['fee'] for r in surface_entries)/1e6,
+            'exit_fees_paid_usd':sum(r.get('exit_fee',0) for r in surface_closed)/1e6,
+            'period_trades':[r for r in surface if r in surface_entries or r in surface_closed]}
         heartbeat=worker.get('heartbeat')
         return {'schema':'btc-daily-report-v2','asset':store.asset,'report_id':(f'ETH-{day}-Europe-Stockholm' if store.asset=='ETH' else f'{day}-Europe-Stockholm'),
                 'source':'PAPER_SERVICE','mode':'PAPER','live_enabled':False,
@@ -70,6 +80,9 @@ def build_report(store, day=None, now=None):
                 'worker':worker,'heartbeat_age_seconds':now-heartbeat if heartbeat else None,
                 'worker_fresh_at_export':heartbeat is not None and 0<=now-heartbeat<30,
                 'reference':state('reference'),'model':model,'counts':counts,
+                'value_surface_daily':surface_daily,
+                'value_surface_execution_cumulative':state('value_surface_execution'),
+                'value_surface_execution_error':state('value_surface_execution_error'),
                 'exit_comparison_cumulative':state('exit_comparison'),
                 'exit_comparison_error':state('exit_comparison_error'),
                 'complete_set_observer':state('complete_set_observer'),

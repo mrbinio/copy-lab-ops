@@ -75,6 +75,8 @@ def snapshot(root, asset="BTC"):
             'wallet_activity_recent':wallet_rows,
             'wallet_activity_truncated':wallet_count>len(wallet_rows),
             'wallet_activity_count':wallet_count,
+            'value_surface_execution':state('value_surface_execution'),
+            'value_surface_execution_error':state('value_surface_execution_error'),
             'opportunity_research':state('opportunity_research'),
             'opportunity_research_error':state('opportunity_research_error'),
             'wallet_observer':[json.loads(r[0]) for r in db.execute("SELECT body FROM state WHERE key LIKE 'wallet_observer:%' ORDER BY key")],

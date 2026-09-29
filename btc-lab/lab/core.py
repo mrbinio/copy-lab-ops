@@ -238,6 +238,19 @@ class Store:
             decisions = [dict(d) for d in db.execute("SELECT ts,strategy,market,reason FROM decisions ORDER BY id DESC LIMIT 25")]
             count = db.execute("SELECT COUNT(*) FROM observations").fetchone()[0]
             labels = db.execute("SELECT COUNT(*) FROM labels").fetchone()[0]
+        experiment=self.get("value_surface_execution",{})
+        if experiment:
+            sid="value-surface-paper-v1"
+            accounts.append({"id":sid,"name":self.asset+" Value Surface · PAPER 100 USD",
+                "initial":100,"cash":experiment["cash_usd"],"pnl":experiment["net_pnl_usd"],
+                "fees":experiment["fees_usd"],"open_cost":experiment["open_cost_usd"],"pending":0,
+                "trades":experiment["trades"],"settled":experiment["closed"],"wins":experiment["wins"],
+                "curve":experiment.get("curve",[]),"day_limit":3,"week_limit":6})
+            for t in experiment.get("recent_trades",[]):
+                trades.append({**t,"id":"value-surface:"+t["market"],"strategy":sid,
+                    "resolved":t.get("closed_at"),"payout":t.get("payout")})
+            trades=sorted(trades,key=lambda t:t["opened"],reverse=True)[:200]
+            decisions.insert(0,{"ts":experiment["updated_at"],"strategy":sid,"market":"","reason":experiment["status"]})
         return {"asset":self.asset,"mode":"PAPER","live_enabled":False,"accounts":accounts,"trades":trades,"decisions":decisions,
                 "observations":count,"labels":labels,"worker":self.get("worker",{}),"market":self.get("market",{}),
                 "reference":self.get("reference",{}),"model":self.get("model",{"status":"COLLECTING","samples":0}),

@@ -1,3 +1,8 @@
+# v0.5.1 — 2026-09-29: isolated value-surface PAPER execution
+
+Prepared and locally tested:99 Python tests and5 JavaScript export cases passed, app.js syntax checked. Publication is not Mac deployment. New value-surface-paper-v1 has its own100USD scenario per asset, <=1USD all-in entry, delayed fresh-book FOK buys/sales with50% depth, both fees, independent limits and official-label settlement. Existing accounts/thresholds/history untouched. Dashboard account/chart/journal and separate daily/cumulative exports added. See EXPERIMENT-VALUE-EXECUTION.md for exact rules, settlement timing and limitations. No signal until previous per-cell official history is sufficient; minimum order may prevent trades. No promised profitability or immediate activity. Wallet events are observed independently, not used for automatic copy trading, training or wallet discovery. Require fresh worker0.5.1 and value_surface_execution timestamps to confirm installation.
+
+---
 # v0.5.0 — 2026-09-29: continuous wallet observation and full-window value research
 
 Source prepared and tested; Mac deployment NOT yet confirmed. See EXPERIMENT-VALUE-SURFACE.md. BTC worker polls the three user-supplied public wallets every 30 seconds, including inactivity; errors and page limits are explicit. Independent per-asset minute-level causal samples support probability/cost/size and exit-value research. No new orders, no changes to existing accounts, risk limits or thresholds. Hourly private report includes observer status, bounded activity and value research; no new dashboard panel is included.

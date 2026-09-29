@@ -20,6 +20,7 @@ from .complete_set import CompleteSetObserver
 from .feed_watchdog import fresh_messages
 from .wallet_observer import WalletObserver
 from .opportunity_research import OpportunityResearch
+from .value_execution import ValueExecution
 from .reference import classify_rule, observation, SPOT, TWAP60, TWAP30
 
 LOG=logging.getLogger('btc-lab')
@@ -107,6 +108,7 @@ class Worker:
         self.exit_comparison=ExitComparison(store)
         self.complete_set=CompleteSetObserver(store)
         self.opportunity_research=OpportunityResearch(store)
+        self.value_execution=ValueExecution(store)
 
     def is_paused(self):
         return (self.data/"PAUSE").exists() or (self.asset=="ETH" and (self.data.parent/"PAUSE").exists())
@@ -292,6 +294,11 @@ class Worker:
             self.store.set('opportunity_research_error',{})
         except Exception as error:
             self.store.set('opportunity_research_error',{'at':now,'error':error_detail(error)})
+        try:
+            self.value_execution.step(m,reference,time.time(),entries_allowed and not self.is_paused())
+            self.store.set('value_surface_execution_error',{})
+        except Exception as error:
+            self.store.set('value_surface_execution_error',{'at':time.time(),'error':error_detail(error)})
         # Match the model's existing decision horizon. One causal sample per
         # market; never backdate or fill a missed window with later data.
         books_fresh=all(-.25 <= now-b['source_ts'] <= 3 for b in (up,down))
@@ -355,7 +362,7 @@ class Worker:
         reference_fresh=reference and -.25<=time.time()-reference['source_ts']<=5
         self.store.set('worker',{'status':('PAUSED' if paused else 'RECORDING') if reference_fresh else 'DEGRADED','heartbeat':time.time(),
             'reference_status':'FRESH' if reference_fresh else 'MISSING_OR_STALE',
-            'reference_error':self.feed_error,'version':'0.5.0','asset':self.asset,'execution':'PAPER ONLY'})
+            'reference_error':self.feed_error,'version':'0.5.1','asset':self.asset,'execution':'PAPER ONLY'})
 
     async def iteration(self):
         errors=[]
@@ -375,6 +382,10 @@ class Worker:
                 self.reconciliation_ok=False
                 failure('reconciliation',e)
         try:
+            self.value_execution.settle(time.time())
+        except Exception as e:
+            failure('value_settlement',e)
+        try:
             await self.cycle(entries_allowed=self.reconciliation_ok)
         except Exception as e:
             failure('collection',e)
@@ -387,7 +398,7 @@ class Worker:
                 failure('research',e)
         if errors:
             self.store.set('worker',{'status':'DEGRADED','heartbeat':time.time(),
-                'errors':errors,'version':'0.5.0','asset':self.asset})
+                'errors':errors,'version':'0.5.1','asset':self.asset})
 
     async def run(self):
         self.store.audit()
