@@ -10,7 +10,7 @@ from pathlib import Path
 
 D = Decimal
 SCALE = D(1_000_000)
-STRATEGIES = {"value-v1": "Reference-aware value", "late-v1": "Late direction baseline", "early-v1": "Early direction baseline", "mid-window-v1": "Mitch 3–7 / 50–80c (experimental)"}
+STRATEGIES = {"value-v1": "Reference-aware value", "late-v1": "Late direction baseline", "early-v1": "Early direction baseline", "mid-window-v1": "BTC 3–7 · RETIRED / WYCOFANA"}
 
 ETH_STRATEGIES = {"eth-mid-window-v1": "ETH 3–7 · PAPER experiment"}
 
@@ -238,6 +238,15 @@ class Store:
             decisions = [dict(d) for d in db.execute("SELECT ts,strategy,market,reason FROM decisions ORDER BY id DESC LIMIT 25")]
             count = db.execute("SELECT COUNT(*) FROM observations").fetchone()[0]
             labels = db.execute("SELECT COUNT(*) FROM labels").fetchone()[0]
+        from .wallet_observer import WALLETS
+        wallets=[self.get('wallet_observer:'+w,{'wallet':w,'status':'NOT_STARTED','checked_at':None}) for w in WALLETS] if self.asset=='BTC' else []
+        wallet_events=[]
+        with self.connect() as db:
+            if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='wallet_activity'").fetchone():
+                for row in db.execute('SELECT wallet,source_ts,first_seen,body FROM wallet_activity ORDER BY first_seen DESC LIMIT 30'):
+                    body=json.loads(row['body'])
+                    wallet_events.append({'wallet':row['wallet'],'source_ts':row['source_ts'],'first_seen':row['first_seen'],
+                        **{k:body.get(k) for k in ('type','side','title','price','size','transactionHash')}})
         experiment=self.get("value_surface_execution",{})
         if experiment:
             sid="value-surface-paper-v1"
@@ -251,9 +260,10 @@ class Store:
                     "resolved":t.get("closed_at"),"payout":t.get("payout")})
             trades=sorted(trades,key=lambda t:t["opened"],reverse=True)[:200]
             decisions.insert(0,{"ts":experiment["updated_at"],"strategy":sid,"market":"","reason":experiment["status"]})
-        return {"asset":self.asset,"mode":"PAPER","live_enabled":False,"accounts":accounts,"trades":trades,"decisions":decisions,
+        return {"wallet_observer":wallets,"wallet_activity_recent":wallet_events,"wallet_discovery":self.get("wallet_discovery",{}),"opportunity_research":self.get("opportunity_research",{}),"value_surface_execution":experiment,"asset":self.asset,"mode":"PAPER","live_enabled":False,"accounts":accounts,"trades":trades,"decisions":decisions,
                 "observations":count,"labels":labels,"worker":self.get("worker",{}),"market":self.get("market",{}),
                 "reference":self.get("reference",{}),"model":self.get("model",{"status":"COLLECTING","samples":0}),
                 "price_history":self.get("price_history",[]),"generated_at":time.time()}
+
 
 

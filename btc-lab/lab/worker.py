@@ -19,6 +19,7 @@ from .exit_comparison import ExitComparison
 from .complete_set import CompleteSetObserver
 from .feed_watchdog import fresh_messages
 from .wallet_observer import WalletObserver
+from .wallet_discovery import WalletDiscovery
 from .opportunity_research import OpportunityResearch
 from .value_execution import ValueExecution
 from .reference import classify_rule, observation, SPOT, TWAP60, TWAP30
@@ -109,6 +110,16 @@ class Worker:
         self.complete_set=CompleteSetObserver(store)
         self.opportunity_research=OpportunityResearch(store)
         self.value_execution=ValueExecution(store)
+
+    def choose_entry(self, strategy, market, reference, model, now, paused=False):
+        # Retire only new BTC mid-window entries. Existing exits and settlement
+        # run independently and historical positions are never rewritten.
+        if self.asset == "BTC" and strategy == "mid-window-v1":
+            return None, "STRATEGY_RETIRED"
+        if paused:
+            return None, "MANUAL_PAUSE"
+        return choose("mid-window-v1" if self.asset == "ETH" else strategy,
+                      market, reference, model, now)
 
     def is_paused(self):
         return (self.data/"PAUSE").exists() or (self.asset=="ETH" and (self.data.parent/"PAUSE").exists())
@@ -324,7 +335,7 @@ class Worker:
         signals=[]
         paused=self.is_paused() or not entries_allowed
         for strategy in self.store.strategies:
-            intent,reason=choose("mid-window-v1" if self.asset=="ETH" else strategy,m,reference,model,now) if not paused else (None,'MANUAL_PAUSE')
+            intent,reason=self.choose_entry(strategy,m,reference,model,now,paused)
             if intent:
                 if self.asset=="ETH":
                     intent.update(strategy=strategy,config_version="eth-mid-window-v1",asset="ETH",hypothesis={**intent["hypothesis"],"id":"eth-mid-window-v1","asset":"ETH"})
@@ -362,7 +373,7 @@ class Worker:
         reference_fresh=reference and -.25<=time.time()-reference['source_ts']<=5
         self.store.set('worker',{'status':('PAUSED' if paused else 'RECORDING') if reference_fresh else 'DEGRADED','heartbeat':time.time(),
             'reference_status':'FRESH' if reference_fresh else 'MISSING_OR_STALE',
-            'reference_error':self.feed_error,'version':'0.5.1','asset':self.asset,'execution':'PAPER ONLY'})
+            'reference_error':self.feed_error,'version':'0.5.3','asset':self.asset,'execution':'PAPER ONLY'})
 
     async def iteration(self):
         errors=[]
@@ -398,12 +409,13 @@ class Worker:
                 failure('research',e)
         if errors:
             self.store.set('worker',{'status':'DEGRADED','heartbeat':time.time(),
-                'errors':errors,'version':'0.5.1','asset':self.asset})
+                'errors':errors,'version':'0.5.3','asset':self.asset})
 
     async def run(self):
         self.store.audit()
         reference=asyncio.create_task(self.reference_stream())
         wallets=asyncio.create_task(WalletObserver(self.store,get_json).run()) if self.asset=="BTC" else None
+        discovery=asyncio.create_task(WalletDiscovery(self.store,get_json).run()) if self.asset=="BTC" else None
         try:
             while True:
                 await self.iteration()
@@ -411,7 +423,8 @@ class Worker:
         finally:
             reference.cancel()
             if wallets:wallets.cancel()
-            await asyncio.gather(reference,*([wallets] if wallets else []),return_exceptions=True)
+            if discovery:discovery.cancel()
+            await asyncio.gather(reference,*([wallets] if wallets else []),*([discovery] if discovery else []),return_exceptions=True)
 
 def main():
     import fcntl
@@ -428,5 +441,6 @@ def main():
         asyncio.run(Worker(store,data).run())
 
 if __name__=='__main__': main()
+
 
 

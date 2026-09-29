@@ -1,3 +1,23 @@
+# v0.5.3 — 2026-09-29: visible wallet observation and discovery; BTC baseline retired
+
+106 Python tests passed;7 wallet panel rendering scenarios,5 JS export cases and app.js syntax passed. Full browser rendering and Mac deployment are not yet confirmed. Supersedes prepared but unpublished0.5.2 below.
+
+Dashboard now shows selected account, trade count and decision reason. No settled trades is labeled explicitly instead of displaying zero as a performance result. Actual realized zeros/losses remain unchanged. A Wallets section exposes all three observers, read timestamps, stale/error states, recorded counts, recent activity and Value Surface status. ETH view directs to the shared BTC observer. Backend snapshot and private hourly export expose discovery state.
+
+New read-only hourly CRYPTO top50 WEEK/MONTH leaderboard intersection produces UNVERIFIED candidates with positive reported PnL/volume in both periods. No automatic copying, no verified profit claim or continuous AI learning. Preserve scan history and last-success state on API errors. See EXPERIMENT-WALLET-DISCOVERY.md.
+
+BTC mid-window-v1 new entries retired; existing positions, settlement and losses retained. Rename misleading Mitch label. Other accounts/risk limits unchanged. Mitch exact replication and copy execution remain NOT implemented; unavailable original code and unspecified fast-move/copy rules prevent claiming identical behavior.
+
+Private export2026-09-29T16:06:08Z confirms Mac0.5.1, fresh worker, three POLL_OK observers, recorded event counts0/579/1857, Value Surface WAITING_VALID_PROBABILITY. This is evidence of observation, not copy trading or current0.5.3 deployment.
+
+---
+# v0.5.2 — 2026-09-29: retire misleading BTC mid-window baseline
+
+User explicitly requested withdrawal of BTC mid-window-v1. Worker blocks new entries with STRATEGY_RETIRED, retaining existing exit handling, official settlement, accounts and loss history. Remove misleading Mitch name. ETH and other experiments remain unchanged; no live trading or risk increase. Publication is not Mac deployment.
+
+Mitch's stated v8 (3–5 minutes,55–80c favourite,Binance25USD direction,ask+2c FOK,hold settlement) is NOT implemented by mid-window-v1. Exact replacement remains blocked: unavailable original source; undefined fast-adverse-move interval, precise favourite/opening source conventions and current wallet-copy/position-sizing/exit/probability rules. Do not silently invent these or present wallet observation as copying. The three public-wallet observers and independent Value Surface experiment remain in source; current Mac execution needs a fresh export.
+
+---
 # v0.5.1 — 2026-09-29: isolated value-surface PAPER execution
 
 Prepared and locally tested:99 Python tests and5 JavaScript export cases passed, app.js syntax checked. Publication is not Mac deployment. New value-surface-paper-v1 has its own100USD scenario per asset, <=1USD all-in entry, delayed fresh-book FOK buys/sales with50% depth, both fees, independent limits and official-label settlement. Existing accounts/thresholds/history untouched. Dashboard account/chart/journal and separate daily/cumulative exports added. See EXPERIMENT-VALUE-EXECUTION.md for exact rules, settlement timing and limitations. No signal until previous per-cell official history is sufficient; minimum order may prevent trades. No promised profitability or immediate activity. Wallet events are observed independently, not used for automatic copy trading, training or wallet discovery. Require fresh worker0.5.1 and value_surface_execution timestamps to confirm installation.
@@ -118,5 +138,6 @@ Reference/history are now selected after awaited REST book collection. Both book
 Validation: 38 local controlled tests passed, including capture at 118 seconds, 115/125 boundaries, rejection outside the horizon, reference refresh during HTTP, stale second book, unsupported rules and duplicate prevention after restart. Not a macOS deployment test or proof of profitability.
 
 User export at 2026-09-19 13:22:03 UTC: PAPER_SERVICE, v0.2.0, RECORDING/FRESH at export time; 385522 observations, 68 official labels; last model refresh 62/200 labelled examples. Early baseline: 6 settled, 4 wins, +1.325860 USD net; late baseline: 5 settled, 3 wins, -8.480440 USD net; value model: no trades. These are independent virtual 500 USD accounts. Small samples do not establish profitability. The snapshot cannot quantify how many eligible training windows were missed.
+
 
 
