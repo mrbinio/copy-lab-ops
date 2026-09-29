@@ -18,6 +18,8 @@ from .mid_window import exit_intent, simulate_sale
 from .exit_comparison import ExitComparison
 from .complete_set import CompleteSetObserver
 from .feed_watchdog import fresh_messages
+from .wallet_observer import WalletObserver
+from .opportunity_research import OpportunityResearch
 from .reference import classify_rule, observation, SPOT, TWAP60, TWAP30
 
 LOG=logging.getLogger('btc-lab')
@@ -104,6 +106,7 @@ class Worker:
         self.twap_history=deque(maxlen=3600)
         self.exit_comparison=ExitComparison(store)
         self.complete_set=CompleteSetObserver(store)
+        self.opportunity_research=OpportunityResearch(store)
 
     def is_paused(self):
         return (self.data/"PAUSE").exists() or (self.asset=="ETH" and (self.data.parent/"PAUSE").exists())
@@ -213,6 +216,7 @@ class Worker:
             rows=db.execute("SELECT DISTINCT market FROM positions WHERE status='OPEN' UNION SELECT market FROM examples WHERE market NOT IN (SELECT market FROM labels)").fetchall()
             shadow_markets={json.loads(r[0])['market'] for r in db.execute('SELECT body FROM exit_comparison')
                             if json.loads(r[0])['status']=='OPEN'}
+            shadow_markets.update(r[0] for r in db.execute("SELECT DISTINCT market FROM opportunity_samples WHERE market NOT IN (SELECT market FROM labels)"))
             known={r[0] for r in rows}
             rows=list(rows)+[(slug,) for slug in sorted(shadow_markets-known)]
         for row in rows[:100]:
@@ -283,6 +287,11 @@ class Worker:
         if reference and m['opening'] and probability and -.25<=now-reference['source_ts']<=5:
             past=[x for x in history if now-600<=x[0]<=now]
             m['features']=features(reference['price'],m['opening'],past,probability,m['end']-now)
+        try:
+            self.opportunity_research.step(m,reference,now)
+            self.store.set('opportunity_research_error',{})
+        except Exception as error:
+            self.store.set('opportunity_research_error',{'at':now,'error':error_detail(error)})
         # Match the model's existing decision horizon. One causal sample per
         # market; never backdate or fill a missed window with later data.
         books_fresh=all(-.25 <= now-b['source_ts'] <= 3 for b in (up,down))
@@ -346,7 +355,7 @@ class Worker:
         reference_fresh=reference and -.25<=time.time()-reference['source_ts']<=5
         self.store.set('worker',{'status':('PAUSED' if paused else 'RECORDING') if reference_fresh else 'DEGRADED','heartbeat':time.time(),
             'reference_status':'FRESH' if reference_fresh else 'MISSING_OR_STALE',
-            'reference_error':self.feed_error,'version':'0.4.2','asset':self.asset,'execution':'PAPER ONLY'})
+            'reference_error':self.feed_error,'version':'0.5.0','asset':self.asset,'execution':'PAPER ONLY'})
 
     async def iteration(self):
         errors=[]
@@ -378,18 +387,20 @@ class Worker:
                 failure('research',e)
         if errors:
             self.store.set('worker',{'status':'DEGRADED','heartbeat':time.time(),
-                'errors':errors,'version':'0.4.1','asset':self.asset})
+                'errors':errors,'version':'0.5.0','asset':self.asset})
 
     async def run(self):
         self.store.audit()
         reference=asyncio.create_task(self.reference_stream())
+        wallets=asyncio.create_task(WalletObserver(self.store,get_json).run()) if self.asset=="BTC" else None
         try:
             while True:
                 await self.iteration()
                 await asyncio.sleep(2)
         finally:
             reference.cancel()
-            await asyncio.gather(reference,return_exceptions=True)
+            if wallets:wallets.cancel()
+            await asyncio.gather(reference,*([wallets] if wallets else []),return_exceptions=True)
 
 def main():
     import fcntl

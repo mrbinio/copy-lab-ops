@@ -46,6 +46,9 @@ def snapshot(root, asset="BTC"):
         def state(key):
             row=db.execute('SELECT body FROM state WHERE key=?',(key,)).fetchone()
             return json.loads(row[0]) if row else {}
+        tables={r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        wallet_rows=[dict(r) for r in db.execute('SELECT wallet,event_key,first_seen,source_ts,body FROM wallet_activity ORDER BY first_seen DESC LIMIT 100')] if 'wallet_activity' in tables else []
+        wallet_count=db.execute('SELECT COUNT(*) FROM wallet_activity').fetchone()[0] if 'wallet_activity' in tables else 0
         now=time.time()
         worker=selected(state('worker'),'status heartbeat reference_status version execution')
         model=selected(state('model'),'status samples required trained_at feature_schema model_id frozen_at validation_brier book_brier freeze_provenance')
@@ -69,6 +72,12 @@ def snapshot(root, asset="BTC"):
             'exported_at':datetime.datetime.fromtimestamp(now,datetime.timezone.utc).isoformat(),
             'generated_at':now,'worker':worker,'heartbeat_age_seconds':now-worker['heartbeat'] if worker.get('heartbeat') else None,
             'model':model,'accounts':accounts,'trades':trades,'trades_truncated':counts['total_trades']>len(trades),
+            'wallet_activity_recent':wallet_rows,
+            'wallet_activity_truncated':wallet_count>len(wallet_rows),
+            'wallet_activity_count':wallet_count,
+            'opportunity_research':state('opportunity_research'),
+            'opportunity_research_error':state('opportunity_research_error'),
+            'wallet_observer':[json.loads(r[0]) for r in db.execute("SELECT body FROM state WHERE key LIKE 'wallet_observer:%' ORDER BY key")],
             'exit_comparison':state('exit_comparison'),
             'exit_comparison_error':state('exit_comparison_error'),
                 'complete_set_observer':state('complete_set_observer'),

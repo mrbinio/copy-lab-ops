@@ -1,3 +1,10 @@
+# v0.5.0 — 2026-09-29: continuous wallet observation and full-window value research
+
+Source prepared and tested; Mac deployment NOT yet confirmed. See EXPERIMENT-VALUE-SURFACE.md. BTC worker polls the three user-supplied public wallets every 30 seconds, including inactivity; errors and page limits are explicit. Independent per-asset minute-level causal samples support probability/cost/size and exit-value research. No new orders, no changes to existing accounts, risk limits or thresholds. Hourly private report includes observer status, bounded activity and value research; no new dashboard panel is included.
+
+The 2026-09-29T06:05Z private export independently confirmed BTC and ETH v0.4.2 RECORDING/FRESH; this is not a confirmation of v0.5.0. New deployment evidence requires v0.5.0 plus new observer/research timestamps. The public activity endpoint returned403 from the development environment; live wallet schema/access on Mac remains unverified. Polling does not claim direct chain subscriptions or complete historical wallet PnL.
+
+---
 # v0.4.2 — 2026-09-28: target-reference watchdog
 
 Confirmed code defect: an open RTDS socket with PONG/unrelated messages but no advancing valid TWAP60 could remain stale indefinitely. A20-second monotonic deadline now forces reconnect through existing disconnect cleanup/backoff. Only an advancing accepted TWAP60 source timestamp extends the deadline; PONG, rejected data and other topics do not. Applies separately to BTC and ETH. No strategy/risk/history changes. Fresh data and exact next opening are still required for trading. Sept28 11:03UTC export showed BTC reference4215s old while worker heartbeat was fresh; this is consistent with the defect, not proof of the remote root cause.
