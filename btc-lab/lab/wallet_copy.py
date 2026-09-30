@@ -252,7 +252,15 @@ class WalletCopy:
             decision=await self.book(m['token']);at=self.clock()
             if kind=='BUY':
                 source_price=Decimal(str(event.get('price',0)))
-                if not source_price.is_finite() or not 0<source_price<1:self.reason(row,'SOURCE_PRICE_INVALID');return
+                is_chain=event.get('_source')=='chain_monitor'
+                # Chain events don't carry execution price; use current book ask instead.
+                # This means Mitch's ±10c rule compares against CURRENT ask, not source fill.
+                # For REST events, source_price is the indexed price from Data API.
+                if is_chain and (not source_price.is_finite() or not 0<source_price<1):
+                    if not decision['asks']:self.reason(row,'NO_ASK');return
+                    source_price=min(Decimal(p) for p,q in decision['asks'])
+                elif not source_price.is_finite() or not 0<source_price<1:
+                    self.reason(row,'SOURCE_PRICE_INVALID');return
                 if at-row['source_ts']>60:self.reason(row,'COPY_BUY_TOO_LATE',{'decision_book':decision});return
                 if not decision['asks']:self.reason(row,'NO_ASK');return
                 ask=min(Decimal(p) for p,q in decision['asks'])

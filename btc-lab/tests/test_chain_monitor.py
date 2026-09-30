@@ -275,6 +275,28 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual(bridge.events_bridged, 1)
         self.assertEqual(bridge.events_skipped, 1)
 
+    def test_chain_dedup_with_rest_by_txhash(self):
+        """If REST observer already recorded the same txHash, chain skips it."""
+        # Simulate REST observer inserting first (different key format, same txHash)
+        rest_body = json.dumps({'transactionHash': '0xsametx', 'type': 'TRADE', 'side': 'BUY',
+                                'price': 0.6, 'slug': 'btc-updown-15m-4000'})
+        with self.store.connect() as db:
+            db.execute('INSERT INTO wallet_activity VALUES (?,?,?,?,?)',
+                       (WALLET_A, 'rest_key_hash', self.now, self.now, rest_body))
+        # Now chain monitor tries to insert same tx
+        bridge = ChainToActivityBridge(self.store, self.fetch, lambda: self.now)
+        event = {
+            'type': 'TRANSFER_SINGLE', 'wallet': WALLET_A, 'side': 'BUY',
+            'token_id': 111, 'value': 5000000, 'tx_hash': '0xsametx',
+            'log_index': 0, 'block_number': 500, 'detected_at': self.now,
+            'operator': CTF_EXCHANGE, 'from': '0xseller', 'to': WALLET_A,
+        }
+        asyncio.run(bridge.on_chain_event(event))
+        with self.store.connect() as db:
+            count = db.execute('SELECT COUNT(*) FROM wallet_activity').fetchone()[0]
+        self.assertEqual(count, 1)  # no duplicate
+        self.assertEqual(bridge.events_skipped, 1)
+
     def test_unresolvable_token_counted(self):
         bridge = ChainToActivityBridge(self.store, lambda u: [], lambda: self.now)
         event = {

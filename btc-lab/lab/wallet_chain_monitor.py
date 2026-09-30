@@ -290,12 +290,26 @@ class ChainToActivityBridge:
             '_detected_at': event.get('detected_at'),
         }
 
-        # Deduplicate with REST observer: use txHash as shared key.
-        # REST observer uses SHA256 of sorted fields; we use txHash:logIndex.
-        # Both INSERT OR IGNORE, so first arrival wins.
+        # Deduplicate with REST observer: check if this txHash is already recorded.
+        # REST observer uses SHA256(fields) as key; we use SHA256(txHash:logIndex).
+        # Before inserting, check if ANY row with same txHash exists for this wallet.
         key = hashlib.sha256(f"{tx_hash}:{event.get('log_index', 0)}".encode()).hexdigest()
 
         with self.store.connect() as db:
+            # Check for existing entry with same transaction hash (from REST or earlier chain event)
+            existing = db.execute(
+                "SELECT 1 FROM wallet_activity WHERE wallet=? AND body LIKE ?",
+                (wallet, f'%"transactionHash": "{tx_hash}"%'),
+            ).fetchone()
+            if not existing:
+                existing = db.execute(
+                    "SELECT 1 FROM wallet_activity WHERE wallet=? AND body LIKE ?",
+                    (wallet, f'%"transactionHash":"{tx_hash}"%'),
+                ).fetchone()
+            if existing:
+                self.events_skipped += 1
+                return
+            # Also check our own key (exact duplicate from chain)
             cur = db.execute(
                 'INSERT OR IGNORE INTO wallet_activity VALUES (?,?,?,?,?)',
                 (wallet, key, now, now, json.dumps(body, allow_nan=False)),
