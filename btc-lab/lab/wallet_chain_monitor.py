@@ -272,16 +272,19 @@ class ChainToActivityBridge:
     The REST WalletObserver continues to run as fallback for missed events.
     """
 
-    def __init__(self, store, clock=time.time):
+    def __init__(self, store, fetch, clock=time.time):
+        from .token_resolver import TokenResolver
         self.store = store
         self.clock = clock
+        self.resolver = TokenResolver(store, fetch, clock)
         self.events_bridged = 0
         self.events_skipped = 0
+        self.events_unresolved = 0
         if not hasattr(store, "wallet_activity_ready"):
             store.wallet_activity_ready = asyncio.Event()
 
     async def on_chain_event(self, event):
-        """Callback for ChainMonitor.on_event. Inserts into wallet_activity."""
+        """Callback for ChainMonitor.on_event. Resolves token and inserts into wallet_activity."""
         import hashlib
         if event.get('type') != 'ORDER_FILLED':
             self.events_skipped += 1
@@ -291,34 +294,51 @@ class ChainToActivityBridge:
         wallet = event['wallet']
         tx_hash = event.get('tx_hash', '')
 
-        # Build a body compatible with Data API activity format.
-        # Some fields won't be available from raw on-chain data;
-        # wallet_copy.py will need to resolve them via Gamma API.
+        # Determine which token_id to resolve based on role:
+        # taker buys maker's asset, so the relevant token is maker_asset_id
+        token_id = event.get('maker_asset_id') if event['role'] == 'taker' else event.get('taker_asset_id')
+        if not token_id:
+            self.events_skipped += 1
+            return
+
+        # Resolve token_id → slug, conditionId, side
+        info = await self.resolver.resolve(token_id)
+        if info is None:
+            self.events_unresolved += 1
+            return
+
+        # Determine BUY vs SELL:
+        # taker who receives the conditional token is BUYING
+        # maker who placed the order being filled could be either side
+        side = 'BUY' if event['role'] == 'taker' else 'SELL'
+
+        # Calculate price: maker_amount / taker_amount (both in micro-units)
+        maker_amt = event.get('maker_amount', 0)
+        taker_amt = event.get('taker_amount', 0)
+        price = maker_amt / taker_amt if taker_amt > 0 else 0
+
         body = {
             'transactionHash': tx_hash,
             'type': 'TRADE',
-            'side': 'BUY' if event['role'] == 'taker' else 'SELL',
+            'side': side,
             'proxyWallet': wallet,
-            'timestamp': now,  # on-chain doesn't give us exact API timestamp
-            # These will be resolved by wallet_copy from Gamma API:
-            'slug': None,       # needs conditionId → slug lookup
-            'conditionId': None, # needs token_id → conditionId lookup
-            'asset': str(event.get('maker_asset_id', '')),
-            'price': event.get('maker_amount', 0) / max(1, event.get('taker_amount', 1)),
-            'size': event.get('taker_amount', 0) / 1e6,  # USDC has 6 decimals
-            'usdcSize': event.get('taker_amount', 0) / 1e6,
-            'outcomeIndex': None,
-            # Chain-specific metadata:
+            'timestamp': now,
+            'slug': info['slug'],
+            'conditionId': info['conditionId'],
+            'asset': info['asset'],
+            'price': price,
+            'size': taker_amt / 1e6,
+            'usdcSize': maker_amt / 1e6 if side == 'BUY' else taker_amt / 1e6,
+            'outcomeIndex': 0 if info['side'] == 'Up' else 1,
+            # Chain-specific metadata
             '_source': 'chain_monitor',
             '_block_number': event.get('block_number'),
             '_log_index': event.get('log_index'),
-            '_maker': event.get('maker'),
-            '_taker': event.get('taker'),
-            '_fee': event.get('fee', 0),
             '_detected_at': event.get('detected_at'),
+            '_resolved_side': info['side'],
         }
 
-        # Fingerprint: use tx_hash + log_index for uniqueness (better than Data API)
+        # Fingerprint: tx_hash + log_index (unique per event, better than Data API)
         key_source = f"{tx_hash}:{event.get('log_index', 0)}"
         key = hashlib.sha256(key_source.encode()).hexdigest()
 
@@ -329,12 +349,15 @@ class ChainToActivityBridge:
             )
             if cur.rowcount:
                 self.events_bridged += 1
-                self.store.wallet_activity_ready.set()
+                if hasattr(self.store, 'wallet_activity_ready') and self.store.wallet_activity_ready is not None:
+                    self.store.wallet_activity_ready.set()
             else:
-                self.events_skipped += 1  # duplicate (already seen via REST or previous block)
+                self.events_skipped += 1
 
     def status(self):
         return {
             'events_bridged': self.events_bridged,
             'events_skipped': self.events_skipped,
+            'events_unresolved': self.events_unresolved,
+            'resolver_cache': self.resolver.cache_stats(),
         }

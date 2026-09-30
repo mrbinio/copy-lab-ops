@@ -471,7 +471,7 @@ class Worker:
             chain_wss=os.environ.get('ALCHEMY_WSS','')
             if chain_wss:
                 from .wallet_observer import WALLETS as WALLET_LIST
-                bridge=ChainToActivityBridge(self.store)
+                bridge=ChainToActivityBridge(self.store,get_json)
                 monitor=ChainMonitor(chain_wss,WALLET_LIST,bridge.on_chain_event)
                 chain_task=asyncio.create_task(monitor.run())
                 LOG.info('chain monitor started for %d wallets',len(WALLET_LIST))
