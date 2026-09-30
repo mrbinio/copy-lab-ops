@@ -1,9 +1,11 @@
-# Skip review v1 — 2026-09-30
+# Skip review v2 / worker0.6.4 — 2026-09-30
 
-New forward-only skip evidence records original event, source/first-seen/decision timestamps and latency. Price/age rejection records the decision book already fetched; missing books stay null. A separate bounded background task reviews at most five expired skipped BUY signals per cycle against an official closed CLOB market with exact condition/token matching. Failures retry; completed reviews are durable and deduplicated. Report wallet_copy_execution.skip_review exposes latest100 records, total and truncation.
+Observer targets1s per-wallet cycles, measured from cycle start; sequential per-wallet requests, bounded pagination, error backoff2..60s. New persisted activity wakes copy execution via a shared event; fallback scan1s, publication throttled2s when idle. Public indexed API latency remains unbounded: not a promise of1s after chain execution. No direct chain subscription implemented.
 
-Outcome is NOT counterfactual profit: source_side_won records the market outcome, counterfactual_pnl stays null. No assumed execution at source price, no ledger or risk-limit changes. Original source history is not backfilled. Rejected SELLs remain in decision evidence, not the BUY outcome queue.
+For each newly rejected eligible BUY, capture an independent hypothetical5USD all-in ticket using current book, fixed decision ask+2c limit and a subsequent book after>=250ms and<=5s. Require advancing source timestamp, <=5s source age, minimum size and50% depth FOK; fee reserve included. Missing/stale/unfillable data produce unknown PnL, never an invented fill. Pause, invalid/error and >90s source-age rejections do not probe execution. No historical backfill.
 
-This is not complete Mitch replication. Polling remains30s, BUY age10s and price band +/-3c unchanged. Mitch states ~1s copying and >+10c skip; downside threshold and scoring method unspecified. Delayed alternative fills and copied-sale replay are still required to measure economic cost of skipped signals. No UI panel added; data available in existing exports. Publication is not Mac deployment.
+Frozen scoring policy skip-hold-arrival-v1 holds to official resolution, subtracts purchase cost and fee. There is no sale fee because it does not sell. This is NOT the source-SELL copy policy, not portfolio returns and not evidence that a skipped real copy would win. Market outcome and cash-scale hypothetical PnL remain separate. Original copy accounts, risk caps and +/-3c/10s entry guards unchanged; Mitch's downside threshold still unspecified. No real orders.
 
-Validation:16 wallet-copy/skip tests and4 watchdog tests pass. Full141-test run had one timing-sensitive watchdog timeout; isolated retry passed. No live orders.
+Records are durable/deduplicated, background resolution is bounded and does not block new copies, concurrent updates merge under an immediate transaction. Exports include latest100 reviews/total/truncation; dashboard Wallets shows hypothetical results and delay. Legacy outcome-only records remain unknown, without retroactive fill fabrication.
+
+Validate new release through worker0.6.4, observer poll_seconds1 and new skip_review records. Published source is not Mac deployment. No production latency measurement is available from development tests.

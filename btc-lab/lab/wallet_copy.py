@@ -72,6 +72,8 @@ class WalletCopy:
         self.started=store.get('wallet_copy_start',{})['at']
         self.last_settlement=0
         self.review_task=None
+        self.last_publish=0
+        if not hasattr(store,"wallet_activity_ready"):store.wallet_activity_ready=asyncio.Event()
         self.publish('STARTED')
 
     def positions(self,db):return [json.loads(r[0]) for r in db.execute('SELECT body FROM wallet_copy_positions')]
@@ -106,14 +108,14 @@ class WalletCopy:
             trades_truncated=len(trades)>100,reasons=reasons,recent_decisions=recent,
             skip_review=self.skip_summary(),recent_errors=errors,entry_policy='source-band3c-age10s-v1',
             scope='BTC/ETH 5m and 15m only; fixed <=5USD all-in,500USD separate virtual scenarios; first SELL closes full copied lot',
-            limitation='Not identical source sizing/partial exits. Public indexed activity,30s polling,BUY<=10s age and +/-3c from source; SELL<=90s age; FOK at fresh delayed books with50% depth. No profitability guarantee.'))
+            limitation='Not identical source sizing/partial exits. Public indexed activity,1s target polling,BUY<=10s age and +/-3c from source; SELL<=90s age; FOK at fresh delayed books with50% depth. No profitability guarantee.'))
 
     def skip_summary(self):
         with self.store.connect() as db:
             rows=[json.loads(r[0]) for r in db.execute('SELECT body FROM wallet_copy_skip_reviews ORDER BY end DESC LIMIT 100')]
             total=db.execute('SELECT COUNT(*) FROM wallet_copy_skip_reviews').fetchone()[0]
         return dict(spec='skip-outcome-v1',total=total,recent=rows,truncated=total>100,
-            limitation='Outcome diagnostic only; no counterfactual fill or profit. Missing books remain missing.')
+            limitation='Shadow hold-to-settlement PnL only with recorded delayed full fill; otherwise null. Independent tickets, not portfolio or copied SELL returns.')
 
     def reason(self,row,reason,extra=None):
         event=json.loads(row['body']);now=self.clock()
@@ -148,10 +150,15 @@ class WalletCopy:
                 if raw.get('closed') is True and len(winners)==1:
                     if str(event['asset']) not in {str(t['token_id']) for t in tokens}:raise ValueError('REVIEW_TOKEN_MISMATCH')
                     review.update(status='RESOLVED',source_side_won=str(winners[0]['token_id'])==str(event['asset']),official_seen_at=self.clock())
+                self.score_shadow(review)
                 review.pop('error',None)
             except Exception as error:
                 review['error']=str(error)[:200]
             with self.store.connect() as db:
+                db.execute('BEGIN IMMEDIATE')
+                current=json.loads(db.execute('SELECT body FROM wallet_copy_skip_reviews WHERE wallet=? AND event_key=?',(row['wallet'],row['event_key'])).fetchone()[0])
+                if 'shadow' in current:review['shadow']=current['shadow']
+                self.score_shadow(review)
                 db.execute('UPDATE wallet_copy_skip_reviews SET checked=?,body=? WHERE wallet=? AND event_key=?',
                     (1e30 if review['status']=='RESOLVED' else now,json.dumps(review),row['wallet'],row['event_key']))
 
@@ -172,6 +179,57 @@ class WalletCopy:
         return normalize_book(raw,token,self.clock())
 
     async def process(self,row):
+        await self._process(row)
+        # Independent diagnostic; never changes cash, risk or the actual copy decision.
+        with self.store.connect() as db:
+            saved=db.execute('SELECT body FROM wallet_copy_skip_reviews WHERE wallet=? AND event_key=?',
+                (row['wallet'],row['event_key'])).fetchone()
+        if not saved:return
+        review=json.loads(saved[0])
+        if 'shadow' in review:return
+        shadow=dict(policy='skip-hold-arrival-v1',status='UNAVAILABLE',pnl_micro=None,
+            limitation='Independent 5USD hypothetical ticket held to official settlement; not source SELL replication or portfolio returns.')
+        event=review['source_event']
+        try:
+            now=self.clock()
+            if self.paused() or review['reason'] in ('PAUSED','ERROR','SOURCE_TOO_OLD','SOURCE_IDENTITY_MISMATCH','SOURCE_PRICE_INVALID'):raise ValueError('NOT_ELIGIBLE_FOR_SHADOW')
+            if not 0<=now-review['decision_at']<=5:raise ValueError('CAPTURE_TOO_LATE_NO_BACKFILL')
+            raw=await asyncio.to_thread(self.fetch,'https://gamma-api.polymarket.com/markets/slug/'+quote(event['slug'],safe=''))
+            m=market_spec(raw,event,self.clock())
+            decision=await self.book(m['token']);at=self.clock()
+            if not (0<=at-decision['source_ts']<=5 and decision['asks']):raise ValueError('DECISION_STALE_OR_EMPTY')
+            limit=min(Decimal('.999999'),min(Decimal(p) for p,q in decision['asks'])+Decimal('.02'))
+            shadow.update(decision_book=decision,decision_at=at,limit=str(limit))
+            await self.sleep(.25)
+            arrival=await self.book(m['token']);now=self.clock()
+            shadow.update(arrival_book=arrival,arrival_at=now,source_to_arrival_seconds=now-row['source_ts'])
+            if not (.25<=now-at<=5 and 0<=now-arrival['source_ts']<=5 and arrival['source_ts']>decision['source_ts']
+                    and arrival['received_at']>=at+.25 and now<m['end']):raise ValueError('ARRIVAL_INVALID')
+            notional=(Decimal(BUDGET)/1_000_000/(1+Decimal(str(m['fee_rate'])))).quantize(Decimal('.000001'),rounding=ROUND_FLOOR)
+            fill=simulate_fill(arrival['asks'],notional,limit,m['fee_rate'],arrival['min_shares'],arrival['tick'])
+            if fill and fill['cost']+fill['fee']<=BUDGET:
+                shadow.update(status='FILLED_PENDING_SETTLEMENT',fill=fill,fee_rate=m['fee_rate'])
+            else:shadow['status']='NO_FULL_FILL'
+        except Exception as error:shadow['error']=str(error)[:200]
+        # Merge with latest review so background settlement cannot be overwritten.
+        with self.store.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            latest=json.loads(db.execute('SELECT body FROM wallet_copy_skip_reviews WHERE wallet=? AND event_key=?',
+                (row['wallet'],row['event_key'])).fetchone()[0])
+            latest['shadow']=shadow
+            self.score_shadow(latest)
+            db.execute('UPDATE wallet_copy_skip_reviews SET body=? WHERE wallet=? AND event_key=?',
+                (json.dumps(latest),row['wallet'],row['event_key']))
+
+    @staticmethod
+    def score_shadow(review):
+        shadow=review.get('shadow',{})
+        if review.get('status')=='RESOLVED' and shadow.get('status')=='FILLED_PENDING_SETTLEMENT':
+            fill=shadow['fill'];payout=fill['shares'] if review['source_side_won'] else 0
+            shadow.update(status='SETTLED',payout_micro=payout,pnl_micro=payout-fill['cost']-fill['fee'])
+            review['counterfactual_pnl']=shadow['pnl_micro']/1e6
+
+    async def _process(self,row):
         now=self.clock();wallet=row['wallet'];key=row['event_key'];event=json.loads(row['body'])
         with self.store.connect() as db:
             inserted=db.execute('INSERT OR IGNORE INTO wallet_copy_events VALUES (?,?,?,?,?)',(wallet,key,now,'PROCESSING','{}')).rowcount
@@ -264,7 +322,7 @@ class WalletCopy:
 
     async def step(self):
         try:
-            self.publish('CHECKING')
+            # Observer wakes this loop immediately after persisting new activity.
             if self.clock()-self.last_settlement>=30:
                 await self.settle();self.last_settlement=self.clock()
                 if self.review_task is None or self.review_task.done():
@@ -279,7 +337,8 @@ class WalletCopy:
                 rows=[dict(r) for r in db.execute('SELECT a.* FROM wallet_activity a LEFT JOIN wallet_copy_events e ON a.wallet=e.wallet AND a.event_key=e.event_key WHERE e.event_key IS NULL ORDER BY a.source_ts,a.first_seen LIMIT 100')] if has else []
             for row in rows:
                 if row['wallet'] in WALLETS:await self.process(row)
-            self.publish('RUNNING')
+            if rows or self.clock()-self.last_publish>=2:
+                self.publish('RUNNING');self.last_publish=self.clock()
             self.store.set('wallet_copy_error',{})
         except Exception as error:
             # A ledger mismatch blocks further execution until process/operator review.
@@ -288,9 +347,11 @@ class WalletCopy:
 
     async def run(self):
         while True:
+            self.store.wallet_activity_ready.clear()
             try:await self.step()
             except CopyLedgerError:return
             except Exception:
                 await self.sleep(10)
                 continue
-            await self.sleep(2)
+            try:await asyncio.wait_for(self.store.wallet_activity_ready.wait(),timeout=1)
+            except asyncio.TimeoutError:pass

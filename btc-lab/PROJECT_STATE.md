@@ -1,3 +1,7 @@
+# v0.6.4 — fast polling and skipped-buy hypothetical outcomes
+
+See SKIP-REVIEW.md. Target1s polling with error backoff and immediate copy wake-up. Versioned forward shadow buys use delayed fresh books, FOK/depth/fees and official hold-to-settlement scoring; no historical fill invention. Wallets panel shows diagnostics. This is not a1s chain latency guarantee or source-SELL replay. Risk limits, actual copy price guards and history unchanged. Deployment unconfirmed.
+
 # v0.6.3 — 2026-09-30: risk sizing, causal copy guards and installer storage
 
 Baseline entry sizing uses remaining cash/day/week/drawdown capacity capped at5USD all-in, conservative fee reserve and final atomic open recheck. Limits/history unchanged; market minimum can still prevent entry. Dashboard shows capacity and explicit exhausted/below-minimum reasons. Copy accounts KEEP their fixed5USD scenario and limits; split open-position/cash/day/week rejection reasons, expose current_block and last30 error details separately from recent decisions.

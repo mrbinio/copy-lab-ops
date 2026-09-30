@@ -100,6 +100,14 @@ function renderWalletPanel(s){
   add('p',t('Last decision: ','Ostatnia decyzja: ')+reason(a.last_reason));
  }
  for(const e of (cp.recent_decisions||[]).slice(0,6))add('p',stamp(e.ts)+' · '+e.wallet+' · '+reason(e.reason)+(e.error?' · '+e.error:''));
+ add('h3',t('Skipped copies — hypothetical hold result','Pominięte kopie — hipotetyczny wynik do rozliczenia'));
+ const sr=cp.skip_review;
+ add('p',t('Target polling every second; actual delay includes API indexing and network. Shadow tickets are independent, not account profit or source-sale replication.','Cel: odczyt co sekundę; rzeczywiste opóźnienie obejmuje API i sieć. Hipotetyczne zakupy są niezależne — to nie wynik konta ani kopia sprzedaży źródła.'));
+ if(!sr)add('p',t('No skip-review data from this service version.','Ta wersja usługi nie przekazała ocen pominięć.'));
+ else {
+  add('p',t('Recorded skips: ','Zapisane pominięcia: ')+sr.total+(sr.truncated?t(' · latest 100 only',' · tylko ostatnie 100'):''));
+  for(const r of (sr.recent||[]).slice(0,10))add('p',stamp(r.decision_at)+' · '+String(r.source_event?.proxyWallet||'')+' · '+String(r.reason||'')+' · '+t('Detection delay: ','Opóźnienie odczytu: ')+String(r.detection_delay??'—')+'s · '+String(r.shadow?.status||r.status||'')+' · '+(r.counterfactual_pnl==null?t('No calculable PnL','Brak policzalnego wyniku'):money(r.counterfactual_pnl)));
+ }
  const wallets=s.wallet_observer||[];
  if(!wallets.length)add('p',t('No observer data from this backend. Check the service version and report.','Ten backend nie przekazał danych obserwatora. Sprawdź wersję usługi i raport.'));
  for(const w of wallets){
