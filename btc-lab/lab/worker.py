@@ -422,6 +422,7 @@ class Worker:
             errors.append({'stage':stage,'error':type(error).__name__,'detail':error_detail(error)})
             LOG.warning('%s halted: %s',stage,error_detail(error))
             if isinstance(error,LedgerError):
+                self.ledger_ok=False
                 (self.data/'PAUSE').touch()
         # Settlement must keep running when current-market discovery/books fail.
         # A failed reconciliation blocks fresh entries until a successful retry.
@@ -432,7 +433,6 @@ class Worker:
                 self.reconciliation_ok=True
             except LedgerError as e:
                 self.reconciliation_ok=False
-                self.ledger_ok=False
                 failure('reconciliation',e)
             except Exception as e:
                 self.reconciliation_ok=False
