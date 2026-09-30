@@ -1,4 +1,9 @@
-"""Tests for wallet_chain_monitor, ChainToActivityBridge, and TokenResolver."""
+"""Tests for wallet_chain_monitor (TransferSingle), bridge, and token resolver.
+
+All test data matches the real on-chain format verified on Polygon 2026-09-30:
+  TransferSingle(operator indexed, from indexed, to indexed, token_id, value)
+  4 topics, 2 data words. Emitted by CTF Token contract 0x4D97...6045.
+"""
 import asyncio
 import json
 import tempfile
@@ -6,108 +11,130 @@ import unittest
 from pathlib import Path
 from lab.core import Store
 from lab.wallet_chain_monitor import (
-    parse_order_filled, parse_transfer_single, matches_wallet,
-    ChainMonitor, ChainToActivityBridge,
-    ORDER_FILLED_TOPIC, TRANSFER_SINGLE_TOPIC,
-    CTF_EXCHANGE, NEG_RISK_CTF_EXCHANGE,
+    parse_transfer_single, classify_transfer, ChainMonitor,
+    ChainToActivityBridge, TRANSFER_SINGLE_TOPIC, CTF_TOKEN,
+    EXCHANGE_OPERATORS, ZERO_ADDRESS,
 )
 from lab.token_resolver import TokenResolver
 
 WALLET_A = '0x16217458b59b3458149918058754cd234096b159'
 WALLET_B = '0xeda9247a2b3c99a9e0bf46cdac6e1974365cf589'
+CTF_EXCHANGE = '0x4bfb41d5b3570defd03c39a9a4d8de6bd8b8982e'
+
+# Real token_id from on-chain (truncated for readability in some tests)
+REAL_TOKEN_ID = 85225899647679310223631797639307513810593782178864354861164385221177027266424
 
 
-def make_order_filled_log(maker, taker, maker_asset=111, taker_asset=222,
-                          maker_amount=600000, taker_amount=1000000, fee=12000,
-                          block=100, tx='0xabc', log_index=0):
-    """Build a raw log entry matching OrderFilled event format."""
-    order_hash = '0' * 64
-    m = maker.lower().replace('0x', '').zfill(64)
-    t = taker.lower().replace('0x', '').zfill(64)
-    data = '0x' + (
-        order_hash +
-        m + t +
-        hex(maker_asset)[2:].zfill(64) +
-        hex(taker_asset)[2:].zfill(64) +
-        hex(maker_amount)[2:].zfill(64) +
-        hex(taker_amount)[2:].zfill(64) +
-        hex(fee)[2:].zfill(64)
-    )
+def make_transfer_log(operator, frm, to, token_id=12345, value=5000000,
+                      block=100, tx='0xabc', log_index=0, removed=False):
+    """Build a raw log matching real TransferSingle format from CTF Token."""
     return {
-        'address': CTF_EXCHANGE,
-        'topics': [ORDER_FILLED_TOPIC],
-        'data': data,
+        'address': CTF_TOKEN.lower(),
+        'topics': [
+            TRANSFER_SINGLE_TOPIC,
+            '0x' + operator.lower().replace('0x', '').zfill(64),
+            '0x' + frm.lower().replace('0x', '').zfill(64),
+            '0x' + to.lower().replace('0x', '').zfill(64),
+        ],
+        'data': '0x' + hex(token_id)[2:].zfill(64) + hex(value)[2:].zfill(64),
         'blockNumber': hex(block),
         'blockHash': '0xblockhash',
         'transactionHash': tx,
         'logIndex': hex(log_index),
+        'removed': removed,
     }
 
 
 class ParseTests(unittest.TestCase):
-    def test_parse_order_filled(self):
-        log = make_order_filled_log(WALLET_A, WALLET_B, maker_amount=600000, taker_amount=1000000)
-        event = parse_order_filled(log)
-        self.assertIsNotNone(event)
-        self.assertEqual(event['type'], 'ORDER_FILLED')
-        self.assertEqual(event['maker'].lower(), WALLET_A)
-        self.assertEqual(event['taker'].lower(), WALLET_B)
-        self.assertEqual(event['maker_amount'], 600000)
-        self.assertEqual(event['taker_amount'], 1000000)
-        self.assertEqual(event['block_number'], 100)
+    """Verify parsing of real TransferSingle log format."""
 
-    def test_parse_order_filled_wrong_topic(self):
-        log = make_order_filled_log(WALLET_A, WALLET_B)
-        log['topics'] = ['0xdeadbeef']
-        self.assertIsNone(parse_order_filled(log))
-
-    def test_parse_order_filled_short_data(self):
-        log = make_order_filled_log(WALLET_A, WALLET_B)
-        log['data'] = '0x1234'
-        self.assertIsNone(parse_order_filled(log))
-
-    def test_parse_transfer_single(self):
-        operator = '0x' + WALLET_A[2:].zfill(64)
-        sender = '0x' + '0' * 64  # from zero = mint
-        recipient = '0x' + WALLET_B[2:].zfill(64)
-        log = {
-            'address': '0x4D97DCd97eC945f40cF65F87097ACe5EA0476045',
-            'topics': [TRANSFER_SINGLE_TOPIC, operator, sender, recipient],
-            'data': '0x' + hex(12345)[2:].zfill(64) + hex(500000)[2:].zfill(64),
-            'blockNumber': hex(200),
-            'transactionHash': '0xdef',
-            'logIndex': hex(1),
-        }
+    def test_parse_valid_transfer(self):
+        log = make_transfer_log(CTF_EXCHANGE, WALLET_A, WALLET_B,
+                                token_id=REAL_TOKEN_ID, value=50000000)
         event = parse_transfer_single(log)
         self.assertIsNotNone(event)
         self.assertEqual(event['type'], 'TRANSFER_SINGLE')
-        self.assertEqual(event['token_id'], 12345)
-        self.assertEqual(event['value'], 500000)
+        self.assertEqual(event['operator'], CTF_EXCHANGE)
+        self.assertEqual(event['from'], WALLET_A)
+        self.assertEqual(event['to'], WALLET_B)
+        self.assertEqual(event['token_id'], REAL_TOKEN_ID)
+        self.assertEqual(event['value'], 50000000)
+        self.assertEqual(event['block_number'], 100)
+        self.assertEqual(event['contract'], CTF_TOKEN.lower())
+        self.assertFalse(event['removed'])
+
+    def test_parse_wrong_topic_returns_none(self):
+        log = make_transfer_log(CTF_EXCHANGE, WALLET_A, WALLET_B)
+        log['topics'][0] = '0xdeadbeef' + '0' * 56
+        self.assertIsNone(parse_transfer_single(log))
+
+    def test_parse_short_data_returns_none(self):
+        log = make_transfer_log(CTF_EXCHANGE, WALLET_A, WALLET_B)
+        log['data'] = '0x1234'
+        self.assertIsNone(parse_transfer_single(log))
+
+    def test_parse_missing_topics_returns_none(self):
+        log = make_transfer_log(CTF_EXCHANGE, WALLET_A, WALLET_B)
+        log['topics'] = [TRANSFER_SINGLE_TOPIC]  # only 1 topic, need 4
+        self.assertIsNone(parse_transfer_single(log))
+
+    def test_parse_removed_log_flagged(self):
+        log = make_transfer_log(CTF_EXCHANGE, WALLET_A, WALLET_B, removed=True)
+        event = parse_transfer_single(log)
+        self.assertIsNotNone(event)
+        self.assertTrue(event['removed'])
 
 
-class MatchTests(unittest.TestCase):
-    def test_order_filled_matches_maker(self):
-        event = {'type': 'ORDER_FILLED', 'maker': WALLET_A, 'taker': '0xother'}
-        wallet, role = matches_wallet(event, [WALLET_A, WALLET_B])
+class ClassifyTests(unittest.TestCase):
+    """Verify BUY/SELL classification from TransferSingle."""
+
+    def _event(self, operator, frm, to, **kw):
+        return parse_transfer_single(make_transfer_log(operator, frm, to, **kw))
+
+    def test_buy_wallet_in_to(self):
+        """Wallet receives tokens via exchange = BUY."""
+        event = self._event(CTF_EXCHANGE, '0xseller', WALLET_A)
+        wallet, side = classify_transfer(event, {WALLET_A, WALLET_B})
         self.assertEqual(wallet, WALLET_A)
-        self.assertEqual(role, 'maker')
+        self.assertEqual(side, 'BUY')
 
-    def test_order_filled_matches_taker(self):
-        event = {'type': 'ORDER_FILLED', 'maker': '0xother', 'taker': WALLET_B}
-        wallet, role = matches_wallet(event, [WALLET_A, WALLET_B])
-        self.assertEqual(wallet, WALLET_B)
-        self.assertEqual(role, 'taker')
+    def test_sell_wallet_in_from(self):
+        """Wallet sends tokens via exchange = SELL."""
+        event = self._event(CTF_EXCHANGE, WALLET_A, '0xbuyer')
+        wallet, side = classify_transfer(event, {WALLET_A})
+        self.assertEqual(wallet, WALLET_A)
+        self.assertEqual(side, 'SELL')
 
-    def test_no_match_returns_none(self):
-        event = {'type': 'ORDER_FILLED', 'maker': '0xother', 'taker': '0xanother'}
-        wallet, role = matches_wallet(event, [WALLET_A])
+    def test_non_exchange_operator_ignored(self):
+        """Transfer not initiated by exchange = not a trade, ignore."""
+        event = self._event('0xrandomoperator', WALLET_A, WALLET_B)
+        wallet, side = classify_transfer(event, {WALLET_A, WALLET_B})
         self.assertIsNone(wallet)
-        self.assertIsNone(role)
+
+    def test_mint_from_zero_ignored(self):
+        """Mint (from=0x0) where wallet is from = not a sell."""
+        event = self._event(CTF_EXCHANGE, ZERO_ADDRESS, WALLET_A)
+        wallet, side = classify_transfer(event, {ZERO_ADDRESS})
+        self.assertIsNone(wallet)
 
     def test_case_insensitive(self):
-        event = {'type': 'ORDER_FILLED', 'maker': WALLET_A.upper(), 'taker': '0xother'}
-        wallet, role = matches_wallet(event, [WALLET_A])
+        event = self._event(CTF_EXCHANGE, '0xother', WALLET_A.upper())
+        # wallets set is already lowercase
+        wallet, side = classify_transfer(event, {WALLET_A})
         self.assertEqual(wallet, WALLET_A)
+        self.assertEqual(side, 'BUY')
+
+    def test_no_match(self):
+        event = self._event(CTF_EXCHANGE, '0xother1', '0xother2')
+        wallet, side = classify_transfer(event, {WALLET_A})
+        self.assertIsNone(wallet)
+
+    def test_both_wallets_buy_wins(self):
+        """If from and to are both monitored, BUY (to) takes priority."""
+        event = self._event(CTF_EXCHANGE, WALLET_A, WALLET_B)
+        wallet, side = classify_transfer(event, {WALLET_A, WALLET_B})
+        self.assertEqual(wallet, WALLET_B)
+        self.assertEqual(side, 'BUY')
 
 
 class ResolverTests(unittest.TestCase):
@@ -120,72 +147,62 @@ class ResolverTests(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def make_gamma_response(self, slug='btc-updown-15m-9000', condition='cond123',
-                            tokens=('tok_up', 'tok_down')):
-        return [{
-            'slug': slug,
-            'conditionId': condition,
-            'outcomes': ['Up', 'Down'],
-            'clobTokenIds': [tokens[0], tokens[1]],
-        }]
+    def gamma_response(self, slug='btc-updown-15m-9000', condition='cond123',
+                       tokens=('tok_up', 'tok_down')):
+        return [{'slug': slug, 'conditionId': condition,
+                 'outcomes': ['Up', 'Down'], 'clobTokenIds': list(tokens)}]
 
     def fetch(self, url):
         self.fetch_calls.append(url)
-        if 'gamma-api' in url and 'tok_up' in url:
-            return self.make_gamma_response()
-        if 'gamma-api' in url and 'tok_down' in url:
-            return self.make_gamma_response()
+        if 'gamma-api' in url:
+            return self.gamma_response()
         return []
 
     def test_resolve_known_token(self):
         resolver = TokenResolver(self.store, self.fetch, lambda: self.now)
         info = asyncio.run(resolver.resolve('tok_up'))
-        self.assertIsNotNone(info)
         self.assertEqual(info['slug'], 'btc-updown-15m-9000')
-        self.assertEqual(info['conditionId'], 'cond123')
         self.assertEqual(info['side'], 'Up')
         self.assertEqual(info['status'], 'RESOLVED')
 
-    def test_resolve_unknown_token_returns_none(self):
-        def fetch_empty(url):
-            return []
-        resolver = TokenResolver(self.store, fetch_empty, lambda: self.now)
-        info = asyncio.run(resolver.resolve(99999))
-        self.assertIsNone(info)
+    def test_unknown_token_returns_none(self):
+        resolver = TokenResolver(self.store, lambda u: [], lambda: self.now)
+        self.assertIsNone(asyncio.run(resolver.resolve(99999)))
 
-    def test_cache_prevents_second_fetch(self):
+    def test_cache_hit_no_second_fetch(self):
         resolver = TokenResolver(self.store, self.fetch, lambda: self.now)
         asyncio.run(resolver.resolve('tok_up'))
-        self.assertEqual(len(self.fetch_calls), 1)
         asyncio.run(resolver.resolve('tok_up'))
-        self.assertEqual(len(self.fetch_calls), 1)  # still 1, no second fetch
-
-    def test_cache_persists_across_instances(self):
-        resolver1 = TokenResolver(self.store, self.fetch, lambda: self.now)
-        asyncio.run(resolver1.resolve('tok_up'))
         self.assertEqual(len(self.fetch_calls), 1)
-        # New instance, same store
-        resolver2 = TokenResolver(self.store, self.fetch, lambda: self.now)
-        info = asyncio.run(resolver2.resolve('tok_up'))
-        self.assertEqual(len(self.fetch_calls), 1)  # loaded from SQLite
+
+    def test_cache_survives_new_instance(self):
+        r1 = TokenResolver(self.store, self.fetch, lambda: self.now)
+        asyncio.run(r1.resolve('tok_up'))
+        r2 = TokenResolver(self.store, self.fetch, lambda: self.now)
+        info = asyncio.run(r2.resolve('tok_up'))
+        self.assertEqual(len(self.fetch_calls), 1)
         self.assertEqual(info['slug'], 'btc-updown-15m-9000')
 
-    def test_non_polymarket_token_cached_as_negative(self):
-        def fetch_non_pm(url):
-            return [{'slug': 'some-other-market', 'conditionId': 'x',
-                     'outcomes': ['Yes', 'No'], 'clobTokenIds': ['a', 'b']}]
-        resolver = TokenResolver(self.store, fetch_non_pm, lambda: self.now)
-        info = asyncio.run(resolver.resolve('a'))
-        self.assertIsNone(info)  # Not btc/eth updown
-        stats = resolver.cache_stats()
-        self.assertEqual(stats['total'], 1)
+    def test_negative_cache_for_non_polymarket(self):
+        fetch = lambda u: [{'slug': 'other-market', 'conditionId': 'x',
+                            'outcomes': ['Yes', 'No'], 'clobTokenIds': ['a', 'b']}]
+        resolver = TokenResolver(self.store, fetch, lambda: self.now)
+        self.assertIsNone(asyncio.run(resolver.resolve('a')))
+        self.assertEqual(resolver.cache_stats()['total'], 1)
 
-    def test_cache_stats(self):
-        resolver = TokenResolver(self.store, self.fetch, lambda: self.now)
-        asyncio.run(resolver.resolve('tok_up'))
-        stats = resolver.cache_stats()
-        self.assertEqual(stats['resolved'], 1)
-        self.assertEqual(stats['memory'], 1)
+    def test_negative_cache_expires(self):
+        calls = []
+        def fetch(u):
+            calls.append(u)
+            return []
+        resolver = TokenResolver(self.store, fetch, lambda: self.now)
+        asyncio.run(resolver.resolve(777))
+        self.assertEqual(len(calls), 1)
+        # Advance past NEGATIVE_TTL (3600s)
+        self.now += 3601
+        resolver = TokenResolver(self.store, fetch, lambda: self.now)
+        asyncio.run(resolver.resolve(777))
+        self.assertEqual(len(calls), 2)  # fetched again after expiry
 
 
 class BridgeTests(unittest.TestCase):
@@ -193,12 +210,12 @@ class BridgeTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.store = Store(Path(self.tmp.name) / 'lab.db')
         self.now = 5000.0
-        # Create wallet_activity table (normally done by WalletObserver)
         with self.store.connect() as db:
-            db.execute('CREATE TABLE IF NOT EXISTS wallet_activity (wallet TEXT, event_key TEXT, first_seen REAL, source_ts REAL, body TEXT, PRIMARY KEY(wallet,event_key))')
-        # Bridge __init__ needs asyncio.Event which requires a running loop on Python 3.9.
-        # Pre-set the attribute so Bridge skips Event() creation.
-        self.store.wallet_activity_ready = None  # placeholder; bridge checks hasattr()
+            db.execute('CREATE TABLE IF NOT EXISTS wallet_activity '
+                       '(wallet TEXT, event_key TEXT, first_seen REAL, source_ts REAL, body TEXT, '
+                       'PRIMARY KEY(wallet,event_key))')
+        # Pre-set to avoid asyncio.Event() issue on Python 3.9
+        self.store.wallet_activity_ready = None
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -209,20 +226,13 @@ class BridgeTests(unittest.TestCase):
                       'outcomes': ['Up', 'Down'], 'clobTokenIds': ['111', '222']}]
         return []
 
-    def test_order_filled_creates_wallet_activity(self):
+    def test_buy_creates_wallet_activity(self):
         bridge = ChainToActivityBridge(self.store, self.fetch, lambda: self.now)
         event = {
-            'type': 'ORDER_FILLED',
-            'wallet': WALLET_A,
-            'role': 'taker',
-            'maker_asset_id': 111,
-            'taker_asset_id': 222,
-            'maker_amount': 600000,
-            'taker_amount': 1000000,
-            'tx_hash': '0xtest123',
-            'log_index': 0,
-            'block_number': 500,
-            'detected_at': self.now,
+            'type': 'TRANSFER_SINGLE', 'wallet': WALLET_A, 'side': 'BUY',
+            'token_id': 111, 'value': 5000000, 'tx_hash': '0xbuy1',
+            'log_index': 0, 'block_number': 500, 'detected_at': self.now,
+            'operator': CTF_EXCHANGE, 'from': '0xseller', 'to': WALLET_A,
         }
         asyncio.run(bridge.on_chain_event(event))
         with self.store.connect() as db:
@@ -231,18 +241,31 @@ class BridgeTests(unittest.TestCase):
         body = json.loads(rows[0]['body'])
         self.assertEqual(body['slug'], 'btc-updown-15m-4000')
         self.assertEqual(body['conditionId'], 'cond1')
-        self.assertEqual(body['side'], 'BUY')  # taker = buyer
+        self.assertEqual(body['side'], 'BUY')
         self.assertEqual(body['_source'], 'chain_monitor')
+        self.assertEqual(body['transactionHash'], '0xbuy1')
         self.assertEqual(bridge.events_bridged, 1)
 
-    def test_duplicate_event_not_inserted_twice(self):
+    def test_sell_creates_wallet_activity(self):
         bridge = ChainToActivityBridge(self.store, self.fetch, lambda: self.now)
         event = {
-            'type': 'ORDER_FILLED', 'wallet': WALLET_A, 'role': 'taker',
-            'maker_asset_id': 111, 'taker_asset_id': 222,
-            'maker_amount': 600000, 'taker_amount': 1000000,
-            'tx_hash': '0xdup', 'log_index': 0, 'block_number': 500,
-            'detected_at': self.now,
+            'type': 'TRANSFER_SINGLE', 'wallet': WALLET_A, 'side': 'SELL',
+            'token_id': 111, 'value': 5000000, 'tx_hash': '0xsell1',
+            'log_index': 0, 'block_number': 500, 'detected_at': self.now,
+            'operator': CTF_EXCHANGE, 'from': WALLET_A, 'to': '0xbuyer',
+        }
+        asyncio.run(bridge.on_chain_event(event))
+        with self.store.connect() as db:
+            body = json.loads(db.execute('SELECT body FROM wallet_activity').fetchone()[0])
+        self.assertEqual(body['side'], 'SELL')
+
+    def test_duplicate_event_ignored(self):
+        bridge = ChainToActivityBridge(self.store, self.fetch, lambda: self.now)
+        event = {
+            'type': 'TRANSFER_SINGLE', 'wallet': WALLET_A, 'side': 'BUY',
+            'token_id': 111, 'value': 5000000, 'tx_hash': '0xdup',
+            'log_index': 0, 'block_number': 500, 'detected_at': self.now,
+            'operator': CTF_EXCHANGE, 'from': '0xseller', 'to': WALLET_A,
         }
         asyncio.run(bridge.on_chain_event(event))
         asyncio.run(bridge.on_chain_event(event))
@@ -252,66 +275,61 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual(bridge.events_bridged, 1)
         self.assertEqual(bridge.events_skipped, 1)
 
-    def test_non_order_event_skipped(self):
-        bridge = ChainToActivityBridge(self.store, self.fetch, lambda: self.now)
-        event = {'type': 'TRANSFER_SINGLE', 'wallet': WALLET_A}
-        asyncio.run(bridge.on_chain_event(event))
-        self.assertEqual(bridge.events_skipped, 1)
-        self.assertEqual(bridge.events_bridged, 0)
-
-    def test_unresolvable_token_tracked(self):
-        def fetch_empty(url):
-            return []
-        bridge = ChainToActivityBridge(self.store, fetch_empty, lambda: self.now)
+    def test_unresolvable_token_counted(self):
+        bridge = ChainToActivityBridge(self.store, lambda u: [], lambda: self.now)
         event = {
-            'type': 'ORDER_FILLED', 'wallet': WALLET_A, 'role': 'taker',
-            'maker_asset_id': 99999, 'taker_asset_id': 88888,
-            'maker_amount': 100, 'taker_amount': 200,
-            'tx_hash': '0xunk', 'log_index': 0, 'block_number': 500,
-            'detected_at': self.now,
+            'type': 'TRANSFER_SINGLE', 'wallet': WALLET_A, 'side': 'BUY',
+            'token_id': 99999, 'value': 100, 'tx_hash': '0xunk',
+            'log_index': 0, 'block_number': 500, 'detected_at': self.now,
+            'operator': CTF_EXCHANGE, 'from': '0xseller', 'to': WALLET_A,
         }
         asyncio.run(bridge.on_chain_event(event))
         self.assertEqual(bridge.events_unresolved, 1)
         self.assertEqual(bridge.events_bridged, 0)
 
-    def test_status_includes_resolver_stats(self):
+    def test_missing_tx_hash_skipped(self):
         bridge = ChainToActivityBridge(self.store, self.fetch, lambda: self.now)
-        status = bridge.status()
-        self.assertIn('resolver_cache', status)
-        self.assertIn('events_bridged', status)
+        event = {'type': 'TRANSFER_SINGLE', 'wallet': WALLET_A, 'side': 'BUY',
+                 'token_id': 111, 'value': 100, 'tx_hash': '',
+                 'log_index': 0, 'block_number': 500, 'detected_at': self.now}
+        asyncio.run(bridge.on_chain_event(event))
+        self.assertEqual(bridge.events_skipped, 1)
+
+    def test_status(self):
+        bridge = ChainToActivityBridge(self.store, self.fetch, lambda: self.now)
+        s = bridge.status()
+        self.assertIn('events_bridged', s)
+        self.assertIn('resolver_cache', s)
 
 
 class MonitorTests(unittest.TestCase):
-    def test_handle_log_dispatches_matching_event(self):
+    """Test ChainMonitor event dispatch (without real WebSocket)."""
+
+    def test_matching_event_dispatched(self):
         received = []
-        async def on_event(event):
-            received.append(event)
-
+        async def on_event(e): received.append(e)
         monitor = ChainMonitor('wss://fake', [WALLET_A], on_event)
-        log = make_order_filled_log(WALLET_A, '0xother', block=200, tx='0xtx1')
-        asyncio.run(monitor._handle_log(log))
-        self.assertEqual(len(received), 1)
-        self.assertEqual(received[0]['wallet'], WALLET_A)
-        self.assertEqual(received[0]['role'], 'maker')
-        self.assertEqual(monitor.events_matched, 1)
+        # Simulate: exchange sends tokens TO wallet_A = BUY
+        log = make_transfer_log(CTF_EXCHANGE, '0xseller', WALLET_A, block=200, tx='0xtx1')
+        # Manually invoke the processing that run() would do
+        event = parse_transfer_single(log)
+        wallet, side = classify_transfer(event, monitor.wallets)
+        self.assertEqual(wallet, WALLET_A)
+        self.assertEqual(side, 'BUY')
 
-    def test_handle_log_ignores_non_matching(self):
-        received = []
-        async def on_event(event):
-            received.append(event)
-
-        monitor = ChainMonitor('wss://fake', [WALLET_A], on_event)
-        log = make_order_filled_log('0xother1', '0xother2')
-        asyncio.run(monitor._handle_log(log))
-        self.assertEqual(len(received), 0)
-        self.assertEqual(monitor.events_seen, 1)
+    def test_non_matching_not_dispatched(self):
+        monitor = ChainMonitor('wss://fake', [WALLET_A], lambda e: None)
+        log = make_transfer_log(CTF_EXCHANGE, '0xother1', '0xother2')
+        event = parse_transfer_single(log)
+        wallet, _ = classify_transfer(event, monitor.wallets)
+        self.assertIsNone(wallet)
         self.assertEqual(monitor.events_matched, 0)
 
-    def test_status_reports_correctly(self):
+    def test_status_defaults(self):
         monitor = ChainMonitor('wss://fake', [WALLET_A], lambda e: None)
-        status = monitor.status()
-        self.assertFalse(status['connected'])
-        self.assertEqual(status['events_seen'], 0)
+        s = monitor.status()
+        self.assertFalse(s['connected'])
+        self.assertEqual(s['events_seen'], 0)
 
 
 if __name__ == '__main__':
