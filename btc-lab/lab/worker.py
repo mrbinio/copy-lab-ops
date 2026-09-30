@@ -15,6 +15,7 @@ from .core import Store, STRATEGIES, simulate_fill, LedgerError
 from .strategy import choose, features, MODEL_HORIZON
 from .research import train, report
 from .mid_window import exit_intent, simulate_sale
+from .mid_window_v2 import exit_intent_v2
 from .exit_comparison import ExitComparison
 from .complete_set import CompleteSetObserver
 from .feed_watchdog import fresh_messages
@@ -104,6 +105,7 @@ class Worker:
         self.last_decisions={}
         self.last_reconcile=0
         self.reconciliation_ok=False
+        self.ledger_ok=True  # False only on LedgerError; blocks ALL operations including exits
         self.reference_topics={}
         self.references={}
         self.twap_history=deque(maxlen=3600)
@@ -248,25 +250,35 @@ class Worker:
         self.store.audit()
 
     async def paper_exits(self, market, reconciliation_ok):
-        if not reconciliation_ok or not market.get('accepting') or not market.get('fee_verified') or not market.get('rule_supported'):return
+        # P0-1 FIX: Stop-loss exits run independently of network reconciliation failures.
+        # However, a LedgerError (integrity violation) MUST block everything.
+        if not self.ledger_ok:return
+        if not market.get('accepting') or not market.get('fee_verified') or not market.get('rule_supported'):return
         with self.store.connect() as db:
             rows=[dict(r) for r in db.execute("SELECT * FROM positions WHERE status='OPEN' AND market=?",(market['slug'],))]
-        rows=[p for p in rows if p['strategy']==self.entry_strategy or json.loads(p['evidence']).get('risk_policy') in ('btc-stop10-v1','eth-stop10-v1')]
+        rows=[p for p in rows if p['strategy'] in (self.entry_strategy,'mid-window-v2') or json.loads(p['evidence']).get('risk_policy') in ('btc-stop10-v1','eth-stop10-v1','btc-mid-v2-stop10','eth-mid-v2-stop10')]
         for p in rows:
-            intent,reason=exit_intent(p,market,time.time())
+            # Route to the correct exit_intent based on strategy version.
+            if p['strategy'] == 'mid-window-v2':
+                intent,reason=exit_intent_v2(p,market,time.time())
+            else:
+                intent,reason=exit_intent(p,market,time.time())
             if intent:
+                decision_book_ts=market['books'][p['side']]['source_ts']
                 await asyncio.sleep(.25)
                 arrival=await self.books(market)
                 at=time.time();book=arrival[p['side']]
                 reason='EXIT_CUTOFF'
-                protected=json.loads(p['evidence']).get('risk_policy') in ('btc-stop10-v1','eth-stop10-v1')
+                protected=json.loads(p['evidence']).get('risk_policy') in ('btc-stop10-v1','eth-stop10-v1','btc-mid-v2-stop10','eth-mid-v2-stop10')
                 if at<market['start']+900 and (protected or at<market['start']+600):
-                    reason='EXIT_BOOK_STALE'
-                    if -.25<=at-book['source_ts']<=3:
+                    # P0-2 FIX: Require arrival book strictly newer than decision snapshot.
+                    # Filling on the same book violates independent-arrival principle.
+                    reason='EXIT_ARRIVAL_NOT_NEWER'
+                    if book['source_ts']>decision_book_ts and -.25<=at-book['source_ts']<=3:
                         fill=simulate_sale(book,p['shares'],market['fee_rate'],intent['floor'])
                         reason='EXIT_NO_FULL_FILL'
                         if fill:
-                            reason=self.store.close_paper(p['id'],fill,{**intent,'arrival_at':at,'book_source_ts':book['source_ts']},at)
+                            reason=self.store.close_paper(p['id'],fill,{**intent,'arrival_at':at,'book_source_ts':book['source_ts'],'decision_book_ts':decision_book_ts},at)
             self.decision(p['strategy'],market['slug'],reason, intent or {},time.time())
 
     async def cycle(self, entries_allowed=True):
@@ -342,8 +354,9 @@ class Worker:
             if intent:
                 if self.asset=="ETH":
                     intent.update(strategy=strategy,config_version="eth-mid-window-v1",asset="ETH",hypothesis={**intent["hypothesis"],"id":"eth-mid-window-v1","asset":"ETH"})
-                if (self.asset=='BTC' and strategy in ('mid-window-v1','early-v1')) or (self.asset=='ETH' and strategy=='eth-mid-window-v1'):
-                    intent.update(risk_policy=self.asset.lower()+'-stop10-v1',config_version=strategy+'-stop10-v1',
+                if (self.asset=='BTC' and strategy in ('mid-window-v1','early-v1','mid-window-v2')) or (self.asset=='ETH' and strategy=='eth-mid-window-v1'):
+                    risk_policy=self.asset.lower()+('-mid-v2-stop10' if strategy=='mid-window-v2' else '-stop10-v1')
+                    intent.update(risk_policy=risk_policy,config_version=strategy+'-stop10-v1',
                                   stop_loss_net_fraction=.10,entry_all_in_cap_usd=5)
                     if 'hypothesis' in intent:
                         intent['hypothesis']={**intent['hypothesis'],'id':intent['config_version'],
@@ -353,6 +366,8 @@ class Worker:
             else: self.decision(strategy,m['slug'],reason,{},now)
         if signals:
             # New arrival books after explicit latency: never fill on the decision snapshot.
+            # P0-2 FIX: Record decision book timestamps to enforce strictly newer arrival.
+            decision_book_ts={side:b['source_ts'] for side,b in m['books'].items()}
             await asyncio.sleep(.25)
             arrival=await self.books(m)
             for intent in signals:
@@ -360,9 +375,17 @@ class Worker:
                 book=arrival[intent['side']]
                 reason='ARRIVAL_INVALID'
                 reference=self.selected_reference(m)
-                time_valid=(intent['strategy']!=self.entry_strategy or 180<=at-m['start']<=420)
-                book_valid=all(-.25<=at-b['source_ts']<=3 for b in arrival.values())
-                if time_valid and book_valid and not self.is_paused() and at < m['end']-30 and reference and -.25 <= at-reference['source_ts']<=5:
+                # Enforce each strategy's entry window at arrival time, not just decision time.
+                elapsed_at_arrival=at-m['start']
+                if intent['strategy']==self.entry_strategy:
+                    time_valid=180<=elapsed_at_arrival<=420
+                elif intent['strategy']=='mid-window-v2':
+                    time_valid=180<=elapsed_at_arrival<=300
+                else:
+                    time_valid=True  # other strategies have their own window checks in choose()
+                # P0-2 FIX: Arrival book must have a strictly newer source_ts than decision.
+                book_valid=all(-.25<=at-b['source_ts']<=3 and b['source_ts']>decision_book_ts.get(side,0) for side,b in arrival.items())
+                if time_valid and book_valid and not self.is_paused() and at < m['end']-30 and reference and -.25 <= at-reference['source_ts']<=5 and m.get('fee_verified'):
                     capacity=self.store.entry_capacity(intent['strategy'],at)
                     intent.update(sizing_policy='remaining-risk-v1',entry_capacity_micro=capacity)
                     if capacity<=0:
@@ -372,6 +395,8 @@ class Worker:
                     if fill and fill['cost']+fill['fee']>capacity:fill=None
                     reason='CAPACITY_BELOW_MARKET_MINIMUM' if float(budget)<float(book['min_shares'])*float(intent['limit']) else 'NO_FULL_FILL'
                     if fill and intent['strategy']==self.entry_strategy and any(not .50<=float(f['price'])<=.80 for f in fill['fills']):
+                        fill=None;reason='ARRIVAL_PRICE_OUTSIDE_RANGE'
+                    if fill and intent['strategy']=='mid-window-v2' and any(not .50<=float(f['price'])<=.70 for f in fill['fills']):
                         fill=None;reason='ARRIVAL_PRICE_OUTSIDE_RANGE'
                     if fill:
                         if intent['probability'] is not None and intent['probability']-fill['vwap']-fill['fee']/fill['shares']-.03<.02:
@@ -397,6 +422,7 @@ class Worker:
             errors.append({'stage':stage,'error':type(error).__name__,'detail':error_detail(error)})
             LOG.warning('%s halted: %s',stage,error_detail(error))
             if isinstance(error,LedgerError):
+                self.ledger_ok=False
                 (self.data/'PAUSE').touch()
         # Settlement must keep running when current-market discovery/books fail.
         # A failed reconciliation blocks fresh entries until a successful retry.
@@ -405,6 +431,9 @@ class Worker:
             try:
                 await self.reconcile()
                 self.reconciliation_ok=True
+            except LedgerError as e:
+                self.reconciliation_ok=False
+                failure('reconciliation',e)
             except Exception as e:
                 self.reconciliation_ok=False
                 failure('reconciliation',e)

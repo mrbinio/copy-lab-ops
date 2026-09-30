@@ -79,12 +79,15 @@ class TwapCycleTests(unittest.IsolatedAsyncioTestCase):
             w.accept_reference(event(9000),9000.1);w.capture_opening(w.market)
             w.accept_reference(event(now,'70100'),now)
             w.accept_reference(event(now,'69900',SPOT),now)
-            phase={'closed':False}
+            phase={'closed':False,'book_calls':0}
             def fetch(url):
                 if '/markets/slug/' in url:return raw
                 if '/markets/c' in url:return {'condition_id':'c','closed':phase['closed'],'tokens':[{'outcome':'Down','token_id':'d','winner':True}]}
                 token=url.split('token_id=')[1]
-                return {'asset_id':token,'timestamp':str(int(now*1000)),'asks':[{'price':'.90' if token=='u' else '.12','size':'100'}],
+                phase['book_calls']+=1
+                # P0-2: Arrival books (calls 3+) get a slightly newer timestamp.
+                ts_offset=0.2 if phase['book_calls']>2 else 0
+                return {'asset_id':token,'timestamp':str(int((now+ts_offset)*1000)),'asks':[{'price':'.90' if token=='u' else '.12','size':'100'}],
                         'bids':[{'price':'.10','size':'100'}],'min_order_size':'5','tick_size':'.01'}
             with patch('lab.worker.get_json',side_effect=fetch),patch('lab.worker.time.time',side_effect=lambda:now),patch('lab.worker.asyncio.sleep',new_callable=AsyncMock):
                 await w.cycle()

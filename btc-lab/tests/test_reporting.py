@@ -22,7 +22,7 @@ class ReportingTests(unittest.TestCase):
         with patch.object(r.time,'time',return_value=200):result=r.snapshot(self.root)
         self.assertEqual(result['heartbeat_age_seconds'],100)
         self.assertNotIn('DO_NOT_EXPORT',json.dumps(result))
-        self.assertEqual(len(result['accounts']),4)
+        self.assertEqual(len(result['accounts']),5)
         with self.store.connect() as db:self.assertEqual(before,list(db.iterdump()))
 
     def test_public_destination_rejected_before_reading_db(self):
