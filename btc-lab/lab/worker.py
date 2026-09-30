@@ -463,21 +463,18 @@ class Worker:
         wallets=asyncio.create_task(observer.run()) if observer else None
         discovery=asyncio.create_task(WalletDiscovery(self.store,get_json).run()) if self.asset=="BTC" else None
         copier=asyncio.create_task(WalletCopy(self.store,get_json,self.is_paused).run()) if self.asset=="BTC" else None
-        # Hybrid chain monitor: detects trades on-chain (~2-3s), triggers
-        # immediate REST poll to get execution price. No direct wallet_activity insert.
+        # Fast-path chain monitor: detects trades on-chain (~2s), fetches CLOB book
+        # price (~0.5s), inserts into wallet_activity. REST observer is fallback.
         chain_task=None
-        if self.asset=="BTC" and observer:
+        if self.asset=="BTC":
             chain_wss=os.environ.get('ALCHEMY_WSS','')
             if chain_wss:
-                from .wallet_chain_monitor import ChainMonitor
+                from .wallet_chain_monitor import ChainMonitor, ChainBridge
                 from .wallet_observer import WALLETS as WALLET_LIST
-                async def on_detection(wallet,tx_hash,side,token_id,block_number,detected_at):
-                    LOG.info('chain: %s %s block=%d',side,wallet[-8:],block_number)
-                    self.store.record('chain_detection',{'wallet':wallet,'tx':tx_hash,'side':side,'block':block_number,'at':detected_at})
-                    observer.trigger_poll(wallet)
-                monitor=ChainMonitor(chain_wss,WALLET_LIST,on_detection)
+                bridge=ChainBridge(self.store,get_json)
+                monitor=ChainMonitor(chain_wss,WALLET_LIST,bridge.on_event)
                 chain_task=asyncio.create_task(monitor.run())
-                LOG.info('chain monitor started (hybrid: chain detection → REST price)')
+                LOG.info('chain monitor started (fast-path: chain → CLOB book → wallet_activity)')
             else:
                 LOG.info('ALCHEMY_WSS not set; REST-only polling')
         try:

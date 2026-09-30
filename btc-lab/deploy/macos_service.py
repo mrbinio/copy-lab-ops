@@ -28,6 +28,8 @@ def main():
     env.update(LAB_BIND='127.0.0.1',LAB_PORT=str(config['port']),LAB_DATA=str(root/'data'),
                LAB_WEB=str(Path(config['release'])/'lab'),LAB_USERNAME=config['username'],
                LAB_PASSWORD_SHA256=config['password_sha256'])
+    if config.get('alchemy_wss'):
+        env['ALCHEMY_WSS']=config['alchemy_wss']
     stopping=False
     proc=None
     def stop(*args):
