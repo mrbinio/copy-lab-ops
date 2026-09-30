@@ -2,21 +2,19 @@
 
 Flow (~5-10s total):
   1. Chain WebSocket detects TransferSingle (~2s)
-  2. Aggressively poll Data API every 2s until source trade appears with price
+  2. Spawn background task to poll Data API until source trade appears with price
   3. Insert into wallet_activity with confirmed source price
-  4. wallet_copy processes normally — Mitch's ±10c rule works correctly
+  4. wallet_copy processes — Mitch's ±10c rule works correctly
 
-No CLOB book price guessing. No duplicate inserts. Real source price only.
+Non-blocking: each detection spawns a background task. WebSocket reader
+never waits for Data API. Semaphore limits concurrent polls.
 """
 import asyncio
 import hashlib
 import json
 import logging
-import math
-import re
 import time
 import urllib.parse
-import urllib.request
 
 LOG = logging.getLogger('btc-lab.chain')
 
@@ -30,9 +28,9 @@ EXCHANGE_OPERATORS = {
 }
 ZERO_ADDRESS = '0x' + '0' * 40
 
-# How long to poll Data API after chain detection before giving up
-POLL_TIMEOUT = 60  # seconds
-POLL_INTERVAL = 2  # seconds between polls
+POLL_TIMEOUT = 60
+POLL_INTERVAL = 2
+MAX_CONCURRENT_POLLS = 5
 
 
 def parse_transfer_single(log):
@@ -71,28 +69,30 @@ def classify_transfer(event, wallets_lower):
 
 
 class ChainMonitor:
+    """Non-blocking: spawns background task per detection, never blocks WebSocket."""
+
     def __init__(self, wss_url, wallets, on_event, clock=time.time):
         self.wss_url = wss_url
         self.wallets = {w.lower() for w in wallets}
         self.on_event = on_event
         self.clock = clock
-        self.subscription_id = None
-        self.last_block = 0
         self.events_seen = 0
         self.events_matched = 0
         self.errors = 0
         self.connected_at = None
+        self.last_block = 0
+        self._tasks = set()
 
     def status(self):
         return {'mode': 'CHAIN_DETECT_REST_PRICE', 'connected': self.connected_at is not None,
                 'last_block': self.last_block, 'events_seen': self.events_seen,
-                'events_matched': self.events_matched, 'errors': self.errors}
+                'events_matched': self.events_matched, 'errors': self.errors,
+                'pending_polls': len(self._tasks)}
 
     async def run(self):
         import websockets
         while True:
             self.connected_at = None
-            self.subscription_id = None
             try:
                 async with websockets.connect(self.wss_url, open_timeout=10, close_timeout=5,
                                                max_size=5_000_000, ping_interval=20, ping_timeout=10) as ws:
@@ -104,7 +104,6 @@ class ChainMonitor:
                     resp = json.loads(await ws.recv())
                     if 'result' not in resp:
                         await asyncio.sleep(5); continue
-                    self.subscription_id = resp['result']
                     async for message in ws:
                         if isinstance(message, bytes): message = message.decode()
                         try: data = json.loads(message)
@@ -120,23 +119,32 @@ class ChainMonitor:
                         if wallet is None: continue
                         self.events_matched += 1
                         event.update(wallet=wallet, side=side, detected_at=self.clock())
-                        try:
-                            await self.on_event(event)
-                        except Exception as e:
-                            self.errors += 1
-                            LOG.warning('handler: %s', str(e)[:200])
-            except asyncio.CancelledError: raise
+                        # Non-blocking: spawn background task, don't await
+                        task = asyncio.create_task(self._safe_handle(event))
+                        self._tasks.add(task)
+                        task.add_done_callback(self._tasks.discard)
+            except asyncio.CancelledError:
+                for t in self._tasks: t.cancel()
+                raise
             except Exception as e:
                 self.errors += 1; self.connected_at = None
                 LOG.warning('chain disconnected: %s', str(e)[:200])
                 await asyncio.sleep(5)
 
+    async def _safe_handle(self, event):
+        try:
+            await self.on_event(event)
+        except Exception as e:
+            self.errors += 1
+            LOG.warning('handler: %s', str(e)[:200])
+
 
 class ChainBridge:
-    """After chain detection, aggressively poll Data API until source trade
-    appears with confirmed execution price. Then insert into wallet_activity.
+    """After chain detection, poll Data API for confirmed source price.
 
-    This is the only way to get the real source price without a Rust signer.
+    Non-blocking: called as background task by ChainMonitor.
+    Semaphore limits concurrent polls to MAX_CONCURRENT_POLLS.
+    Handles multiple fills per transaction (all matching rows inserted).
     """
 
     def __init__(self, store, fetch, clock=time.time, sleep=asyncio.sleep):
@@ -148,88 +156,90 @@ class ChainBridge:
         self.skipped = 0
         self.timeouts = 0
         self.already_seen = 0
+        self._semaphore = None
 
     async def on_event(self, event):
+        if self._semaphore is None:
+            self._semaphore = asyncio.Semaphore(MAX_CONCURRENT_POLLS)
+        async with self._semaphore:
+            await self._process(event)
+
+    async def _process(self, event):
         wallet = event['wallet']
         tx_hash = event.get('tx_hash', '')
         if not tx_hash:
             self.skipped += 1; return
 
-        # Check if REST observer already has this transaction
+        # Check if already in wallet_activity
         with self.store.connect() as db:
             for pattern in (f'%"transactionHash": "{tx_hash}"%', f'%"transactionHash":"{tx_hash}"%'):
                 if db.execute("SELECT 1 FROM wallet_activity WHERE wallet=? AND body LIKE ?",
                               (wallet, pattern)).fetchone():
                     self.already_seen += 1; return
 
-        # Aggressively poll Data API until the trade appears
+        # Poll Data API until trade appears
         detected_at = event.get('detected_at', self.clock())
         deadline = detected_at + POLL_TIMEOUT
-        source_row = None
+        source_rows = None
 
         while self.clock() < deadline:
             try:
-                rows = await asyncio.to_thread(self._poll_activity, wallet, detected_at)
-                source_row = self._find_tx(rows, tx_hash)
-                if source_row:
+                api_rows = await asyncio.to_thread(self._poll_activity, wallet, detected_at)
+                source_rows = self._find_all_tx(api_rows, tx_hash)
+                if source_rows:
                     break
             except Exception as e:
                 LOG.debug('poll retry: %s', str(e)[:100])
             await self.sleep(POLL_INTERVAL)
 
-        if not source_row:
+        if not source_rows:
             self.timeouts += 1
-            LOG.warning('chain timeout: %s not found in Data API after %ds', tx_hash[:16], POLL_TIMEOUT)
+            LOG.warning('chain timeout: %s not in API after %ds', tx_hash[:16], POLL_TIMEOUT)
             self.store.record('chain_timeout', {'wallet': wallet, 'tx': tx_hash,
                               'side': event['side'], 'block': event.get('block_number')})
             return
 
-        # Insert into wallet_activity with confirmed source price
+        # Insert ALL matching rows (multiple fills in same tx)
         now = self.clock()
-        ts = float(source_row.get('timestamp', now))
-        fields = {k: source_row.get(k) for k in (
-            'transactionHash', 'type', 'asset', 'side', 'size', 'usdcSize',
-            'price', 'timestamp', 'conditionId', 'outcomeIndex')}
-        body_str = json.dumps(fields, sort_keys=True, allow_nan=False)
-        key = hashlib.sha256(body_str.encode()).hexdigest()
+        for source_row in source_rows:
+            ts = float(source_row.get('timestamp', now))
+            fields = {k: source_row.get(k) for k in (
+                'transactionHash', 'type', 'asset', 'side', 'size', 'usdcSize',
+                'price', 'timestamp', 'conditionId', 'outcomeIndex')}
+            body_str = json.dumps(fields, sort_keys=True, allow_nan=False)
+            key = hashlib.sha256(body_str.encode()).hexdigest()
 
-        # Use same key format as REST observer — true dedup
-        source_row['_source'] = 'chain_accelerated'
-        source_row['_detected_at'] = detected_at
-        source_row['_chain_to_api_seconds'] = now - detected_at
+            source_row['_source'] = 'chain_accelerated'
+            source_row['_detected_at'] = detected_at
+            source_row['_chain_to_api_seconds'] = now - detected_at
 
-        with self.store.connect() as db:
-            cur = db.execute('INSERT OR IGNORE INTO wallet_activity VALUES (?,?,?,?,?)',
-                             (wallet, key, now, ts, json.dumps(source_row, allow_nan=False)))
-            if cur.rowcount:
-                self.bridged += 1
-                delay = now - detected_at
-                LOG.info('chain→api: %s %s @ %s (%.1fs)', event['side'], wallet[-8:],
-                         source_row.get('price'), delay)
-                ready = getattr(self.store, 'wallet_activity_ready', None)
-                if ready is not None and hasattr(ready, 'set'):
-                    ready.set()
-            else:
-                self.already_seen += 1  # REST got there first
+            with self.store.connect() as db:
+                cur = db.execute('INSERT OR IGNORE INTO wallet_activity VALUES (?,?,?,?,?)',
+                                 (wallet, key, now, ts, json.dumps(source_row, allow_nan=False)))
+                if cur.rowcount:
+                    self.bridged += 1
+                    LOG.info('chain→api: %s %s @ %s (%.1fs)', event['side'], wallet[-8:],
+                             source_row.get('price'), now - detected_at)
+                    ready = getattr(self.store, 'wallet_activity_ready', None)
+                    if ready is not None and hasattr(ready, 'set'):
+                        ready.set()
+                else:
+                    self.already_seen += 1
 
     def _poll_activity(self, wallet, since):
-        """Poll Data API for recent activity of a wallet."""
         start = max(0, int(since) - 30)
         end = int(self.clock()) + 5
         query = urllib.parse.urlencode(dict(user=wallet, start=start, end=end,
                                             limit=100, sortBy='TIMESTAMP', sortDirection='DESC'))
-        url = f'{DATA_API}/activity?{query}'
-        return self.fetch(url)
+        return self.fetch(f'{DATA_API}/activity?{query}')
 
     @staticmethod
-    def _find_tx(rows, tx_hash):
-        """Find a specific transaction in Data API results."""
+    def _find_all_tx(rows, tx_hash):
+        """Find ALL rows matching txHash (multiple fills in one tx)."""
         if not isinstance(rows, list):
             return None
-        for row in rows:
-            if isinstance(row, dict) and row.get('transactionHash') == tx_hash:
-                return row
-        return None
+        matches = [r for r in rows if isinstance(r, dict) and r.get('transactionHash') == tx_hash]
+        return matches or None
 
     def status(self):
         return {'bridged': self.bridged, 'skipped': self.skipped,

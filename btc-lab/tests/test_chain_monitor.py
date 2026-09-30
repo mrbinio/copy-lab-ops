@@ -14,7 +14,7 @@ import unittest
 from pathlib import Path
 from lab.core import Store
 from lab.wallet_chain_monitor import (
-    parse_transfer_single, classify_transfer, ChainBridge,
+    parse_transfer_single, classify_transfer, ChainMonitor, ChainBridge,
     TRANSFER_SINGLE_TOPIC, CTF_TOKEN, EXCHANGE_OPERATORS, ZERO_ADDRESS,
 )
 from lab.wallet_observer import WALLETS
@@ -208,6 +208,45 @@ class BridgeTests(unittest.TestCase):
         self.assertIn('bridged', s)
         self.assertIn('timeouts', s)
         self.assertIn('already_seen', s)
+
+    def test_multi_fill_same_tx(self):
+        """One tx with two fills → both inserted."""
+        fill1 = self._api_row(tx='0xmulti', price=0.55)
+        fill2 = dict(fill1, asset='222', side='SELL', price=0.45, outcomeIndex=1)
+        def fetch(url):
+            if 'activity' in url: return [fill1, fill2]
+            return []
+        bridge = ChainBridge(self.store, fetch, lambda: self.now, sleep=asyncio.sleep)
+        asyncio.run(bridge.on_event(self._event(tx='0xmulti')))
+        with self.store.connect() as db:
+            count = db.execute('SELECT COUNT(*) FROM wallet_activity').fetchone()[0]
+        self.assertEqual(count, 2)
+        self.assertEqual(bridge.bridged, 2)
+
+
+class MonitorNonBlockingTests(unittest.IsolatedAsyncioTestCase):
+    async def test_detection_does_not_block_websocket(self):
+        """on_event is spawned as task, not awaited inline."""
+        events_received = []
+        slow_calls = []
+        async def slow_handler(event):
+            slow_calls.append(event['tx_hash'])
+            await asyncio.sleep(0.1)  # simulate slow poll
+            events_received.append(event['tx_hash'])
+        monitor = ChainMonitor('wss://fake', [WALLET_A], slow_handler)
+        # Simulate two rapid detections
+        e1 = {'wallet': WALLET_A, 'side': 'BUY', 'tx_hash': '0x1',
+               'token_id': 1, 'value': 100, 'block_number': 1, 'detected_at': 1000}
+        e2 = {'wallet': WALLET_A, 'side': 'BUY', 'tx_hash': '0x2',
+               'token_id': 2, 'value': 200, 'block_number': 1, 'detected_at': 1000}
+        # Both should be spawned without waiting
+        t1 = asyncio.create_task(monitor._safe_handle(e1))
+        t2 = asyncio.create_task(monitor._safe_handle(e2))
+        # Both started before either finished
+        await asyncio.sleep(0.01)
+        self.assertEqual(len(slow_calls), 2)  # both entered handler
+        await asyncio.gather(t1, t2)
+        self.assertEqual(sorted(events_received), ['0x1', '0x2'])
 
 
 if __name__ == '__main__':
