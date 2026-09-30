@@ -17,17 +17,17 @@ class StopTests(unittest.IsolatedAsyncioTestCase):
                 fill=simulate_fill([['.60','100']],'4.67','.60','.07','5','.01')
                 self.assertLessEqual(fill['cost']+fill['fee'],5000000)
                 store.open(strategy,slug,'Up',fill,{'risk_policy':asset.lower()+'-stop10-v1'},start+200)
-                def book(bid,size='100'):
-                    return {'source_ts':now,'bids':[[bid,size]],'asks':[['.60','100']],'min_shares':'5','tick':'.01'}
+                def book(bid,size='100',now_ts=None):
+                    return {'source_ts':now_ts or now,'bids':[[bid,size]],'asks':[['.60','100']],'min_shares':'5','tick':'.01'}
                 m={'slug':slug,'start':start,'accepting':True,'fee_verified':True,'rule_supported':True,'fee_rate':.07,'books':{'Up':book('.54')}}
                 with store.connect() as db:p=dict(db.execute('SELECT * FROM positions').fetchone())
                 self.assertEqual(exit_intent(p,m,now)[1],'EXIT_STOP')
                 with patch('lab.worker.time.time',side_effect=lambda:now),patch('lab.worker.asyncio.sleep',new_callable=AsyncMock):
-                    worker.books=AsyncMock(return_value={'Up':book('.53')})
+                    worker.books=AsyncMock(return_value={'Up':book('.53',now_ts=now+.1)})
                     await worker.paper_exits(m,True)
                     self.assertEqual(store.snapshot()['trades'][0]['status'],'OPEN')
                     now+=2;m['books']['Up']=book('.53')
-                    worker.books=AsyncMock(return_value={'Up':book('.53')})
+                    worker.books=AsyncMock(return_value={'Up':book('.53',now_ts=now+.1)})
                     await worker.paper_exits(m,True)
                 tr=store.snapshot()['trades'][0]
                 self.assertEqual(tr['status'],'CLOSED');self.assertGreater(tr['exit_fee'],0)

@@ -40,6 +40,9 @@ def choose(strategy, market, reference, model, now):
     if strategy == 'mid-window-v1':
         from .mid_window import entry
         return entry(market,reference,market.get('causal_history',[]),now)
+    if strategy == 'mid-window-v2':
+        from .mid_window_v2 import entry as entry_v2
+        return entry_v2(market,reference,market.get('causal_history',[]),now)
     if strategy == 'late-v1':
         if not 30 < remaining <= 300: return None,"OUTSIDE_ENTRY_WINDOW"
         if abs(current-opening) < 50: return None,"DISTANCE_TOO_SMALL"

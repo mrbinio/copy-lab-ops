@@ -34,7 +34,7 @@ class ExecutionTests(unittest.TestCase):
         self.assertEqual(t['status'],'CLOSED');self.assertGreater(t['exit_fee'],0)
         self.assertEqual(t['pnl_micro'],t['payout']-t['cost']-t['fee']-t['exit_fee'])
         self.assertAlmostEqual(s['cash_usd'],100+s['net_pnl_usd'])
-        self.assertEqual(self.store.snapshot()['accounts'][:4],baseline)
+        self.assertEqual(self.store.snapshot()['accounts'][:5],baseline)
         self.assertEqual(self.store.snapshot()['accounts'][-1]['initial'],100)
     def test_minimum_not_rounded_up(self):
         self.step();self.tick(1182,minimum=5);self.step()

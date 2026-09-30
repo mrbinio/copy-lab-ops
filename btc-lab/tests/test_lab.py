@@ -162,7 +162,7 @@ class AuthTests(unittest.TestCase):
                     report=json.load(r)
                     self.assertEqual(report['schema'],'btc-daily-report-v2')
                     self.assertEqual(report['period']['date'],'2026-01-01')
-                    self.assertEqual(len(report['daily']),4)
+                    self.assertEqual(len(report['daily']),5)
                 with self.assertRaises(urllib.error.HTTPError) as invalid:
                     urllib.request.urlopen(urllib.request.Request(url+'/api/report?date=invalid',headers={'Authorization':auth}))
                 self.assertEqual(invalid.exception.code,400)
@@ -212,7 +212,10 @@ class CycleTests(unittest.IsolatedAsyncioTestCase):
                 token=url.split('token_id=')[1]
                 phase['book_calls']+=1
                 price=('.90' if phase['book_calls']<=2 else phase['arrival']) if token=='u' else '.12'
-                return {'asset_id':token,'timestamp':str(int(now*1000)),'asks':[{'price':price,'size':'100'}],
+                # P0-2: Arrival books (calls 3+) get a slightly newer timestamp so
+                # the independent-arrival check passes.
+                ts_offset=0.2 if phase['book_calls']>2 else 0
+                return {'asset_id':token,'timestamp':str(int((now+ts_offset)*1000)),'asks':[{'price':price,'size':'100'}],
                         'bids':[{'price':'.10','size':'100'}],'min_order_size':'5','tick_size':'.01'}
             with patch('lab.worker.get_json',side_effect=fetch),patch('lab.worker.time.time',side_effect=lambda:now),patch('lab.worker.asyncio.sleep',new_callable=AsyncMock):
                 phase['arrival']='.93'

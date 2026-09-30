@@ -61,7 +61,7 @@ class EthDataTests(unittest.TestCase):
             with self.assertRaises(ValueError):eth.open('eth-mid-window-v1','btc-updown-15m-1800','Up',f,{},2000)
             with self.assertRaises(ValueError):btc.open('eth-mid-window-v1','eth-updown-15m-900','Up',f,{},1100)
             eth=Store(root/'eth/lab.sqlite',asset='ETH');eth.audit();btc.audit()
-            self.assertEqual(len(eth.snapshot()['accounts']),1);self.assertEqual(len(btc.snapshot()['accounts']),4)
+            self.assertEqual(len(eth.snapshot()['accounts']),1);self.assertEqual(len(btc.snapshot()['accounts']),5)
             self.assertFalse(btc.snapshot()['trades'])
             report=build_report(eth,'2026-09-25');self.assertEqual(report['asset'],'ETH')
             self.assertEqual(report['experiment']['id'],'eth-mid-window-v1')
