@@ -77,29 +77,5 @@ def entry(m, reference, history, now):
 
 
 def exit_intent_v2(position, market, now):
-    """Exit signal for mid-window-v2. Same structure as v1 exit_intent, different thresholds."""
-    from .mid_window import simulate_sale
-    elapsed = now - market['start']
-    protected = json.loads(position.get('evidence', '{}')).get('risk_policy') in (
-        'btc-stop10-v1', 'eth-stop10-v1', 'btc-mid-v2-stop10', 'eth-mid-v2-stop10')
-    if elapsed >= 900 or (elapsed >= 600 and not protected):
-        return None, 'HOLD_TO_OFFICIAL_RESOLUTION'
-    book = market['books'][position['side']]
-    if not -0.25 <= now - book['source_ts'] <= 3:
-        return None, 'EXIT_BOOK_STALE'
-    fill = simulate_sale(book, position['shares'], market['fee_rate'])
-    if not fill:
-        return None, 'EXIT_NO_FULL_FILL'
-    basis = position['cost'] + position['fee']
-    net = fill['proceeds'] - fill['fee'] - basis
-    # v2: TP 15%, SL 10% — breakeven WR ≈ 40%
-    stop = 0.10 if protected else 0.10  # both paths use 10% in v2
-    tp = 0.15
-    mid = position.get('strategy', '') in ('mid-window-v2', 'eth-mid-window-v2')
-    why = ('EXIT_STOP' if net <= -stop * basis
-           else 'EXIT_DEADLINE' if mid and elapsed >= 590
-           else 'EXIT_PROFIT' if mid and net >= tp * basis
-           else None)
-    if not why:
-        return None, 'EXIT_HOLD'
-    return {'reason': why, 'floor': fill['fills'][-1]['price'], 'decision_at': now}, why
+    """v2: hold to official resolution, like Mitch. No stop, no TP, no early exit."""
+    return None, 'HOLD_TO_OFFICIAL_RESOLUTION'
