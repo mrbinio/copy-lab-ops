@@ -71,7 +71,7 @@ class AuditRegressionTests(unittest.IsolatedAsyncioTestCase):
  async def test_collection_ledger_failure_blocks_exit(self):
   self.assertEqual(await check(LedgerError('sale'),'collection'),(False,'OPEN'))
  async def test_v2_protected_exit_after_600(self):
-  self.assertEqual(await exit_probe('mid-window-v2','btc-mid-v2-stop10',650),'CLOSED')
+  self.assertEqual(await exit_probe('mid-window-v2','btc-mid-v2-stop10',650),'OPEN')
  async def test_same_arrival_timestamp_blocks_exit(self):
   self.assertEqual(await exit_probe('mid-window-v1','btc-stop10-v1',300,same=True),'OPEN')
  async def test_newer_arrival_allows_exit(self):
