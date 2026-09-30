@@ -106,9 +106,9 @@ class WalletCopy:
         self.store.set(KEY,dict(spec='wallet-signal-copy-v1',status=status,error=error,updated_at=now,started_at=self.started,
             mode='PAPER ONLY',accounts=accounts,recent_trades=[public_trade(t) for t in sorted(trades,key=lambda t:t['opened'],reverse=True)[:100]],
             trades_truncated=len(trades)>100,reasons=reasons,recent_decisions=recent,
-            skip_review=self.skip_summary(),recent_errors=errors,entry_policy='source-band3c-age10s-v1',
+            skip_review=self.skip_summary(),recent_errors=errors,entry_policy='source-band10c-age60s-v2',
             scope='BTC/ETH 5m and 15m only; fixed <=5USD all-in,500USD separate virtual scenarios; first SELL closes full copied lot',
-            limitation='Not identical source sizing/partial exits. Public indexed activity,1s target polling,BUY<=10s age and +/-3c from source; SELL<=90s age; FOK at fresh delayed books with50% depth. No profitability guarantee.'))
+            limitation='Not identical source sizing/partial exits. Public indexed activity,1s target polling,BUY<=60s age and +/-10c from source; SELL<=90s age; FOK at fresh delayed books with50% depth. No profitability guarantee.'))
 
     def skip_summary(self):
         with self.store.connect() as db:
@@ -121,7 +121,7 @@ class WalletCopy:
         event=json.loads(row['body']);now=self.clock()
         evidence=dict(source_event=event,source_timestamp=row['source_ts'],first_seen=row['first_seen'],
             decision_at=now,detection_delay=row['first_seen']-row['source_ts'],decision_delay=now-row['source_ts'],
-            policy='source-band3c-age10s-v1',reason=reason,decision_book=None)
+            policy='source-band10c-age60s-v2',reason=reason,decision_book=None)
         evidence.update(extra or {})
         with self.store.connect() as db:
             db.execute('UPDATE wallet_copy_events SET reason=?,body=? WHERE wallet=? AND event_key=?',
@@ -253,11 +253,11 @@ class WalletCopy:
             if kind=='BUY':
                 source_price=Decimal(str(event.get('price',0)))
                 if not source_price.is_finite() or not 0<source_price<1:self.reason(row,'SOURCE_PRICE_INVALID');return
-                if at-row['source_ts']>10:self.reason(row,'COPY_BUY_TOO_LATE',{'decision_book':decision});return
+                if at-row['source_ts']>60:self.reason(row,'COPY_BUY_TOO_LATE',{'decision_book':decision});return
                 if not decision['asks']:self.reason(row,'NO_ASK');return
                 ask=min(Decimal(p) for p,q in decision['asks'])
-                if abs(ask-source_price)>Decimal('.03'):self.reason(row,'SOURCE_PRICE_MOVED',{'decision_book':decision});return
-                limit=min(Decimal('.999999'),ask+Decimal('.02'),source_price+Decimal('.03'))
+                if ask-source_price>Decimal('.10') or source_price-ask>Decimal('.10'):self.reason(row,'SOURCE_PRICE_MOVED',{'decision_book':decision});return
+                limit=min(Decimal('.999999'),ask+Decimal('.02'),source_price+Decimal('.10'))
             else:
                 if not decision['bids']:self.reason(row,'NO_BID');return
                 limit=max(Decimal(decision['tick']),max(Decimal(p) for p,q in decision['bids'])-Decimal('.02'))
@@ -267,9 +267,9 @@ class WalletCopy:
             evidence=dict(source_event=event,source_timestamp=row['source_ts'],first_seen=row['first_seen'],decision_at=at,arrival_at=now,
                 detection_delay=row['first_seen']-row['source_ts'],copy_delay=now-row['source_ts'],decision_book=decision,arrival_book=arrival,market_metadata=raw)
             if kind=='BUY':
-                if now-row['source_ts']>10:self.reason(row,'COPY_BUY_TOO_LATE',evidence);return
-                if not arrival['asks'] or abs(min(Decimal(p) for p,q in arrival['asks'])-source_price)>Decimal('.03'):self.reason(row,'SOURCE_PRICE_MOVED',evidence);return
-                evidence['copy_policy']='source-band3c-age10s-v1'
+                if now-row['source_ts']>60:self.reason(row,'COPY_BUY_TOO_LATE',evidence);return
+                if not arrival['asks'] or (lambda a:a-source_price>Decimal('.10') or source_price-a>Decimal('.10'))(min(Decimal(p) for p,q in arrival['asks'])):self.reason(row,'SOURCE_PRICE_MOVED',evidence);return
+                evidence['copy_policy']='source-band10c-age60s-v2'
                 notional=(Decimal(BUDGET)/1_000_000/(1+Decimal(str(m['fee_rate'])))).quantize(Decimal('.000001'),rounding=ROUND_FLOOR)
                 fill=simulate_fill(arrival['asks'],notional,limit,m['fee_rate'],arrival['min_shares'],arrival['tick'])
                 if not fill or fill['cost']+fill['fee']>BUDGET:self.reason(row,'BUY_NO_FULL_FILL_OR_MINIMUM',evidence);return
