@@ -463,8 +463,9 @@ class Worker:
         wallets=asyncio.create_task(observer.run()) if observer else None
         discovery=asyncio.create_task(WalletDiscovery(self.store,get_json).run()) if self.asset=="BTC" else None
         copier=asyncio.create_task(WalletCopy(self.store,get_json,self.is_paused).run()) if self.asset=="BTC" else None
-        # Fast-path chain monitor: detects trades on-chain (~2s), fetches CLOB book
-        # price (~0.5s), inserts into wallet_activity. REST observer is fallback.
+        # Chain monitor: detects trades on-chain (~2s), then aggressively polls
+        # Data API until source trade with confirmed price appears (~5-10s total).
+        # Uses same key format as REST observer — true dedup, no duplicates.
         chain_task=None
         if self.asset=="BTC":
             chain_wss=os.environ.get('ALCHEMY_WSS','')
@@ -474,7 +475,7 @@ class Worker:
                 bridge=ChainBridge(self.store,get_json)
                 monitor=ChainMonitor(chain_wss,WALLET_LIST,bridge.on_event)
                 chain_task=asyncio.create_task(monitor.run())
-                LOG.info('chain monitor started (fast-path: chain → CLOB book → wallet_activity)')
+                LOG.info('chain monitor: detect on-chain → poll Data API for price')
             else:
                 LOG.info('ALCHEMY_WSS not set; REST-only polling')
         try:
