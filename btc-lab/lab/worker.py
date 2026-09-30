@@ -105,6 +105,7 @@ class Worker:
         self.last_decisions={}
         self.last_reconcile=0
         self.reconciliation_ok=False
+        self.ledger_ok=True  # False only on LedgerError; blocks ALL operations including exits
         self.reference_topics={}
         self.references={}
         self.twap_history=deque(maxlen=3600)
@@ -249,9 +250,9 @@ class Worker:
         self.store.audit()
 
     async def paper_exits(self, market, reconciliation_ok):
-        # P0-1 FIX: Stop-loss exits must run independently of reconciliation status.
-        # Only block entries on reconciliation failure, never protective exits.
-        # A network error in reconcile() must not disable stop-loss protection.
+        # P0-1 FIX: Stop-loss exits run independently of network reconciliation failures.
+        # However, a LedgerError (integrity violation) MUST block everything.
+        if not self.ledger_ok:return
         if not market.get('accepting') or not market.get('fee_verified') or not market.get('rule_supported'):return
         with self.store.connect() as db:
             rows=[dict(r) for r in db.execute("SELECT * FROM positions WHERE status='OPEN' AND market=?",(market['slug'],))]
@@ -268,7 +269,7 @@ class Worker:
                 arrival=await self.books(market)
                 at=time.time();book=arrival[p['side']]
                 reason='EXIT_CUTOFF'
-                protected=json.loads(p['evidence']).get('risk_policy') in ('btc-stop10-v1','eth-stop10-v1')
+                protected=json.loads(p['evidence']).get('risk_policy') in ('btc-stop10-v1','eth-stop10-v1','btc-mid-v2-stop10','eth-mid-v2-stop10')
                 if at<market['start']+900 and (protected or at<market['start']+600):
                     # P0-2 FIX: Require arrival book strictly newer than decision snapshot.
                     # Filling on the same book violates independent-arrival principle.
@@ -374,7 +375,14 @@ class Worker:
                 book=arrival[intent['side']]
                 reason='ARRIVAL_INVALID'
                 reference=self.selected_reference(m)
-                time_valid=(intent['strategy']!=self.entry_strategy or 180<=at-m['start']<=420)
+                # Enforce each strategy's entry window at arrival time, not just decision time.
+                elapsed_at_arrival=at-m['start']
+                if intent['strategy']==self.entry_strategy:
+                    time_valid=180<=elapsed_at_arrival<=420
+                elif intent['strategy']=='mid-window-v2':
+                    time_valid=180<=elapsed_at_arrival<=300
+                else:
+                    time_valid=True  # other strategies have their own window checks in choose()
                 # P0-2 FIX: Arrival book must have a strictly newer source_ts than decision.
                 book_valid=all(-.25<=at-b['source_ts']<=3 and b['source_ts']>decision_book_ts.get(side,0) for side,b in arrival.items())
                 if time_valid and book_valid and not self.is_paused() and at < m['end']-30 and reference and -.25 <= at-reference['source_ts']<=5 and m.get('fee_verified'):
@@ -422,6 +430,10 @@ class Worker:
             try:
                 await self.reconcile()
                 self.reconciliation_ok=True
+            except LedgerError as e:
+                self.reconciliation_ok=False
+                self.ledger_ok=False
+                failure('reconciliation',e)
             except Exception as e:
                 self.reconciliation_ok=False
                 failure('reconciliation',e)
