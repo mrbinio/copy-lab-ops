@@ -1,3 +1,14 @@
+# v0.6.3 — 2026-09-30: risk sizing, causal copy guards and installer storage
+
+Baseline entry sizing uses remaining cash/day/week/drawdown capacity capped at5USD all-in, conservative fee reserve and final atomic open recheck. Limits/history unchanged; market minimum can still prevent entry. Dashboard shows capacity and explicit exhausted/below-minimum reasons. Copy accounts KEEP their fixed5USD scenario and limits; split open-position/cash/day/week rejection reasons, expose current_block and last30 error details separately from recent decisions.
+
+New copy BUY policy source-band3c-age10s-v1 rejects >10s old signals and asks >3c either direction from original fill at decision and arrival; buy limit cannot exceed source+3c. SELL policy unchanged, no price-band filter impeding exit. Experimental safety thresholds selected before new forward data, not fitted profit optima. Polling remains30s, so eligible copies may be sparse. Old results remain unchanged; no performance promise.
+
+Installer cleanup preserves configured and launch-agent releases plus newest2, removes only recognized installer directories. Backups: preserve newest2 verified quick_check plus ledger-schema backups per asset, then remove older matching backups; skip symlinks/unknown files/journal-bearing backups, never data or credentials. Free-space check before stopping old service. New backups use partial files, integrity check and atomic rename; failure removes own incomplete file. Cleanup occurs during installation, not daily background work. Previously failed journal-bearing files are left alone. Full Mac installer not executed here.
+
+Validation:125 Python tests including cleanup protection, low-space preflight, risk-capacity fit and copy source-price/age/arrival guards;13 JS cases and syntax passed. Publication and Mac deployment separate; require worker0.6.3 and fresh report. No live trading or raised limits.
+
+---
 # v0.6.2 — 2026-09-29: ETH 3–7 stop policy
 
 New ETH mid-window entries carry eth-stop10-v1 and config_version eth-mid-window-v1-stop10-v1. Same 10% net stop threshold as new BTC positions, fees included, <=5USD acquisition including fee. Keep entry180–420s and50–80c, existing signal filters, +10% take profit and deadline590s. Protective exits/retries allowed until900s, including after minute10; full-sale delayed FOK may fail and loss can exceed threshold. Legacy positions retain prior policy, no historical resets. BTC and wallet copies unchanged; this does not add stop-loss to wallet copies or Value Surface. Not an optimized/proven profitable ETH strategy.

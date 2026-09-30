@@ -126,6 +126,17 @@ class Store:
         with self.connect() as db:
             db.execute("INSERT INTO decisions(ts,strategy,market,reason,body) VALUES (?,?,?,?,?)", (ts,strategy,market,reason,json.dumps(body,allow_nan=False)))
 
+    def entry_capacity(self, strategy, ts):
+        """Micro-USD worst-case capacity; final open() rechecks atomically."""
+        with self.connect() as db:
+            a=db.execute('SELECT * FROM accounts WHERE strategy=?',(strategy,)).fetchone()
+            if db.execute("SELECT 1 FROM positions WHERE strategy=? AND status IN ('OPEN','RESOLVED')",(strategy,)).fetchone():return 0
+            losses=[-db.execute('SELECT COALESCE(SUM(MIN(0,payout-cost-fee-exit_fee)),0) FROM positions WHERE strategy=? AND resolved>=?',(strategy,ts-h)).fetchone()[0] for h in (86400,604800)]
+            equity=peak=a['initial']
+            for r in db.execute("SELECT payout-cost-fee-exit_fee FROM positions WHERE strategy=? AND status IN ('REDEEMED','CLOSED') ORDER BY redeemed",(strategy,)):
+                equity+=r[0];peak=max(peak,equity)
+            return max(0,int(min(5_000_000,a['cash'],a['initial']*.011,a['initial']*.03-losses[0],a['initial']*.06-losses[1],peak*.08-(peak-equity))))
+
     def open(self, strategy, market, side, fill, evidence, ts):
         if strategy not in self.strategies or side not in ("Up","Down"):
             raise ValueError("invalid strategy/side")
@@ -232,6 +243,7 @@ class Store:
                 rows=db.execute('SELECT payout,cost,fee,exit_fee,resolved FROM positions WHERE strategy=? AND payout IS NOT NULL',(a['id'],)).fetchall()
                 a['losses_7d']=sum(max(0,r['cost']+r['fee']+r['exit_fee']-r['payout']) for r in rows if now-7*86400<=r['resolved']<=now)/1e6
                 a['losses_24h']=sum(max(0,r['cost']+r['fee']+r['exit_fee']-r['payout']) for r in rows if now-86400<=r['resolved']<=now)/1e6
+                a['entry_capacity_usd']=self.entry_capacity(a['id'],now)/1e6
                 a['week_limit']=a['initial']*.06
                 a['day_limit']=a['initial']*.03
                 a['today_pnl']=sum((r['payout']-r['cost']-r['fee']-r['exit_fee']) for r in rows if datetime.fromtimestamp(r['resolved'],ZoneInfo('Europe/Stockholm')).date()==datetime.fromtimestamp(now,ZoneInfo('Europe/Stockholm')).date())/1e6

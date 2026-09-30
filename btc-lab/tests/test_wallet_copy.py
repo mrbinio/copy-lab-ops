@@ -34,7 +34,7 @@ class CopyTests(unittest.TestCase):
     def row(self,key='one',side='BUY',wallet=WALLETS[0]):
         return {'wallet':wallet,'event_key':key,'source_ts':self.now-1,'first_seen':self.now,
             'body':json.dumps(dict(proxyWallet=wallet,type='TRADE',side=side,slug=self.slug,conditionId='condition',asset='1',timestamp=self.now-1,
-                transactionHash=key,price=.01,size=100))}
+                transactionHash=key,price=.59,size=100))}
     def process(self,row):asyncio.run(self.engine.process(row));self.engine.publish('TEST')
     def state(self):return self.store.get(KEY,{})
     def buy(self):self.now=1102;row=self.row();self.process(row);return row
@@ -42,7 +42,7 @@ class CopyTests(unittest.TestCase):
         with self.store.connect() as db:return db.execute('SELECT reason FROM wallet_copy_events ORDER BY ts DESC,rowid DESC LIMIT 1').fetchone()[0]
     def test_forward_buy_uses_current_ask_not_source_price_and_sale_both_fees(self):
         self.buy();t=self.state()['recent_trades'][0]
-        self.assertEqual(t['entry_fill']['vwap'],.6);self.assertEqual(t['source_price'],.01)
+        self.assertEqual(t['entry_fill']['vwap'],.6);self.assertEqual(t['source_price'],.59)
         self.assertLessEqual(t['cost']+t['fee'],5_000_000);self.assertGreater(t['copy_delay'],1)
         self.now+=2;self.bid='.70';self.ask='.71';self.process(self.row('sell','SELL'))
         t=self.state()['recent_trades'][0];a=self.state()['accounts'][0]
@@ -76,7 +76,7 @@ class CopyTests(unittest.TestCase):
         self.pause=False;row=self.row('wrong');body=json.loads(row['body']);body['asset']='9';row['body']=json.dumps(body);self.process(row);self.assertEqual(self.reason(),'ERROR')
         self.raw['feeSchedule']={};self.process(self.row('fee'));self.assertEqual(self.reason(),'ERROR');self.assertEqual(self.book_calls,0)
     def test_separate_wallets_and_no_additional_position(self):
-        self.buy();self.now+=2;self.process(self.row('two'));self.assertEqual(self.reason(),'RISK_OR_EXISTING_POSITION')
+        self.buy();self.now+=2;self.process(self.row('two'));self.assertEqual(self.reason(),'COPY_POSITION_ALREADY_OPEN')
         self.process(self.row('other',wallet=WALLETS[1]));self.assertEqual([a['trades'] for a in self.state()['accounts']],[1,1,0])
     def test_cash_corruption_blocks_before_processing(self):
         with self.store.connect() as db:db.execute('UPDATE wallet_copy_accounts SET cash=cash-1 WHERE wallet=?',(WALLETS[0],))
@@ -106,4 +106,15 @@ class CopyTests(unittest.TestCase):
             with self.store.connect() as db:trade=next(t for t in self.engine.positions(db) if t['status']=='OPEN')
             self.engine.close(trade,0,0,self.now,'SETTLED',{})
         self.now+=2;self.process(self.row('blocked'))
-        self.assertEqual(self.reason(),'RISK_OR_EXISTING_POSITION')
+        self.assertEqual(self.reason(),'COPY_DAY_LOSS_LIMIT')
+
+    def test_source_price_band_and_age_reject_before_buy(self):
+        self.now=1120;row=self.row('moved');e=json.loads(row['body']);e['price']=.46;row['body']=json.dumps(e)
+        self.process(row);self.assertEqual(self.reason(),'SOURCE_PRICE_MOVED')
+        row=self.row('late');row['source_ts']=1105;e=json.loads(row['body']);e['timestamp']=1105;row['body']=json.dumps(e)
+        self.process(row);self.assertEqual(self.reason(),'COPY_BUY_TOO_LATE')
+        self.assertEqual(self.state()['accounts'][0]['trades'],0)
+    def test_arrival_source_band_rechecked(self):
+        async def jump(seconds):self.now+=.5;self.ask='.50'
+        self.engine.sleep=jump;self.buy()
+        self.assertEqual(self.reason(),'SOURCE_PRICE_MOVED');self.assertEqual(self.state()['accounts'][0]['trades'],0)

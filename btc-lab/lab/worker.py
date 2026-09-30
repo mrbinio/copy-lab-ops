@@ -363,10 +363,14 @@ class Worker:
                 time_valid=(intent['strategy']!=self.entry_strategy or 180<=at-m['start']<=420)
                 book_valid=all(-.25<=at-b['source_ts']<=3 for b in arrival.values())
                 if time_valid and book_valid and not self.is_paused() and at < m['end']-30 and reference and -.25 <= at-reference['source_ts']<=5:
-                    budget=str(5/(1+float(m['fee_rate']))) if intent.get('risk_policy') in ('btc-stop10-v1','eth-stop10-v1') else '5'
+                    capacity=self.store.entry_capacity(intent['strategy'],at)
+                    intent.update(sizing_policy='remaining-risk-v1',entry_capacity_micro=capacity)
+                    if capacity<=0:
+                        self.decision(intent['strategy'],m['slug'],'RISK_CAPACITY_EXHAUSTED',intent,at);continue
+                    budget=str(max(0,capacity-100)/1e6/(1+float(m['fee_rate'])))
                     fill=simulate_fill(book['asks'],budget,str(intent['limit']),str(m['fee_rate']),book['min_shares'],book['tick'])
-                    if fill and intent.get('risk_policy') in ('btc-stop10-v1','eth-stop10-v1') and fill['cost']+fill['fee']>5_000_000:fill=None
-                    reason='NO_FULL_FILL'
+                    if fill and fill['cost']+fill['fee']>capacity:fill=None
+                    reason='CAPACITY_BELOW_MARKET_MINIMUM' if float(budget)<float(book['min_shares'])*float(intent['limit']) else 'NO_FULL_FILL'
                     if fill and intent['strategy']==self.entry_strategy and any(not .50<=float(f['price'])<=.80 for f in fill['fills']):
                         fill=None;reason='ARRIVAL_PRICE_OUTSIDE_RANGE'
                     if fill:
@@ -385,7 +389,7 @@ class Worker:
         reference_fresh=reference and -.25<=time.time()-reference['source_ts']<=5
         self.store.set('worker',{'status':('PAUSED' if paused else 'RECORDING') if reference_fresh else 'DEGRADED','heartbeat':time.time(),
             'reference_status':'FRESH' if reference_fresh else 'MISSING_OR_STALE',
-            'reference_error':self.feed_error,'version':'0.6.2','asset':self.asset,'execution':'PAPER ONLY'})
+            'reference_error':self.feed_error,'version':'0.6.3','asset':self.asset,'execution':'PAPER ONLY'})
 
     async def iteration(self):
         errors=[]
@@ -421,7 +425,7 @@ class Worker:
                 failure('research',e)
         if errors:
             self.store.set('worker',{'status':'DEGRADED','heartbeat':time.time(),
-                'errors':errors,'version':'0.6.2','asset':self.asset})
+                'errors':errors,'version':'0.6.3','asset':self.asset})
 
     async def run(self):
         self.store.audit()

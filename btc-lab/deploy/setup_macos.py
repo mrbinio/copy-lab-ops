@@ -12,6 +12,8 @@ import time
 from pathlib import Path
 from macos_launch import stop_service, start_service, wait_started, failure_report
 
+from storage_maintenance import cleanup, ensure_backup_space
+
 LABEL='com.btc-lab.paper'
 
 def choose_port(preferred):
@@ -55,6 +57,17 @@ def main():
             print('Hasla musza byc takie same i miec minimum 16 znakow.')
         config={'username':'damian','password_sha256':hashlib.sha256(password.encode()).hexdigest(),'port':8765}
         del password,repeated
+    protected=[config['release']] if config.get('release') else []
+    # Preserve the launch agent target as well as the configured release.
+    agent=Path.home()/'Library/LaunchAgents'/f'{LABEL}.plist'
+    if agent.exists():
+        prior=plistlib.loads(agent.read_bytes())
+        for arg in prior.get('ProgramArguments',[]):
+            for parent in Path(arg).parents:
+                if parent.parent==root/'releases':protected.append(str(parent))
+    removed=cleanup(root,protected)
+    print(f'Usunieto starych artefaktow instalatora: {len(removed)}; zachowano aktywne wersje i minimum 2 poprawne kopie BTC/ETH.')
+    ensure_backup_space(root)
     port=int(config['port'])
     target=f'gui/{os.getuid()}/{LABEL}'
     loaded=subprocess.run(['launchctl','print',target],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode==0
@@ -79,6 +92,7 @@ def main():
     plist.parent.mkdir(parents=True,exist_ok=True)
     old_plist=plist.read_bytes() if plist.exists() else None
     old_config=config_path.read_bytes() if config_path.exists() else None
+    ensure_backup_space(root)
     try:
         stop_service(target,root)
     except Exception as error:
@@ -101,10 +115,16 @@ def main():
     for asset,db_path in [('btc',root/'data/lab.sqlite'),('eth',root/'data/eth/lab.sqlite')]:
         if db_path.exists():
             backup_dir=root/'backups';backup_dir.mkdir(mode=0o700,exist_ok=True)
+            destination=backup_dir/f'pre-{asset}-{revision[:12]}-{time.time_ns()}.sqlite'
+            partial=Path(str(destination)+'.partial')
             try:
-                with sqlite3.connect(db_path) as src, sqlite3.connect(backup_dir/f'pre-{asset}-{revision[:12]}-{time.time_ns()}.sqlite') as dst:
+                with sqlite3.connect(db_path) as src, sqlite3.connect(partial) as dst:
                     src.backup(dst)
+                    if dst.execute('PRAGMA quick_check').fetchall()!=[('ok',)]:raise RuntimeError('Backup integrity failed')
+                os.replace(partial,destination)
             except Exception:
+                for fragment in (partial,Path(str(partial)+'-journal')):
+                    if fragment.exists():fragment.unlink()
                 if old_config and old_plist:start_service(target,plist)
                 raise
     config['port']=port

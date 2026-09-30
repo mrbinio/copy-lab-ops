@@ -93,29 +93,34 @@ class WalletCopy:
                     fees=sum(t['fee']+t.get('exit_fee',0) for t in rows)/1e6,open_cost=exposure/1e6,pending=0,
                     trades=len(rows),settled=len(closed),wins=sum(t['pnl_micro']>0 for t in closed),curve=curve[-300:],
                     max_drawdown_usd=dd/1e6,independent_windows=len({t['market'] for t in closed}),
-                    last_reason=last['reason'] if last else 'NO_NEW_SOURCE_TRADE',last_decision_at=last['ts'] if last else None))
+                    current_block=self.risk_reason(db,wallet,now),last_reason=last['reason'] if last else 'NO_NEW_SOURCE_TRADE',last_decision_at=last['ts'] if last else None))
             reasons=[dict(r) for r in db.execute('SELECT wallet,reason,COUNT(*) AS count FROM wallet_copy_events GROUP BY wallet,reason')]
             recent=[]
             for r in db.execute('SELECT wallet,event_key,ts,reason,body FROM wallet_copy_events ORDER BY ts DESC,rowid DESC LIMIT 30'):
                 e=json.loads(r['body']);recent.append({k:r[k] for k in ('wallet','event_key','ts','reason')}|{'error':e.get('error'),'copy_delay':e.get('copy_delay')})
+            errors=[dict(r)|{'detail':json.loads(r['body']).get('error')} for r in db.execute("SELECT wallet,event_key,ts,body FROM wallet_copy_events WHERE reason='ERROR' ORDER BY ts DESC LIMIT 30")]
         self.store.set(KEY,dict(spec='wallet-signal-copy-v1',status=status,error=error,updated_at=now,started_at=self.started,
             mode='PAPER ONLY',accounts=accounts,recent_trades=[public_trade(t) for t in sorted(trades,key=lambda t:t['opened'],reverse=True)[:100]],
             trades_truncated=len(trades)>100,reasons=reasons,recent_decisions=recent,
+            recent_errors=errors,entry_policy='source-band3c-age10s-v1',
             scope='BTC/ETH 5m and 15m only; fixed <=5USD all-in,500USD separate virtual scenarios; first SELL closes full copied lot',
-            limitation='Not identical source sizing/partial exits. Public indexed activity,30s polling,<=90s signal age; FOK at fresh delayed books with50% depth. No profitability guarantee.'))
+            limitation='Not identical source sizing/partial exits. Public indexed activity,30s polling,BUY<=10s age and +/-3c from source; SELL<=90s age; FOK at fresh delayed books with50% depth. No profitability guarantee.'))
 
     def reason(self,row,reason,extra=None):
         with self.store.connect() as db:
             db.execute('UPDATE wallet_copy_events SET reason=?,body=? WHERE wallet=? AND event_key=?',
                 (reason,json.dumps(extra or {},allow_nan=False),row['wallet'],row['event_key']))
 
-    def risk(self,db,wallet,now):
+    def risk_reason(self,db,wallet,now):
         rows=[t for t in self.positions(db) if t['wallet']==wallet]
-        if any(t['status'] in ('OPEN','RESOLVED') for t in rows):return False
-        if db.execute('SELECT cash FROM wallet_copy_accounts WHERE wallet=?',(wallet,)).fetchone()[0]<BUDGET:return False
+        if any(t['status'] in ('OPEN','RESOLVED') for t in rows):return 'COPY_POSITION_ALREADY_OPEN'
+        if db.execute('SELECT cash FROM wallet_copy_accounts WHERE wallet=?',(wallet,)).fetchone()[0]<BUDGET:return 'COPY_CASH_LIMIT'
         closed=[t for t in rows if t['status'] in ('CLOSED','SETTLED')]
-        return all(sum(max(0,-t['pnl_micro']) for t in closed if now-h<=t['closed_at']<=now)+BUDGET<=cap
-                   for h,cap in [(86400,15_000_000),(604800,30_000_000)])
+        for h,cap,reason in [(86400,15_000_000,'COPY_DAY_LOSS_LIMIT'),(604800,30_000_000,'COPY_WEEK_LOSS_LIMIT')]:
+            if sum(max(0,-t['pnl_micro']) for t in closed if now-h<=t['closed_at']<=now)+BUDGET>cap:return reason
+        return None
+
+    def risk(self,db,wallet,now):return self.risk_reason(db,wallet,now) is None
 
     async def book(self,token):
         from .worker import normalize_book
@@ -139,12 +144,18 @@ class WalletCopy:
             m=market_spec(raw,event,self.clock());kind=event['side']
             with self.store.connect() as db:
                 open_trade=next((t for t in self.positions(db) if t['wallet']==wallet and t['token']==m['token'] and t['status']=='OPEN'),None)
-                if kind=='BUY' and not self.risk(db,wallet,self.clock()):self.reason(row,'RISK_OR_EXISTING_POSITION');return
+                blocked=self.risk_reason(db,wallet,self.clock()) if kind=='BUY' else None
+                if blocked:self.reason(row,blocked);return
                 if kind=='SELL' and not open_trade:self.reason(row,'NO_COPIED_POSITION');return
             decision=await self.book(m['token']);at=self.clock()
             if kind=='BUY':
+                source_price=Decimal(str(event.get('price',0)))
+                if not source_price.is_finite() or not 0<source_price<1:self.reason(row,'SOURCE_PRICE_INVALID');return
+                if at-row['source_ts']>10:self.reason(row,'COPY_BUY_TOO_LATE');return
                 if not decision['asks']:self.reason(row,'NO_ASK');return
-                limit=min(Decimal('.999999'),min(Decimal(p) for p,q in decision['asks'])+Decimal('.02'))
+                ask=min(Decimal(p) for p,q in decision['asks'])
+                if abs(ask-source_price)>Decimal('.03'):self.reason(row,'SOURCE_PRICE_MOVED');return
+                limit=min(Decimal('.999999'),ask+Decimal('.02'),source_price+Decimal('.03'))
             else:
                 if not decision['bids']:self.reason(row,'NO_BID');return
                 limit=max(Decimal(decision['tick']),max(Decimal(p) for p,q in decision['bids'])-Decimal('.02'))
@@ -154,6 +165,9 @@ class WalletCopy:
             evidence=dict(source_event=event,source_timestamp=row['source_ts'],first_seen=row['first_seen'],decision_at=at,arrival_at=now,
                 detection_delay=row['first_seen']-row['source_ts'],copy_delay=now-row['source_ts'],decision_book=decision,arrival_book=arrival,market_metadata=raw)
             if kind=='BUY':
+                if now-row['source_ts']>10:self.reason(row,'COPY_BUY_TOO_LATE',evidence);return
+                if not arrival['asks'] or abs(min(Decimal(p) for p,q in arrival['asks'])-source_price)>Decimal('.03'):self.reason(row,'SOURCE_PRICE_MOVED',evidence);return
+                evidence['copy_policy']='source-band3c-age10s-v1'
                 notional=(Decimal(BUDGET)/1_000_000/(1+Decimal(str(m['fee_rate'])))).quantize(Decimal('.000001'),rounding=ROUND_FLOOR)
                 fill=simulate_fill(arrival['asks'],notional,limit,m['fee_rate'],arrival['min_shares'],arrival['tick'])
                 if not fill or fill['cost']+fill['fee']>BUDGET:self.reason(row,'BUY_NO_FULL_FILL_OR_MINIMUM',evidence);return
