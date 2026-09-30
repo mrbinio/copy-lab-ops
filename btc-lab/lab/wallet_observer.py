@@ -2,9 +2,12 @@
 import asyncio
 import hashlib
 import json
+import logging
 import math
 import time
 from urllib.parse import urlencode
+
+LOG = logging.getLogger('btc-lab.observer')
 
 WALLETS = (
  '0x16217458b59b3458149918058754cd234096b159',
@@ -16,8 +19,15 @@ class WalletObserver:
     def __init__(self, store, fetch):
         self.store, self.fetch = store, fetch
         if not hasattr(store,"wallet_activity_ready"):store.wallet_activity_ready=asyncio.Event()
+        self.chain_alerts = {}  # wallet → asyncio.Event, set by chain monitor
         with store.connect() as db:
             db.execute('CREATE TABLE IF NOT EXISTS wallet_activity (wallet TEXT, event_key TEXT, first_seen REAL, source_ts REAL, body TEXT, PRIMARY KEY(wallet,event_key))')
+
+    def trigger_poll(self, wallet):
+        """Called by chain monitor when on-chain trade detected. Wakes up REST poll immediately."""
+        alert = self.chain_alerts.get(wallet.lower())
+        if alert is not None:
+            alert.set()
 
     def ingest(self, wallet, rows, now):
         if not isinstance(rows, list): raise ValueError('activity response must be a list')
@@ -67,13 +77,20 @@ class WalletObserver:
 
     async def run_wallet(self,wallet):
         failures=0
+        if not hasattr(self,'chain_alerts'):self.chain_alerts={}
+        alert=asyncio.Event()
+        self.chain_alerts[wallet]=alert
         while True:
             started=time.monotonic()
             await self.poll(wallet)
             status=self.store.get('wallet_observer:'+wallet,{})
             failures=failures+1 if status.get('status')=='ERROR' else 0
             interval=min(60,2**min(failures,6)) if failures else 1
-            await asyncio.sleep(max(.1,interval-(time.monotonic()-started)))
+            # Chain monitor can set alert to request immediate re-poll.
+            # We check after a short sleep instead of waiting full interval.
+            step=min(interval,0.5) if alert.is_set() else interval
+            alert.clear()
+            await asyncio.sleep(max(.1,step-(time.monotonic()-started)))
 
     async def run(self):
         await asyncio.gather(*(self.run_wallet(w) for w in WALLETS))

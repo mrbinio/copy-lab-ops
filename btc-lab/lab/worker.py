@@ -459,9 +459,27 @@ class Worker:
     async def run(self):
         self.store.audit()
         reference=asyncio.create_task(self.reference_stream())
-        wallets=asyncio.create_task(WalletObserver(self.store,get_json).run()) if self.asset=="BTC" else None
+        observer=WalletObserver(self.store,get_json) if self.asset=="BTC" else None
+        wallets=asyncio.create_task(observer.run()) if observer else None
         discovery=asyncio.create_task(WalletDiscovery(self.store,get_json).run()) if self.asset=="BTC" else None
         copier=asyncio.create_task(WalletCopy(self.store,get_json,self.is_paused).run()) if self.asset=="BTC" else None
+        # Hybrid chain monitor: detects trades on-chain (~2-3s), triggers
+        # immediate REST poll to get execution price. No direct wallet_activity insert.
+        chain_task=None
+        if self.asset=="BTC" and observer:
+            chain_wss=os.environ.get('ALCHEMY_WSS','')
+            if chain_wss:
+                from .wallet_chain_monitor import ChainMonitor
+                from .wallet_observer import WALLETS as WALLET_LIST
+                async def on_detection(wallet,tx_hash,side,token_id,block_number,detected_at):
+                    LOG.info('chain: %s %s block=%d',side,wallet[-8:],block_number)
+                    self.store.record('chain_detection',{'wallet':wallet,'tx':tx_hash,'side':side,'block':block_number,'at':detected_at})
+                    observer.trigger_poll(wallet)
+                monitor=ChainMonitor(chain_wss,WALLET_LIST,on_detection)
+                chain_task=asyncio.create_task(monitor.run())
+                LOG.info('chain monitor started (hybrid: chain detection → REST price)')
+            else:
+                LOG.info('ALCHEMY_WSS not set; REST-only polling')
         try:
             while True:
                 await self.iteration()
@@ -471,7 +489,8 @@ class Worker:
             if wallets:wallets.cancel()
             if discovery:discovery.cancel()
             if copier:copier.cancel()
-            await asyncio.gather(reference,*([wallets] if wallets else []),*([discovery] if discovery else []),*([copier] if copier else []),return_exceptions=True)
+            if chain_task:chain_task.cancel()
+            await asyncio.gather(reference,*([wallets] if wallets else []),*([discovery] if discovery else []),*([copier] if copier else []),*([chain_task] if chain_task else []),return_exceptions=True)
 
 def main():
     import fcntl
