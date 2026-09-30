@@ -111,10 +111,10 @@ class CopyTests(unittest.TestCase):
     def test_source_price_band_and_age_reject_before_buy(self):
         self.now=1120;row=self.row('moved');e=json.loads(row['body']);e['price']=.46;row['body']=json.dumps(e)
         self.process(row);self.assertEqual(self.reason(),'SOURCE_PRICE_MOVED')
-        row=self.row('late');row['source_ts']=1105;e=json.loads(row['body']);e['timestamp']=1105;row['body']=json.dumps(e)
+        row=self.row('late');row['source_ts']=1050;e=json.loads(row['body']);e['timestamp']=1050;row['body']=json.dumps(e)
         self.process(row);self.assertEqual(self.reason(),'COPY_BUY_TOO_LATE')
         self.assertEqual(self.state()['accounts'][0]['trades'],0)
     def test_arrival_source_band_rechecked(self):
-        async def jump(seconds):self.now+=.5;self.ask='.50'
+        async def jump(seconds):self.now+=.5;self.ask='.45'
         self.engine.sleep=jump;self.buy()
         self.assertEqual(self.reason(),'SOURCE_PRICE_MOVED');self.assertEqual(self.state()['accounts'][0]['trades'],0)
