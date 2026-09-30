@@ -1,13 +1,6 @@
 """On-chain detection + aggressive Data API poll for source execution price.
 
-Flow (~5-10s total):
-  1. Chain WebSocket detects TransferSingle (~2s)
-  2. Spawn background task to poll Data API until source trade appears with price
-  3. Insert into wallet_activity with confirmed source price
-  4. wallet_copy processes — Mitch's ±10c rule works correctly
-
-Non-blocking: each detection spawns a background task. WebSocket reader
-never waits for Data API. Semaphore limits concurrent polls.
+Non-blocking, bounded task queue, per-row dedup (not per-txHash).
 """
 import asyncio
 import hashlib
@@ -30,7 +23,7 @@ ZERO_ADDRESS = '0x' + '0' * 40
 
 POLL_TIMEOUT = 60
 POLL_INTERVAL = 2
-MAX_CONCURRENT_POLLS = 5
+MAX_PENDING_TASKS = 10
 
 
 def parse_transfer_single(log):
@@ -68,8 +61,16 @@ def classify_transfer(event, wallets_lower):
     return None, None
 
 
+def _row_key(source_row):
+    """Same key format as REST wallet_observer — true dedup."""
+    fields = {k: source_row.get(k) for k in (
+        'transactionHash', 'type', 'asset', 'side', 'size', 'usdcSize',
+        'price', 'timestamp', 'conditionId', 'outcomeIndex')}
+    return hashlib.sha256(json.dumps(fields, sort_keys=True, allow_nan=False).encode()).hexdigest()
+
+
 class ChainMonitor:
-    """Non-blocking: spawns background task per detection, never blocks WebSocket."""
+    """Non-blocking WebSocket monitor with bounded task queue."""
 
     def __init__(self, wss_url, wallets, on_event, clock=time.time):
         self.wss_url = wss_url
@@ -78,6 +79,7 @@ class ChainMonitor:
         self.clock = clock
         self.events_seen = 0
         self.events_matched = 0
+        self.events_dropped = 0
         self.errors = 0
         self.connected_at = None
         self.last_block = 0
@@ -87,7 +89,7 @@ class ChainMonitor:
         return {'mode': 'CHAIN_DETECT_REST_PRICE', 'connected': self.connected_at is not None,
                 'last_block': self.last_block, 'events_seen': self.events_seen,
                 'events_matched': self.events_matched, 'errors': self.errors,
-                'pending_polls': len(self._tasks)}
+                'events_dropped': self.events_dropped, 'pending_tasks': len(self._tasks)}
 
     async def run(self):
         import websockets
@@ -119,7 +121,11 @@ class ChainMonitor:
                         if wallet is None: continue
                         self.events_matched += 1
                         event.update(wallet=wallet, side=side, detected_at=self.clock())
-                        # Non-blocking: spawn background task, don't await
+                        # Bounded queue: drop if too many pending
+                        if len(self._tasks) >= MAX_PENDING_TASKS:
+                            self.events_dropped += 1
+                            LOG.warning('queue full (%d), dropping %s', len(self._tasks), event['tx_hash'][:12])
+                            continue
                         task = asyncio.create_task(self._safe_handle(event))
                         self._tasks.add(task)
                         task.add_done_callback(self._tasks.discard)
@@ -140,11 +146,10 @@ class ChainMonitor:
 
 
 class ChainBridge:
-    """After chain detection, poll Data API for confirmed source price.
+    """Poll Data API for confirmed source price. Per-row dedup, not per-txHash.
 
-    Non-blocking: called as background task by ChainMonitor.
-    Semaphore limits concurrent polls to MAX_CONCURRENT_POLLS.
-    Handles multiple fills per transaction (all matching rows inserted).
+    Does NOT skip entire txHash — always polls API and inserts any new rows.
+    Dedup is per individual fill (same key as REST observer).
     """
 
     def __init__(self, store, fetch, clock=time.time, sleep=asyncio.sleep):
@@ -155,37 +160,23 @@ class ChainBridge:
         self.bridged = 0
         self.skipped = 0
         self.timeouts = 0
-        self.already_seen = 0
-        self._semaphore = None
 
     async def on_event(self, event):
-        if self._semaphore is None:
-            self._semaphore = asyncio.Semaphore(MAX_CONCURRENT_POLLS)
-        async with self._semaphore:
-            await self._process(event)
-
-    async def _process(self, event):
         wallet = event['wallet']
         tx_hash = event.get('tx_hash', '')
         if not tx_hash:
             self.skipped += 1; return
 
-        # Check if already in wallet_activity
-        with self.store.connect() as db:
-            for pattern in (f'%"transactionHash": "{tx_hash}"%', f'%"transactionHash":"{tx_hash}"%'):
-                if db.execute("SELECT 1 FROM wallet_activity WHERE wallet=? AND body LIKE ?",
-                              (wallet, pattern)).fetchone():
-                    self.already_seen += 1; return
-
-        # Poll Data API until trade appears
         detected_at = event.get('detected_at', self.clock())
         deadline = detected_at + POLL_TIMEOUT
         source_rows = None
 
+        # Poll until trade appears in Data API
         while self.clock() < deadline:
             try:
                 api_rows = await asyncio.to_thread(self._poll_activity, wallet, detected_at)
-                source_rows = self._find_all_tx(api_rows, tx_hash)
+                source_rows = [r for r in (api_rows or [])
+                               if isinstance(r, dict) and r.get('transactionHash') == tx_hash]
                 if source_rows:
                     break
             except Exception as e:
@@ -194,21 +185,15 @@ class ChainBridge:
 
         if not source_rows:
             self.timeouts += 1
-            LOG.warning('chain timeout: %s not in API after %ds', tx_hash[:16], POLL_TIMEOUT)
             self.store.record('chain_timeout', {'wallet': wallet, 'tx': tx_hash,
                               'side': event['side'], 'block': event.get('block_number')})
             return
 
-        # Insert ALL matching rows (multiple fills in same tx)
+        # Insert each fill — dedup per individual row, not per txHash
         now = self.clock()
         for source_row in source_rows:
             ts = float(source_row.get('timestamp', now))
-            fields = {k: source_row.get(k) for k in (
-                'transactionHash', 'type', 'asset', 'side', 'size', 'usdcSize',
-                'price', 'timestamp', 'conditionId', 'outcomeIndex')}
-            body_str = json.dumps(fields, sort_keys=True, allow_nan=False)
-            key = hashlib.sha256(body_str.encode()).hexdigest()
-
+            key = _row_key(source_row)
             source_row['_source'] = 'chain_accelerated'
             source_row['_detected_at'] = detected_at
             source_row['_chain_to_api_seconds'] = now - detected_at
@@ -218,13 +203,11 @@ class ChainBridge:
                                  (wallet, key, now, ts, json.dumps(source_row, allow_nan=False)))
                 if cur.rowcount:
                     self.bridged += 1
-                    LOG.info('chain→api: %s %s @ %s (%.1fs)', event['side'], wallet[-8:],
-                             source_row.get('price'), now - detected_at)
+                    LOG.info('chain→api: %s %s @ %s (%.1fs)', source_row.get('side', '?'),
+                             wallet[-8:], source_row.get('price'), now - detected_at)
                     ready = getattr(self.store, 'wallet_activity_ready', None)
                     if ready is not None and hasattr(ready, 'set'):
                         ready.set()
-                else:
-                    self.already_seen += 1
 
     def _poll_activity(self, wallet, since):
         start = max(0, int(since) - 30)
@@ -233,14 +216,5 @@ class ChainBridge:
                                             limit=100, sortBy='TIMESTAMP', sortDirection='DESC'))
         return self.fetch(f'{DATA_API}/activity?{query}')
 
-    @staticmethod
-    def _find_all_tx(rows, tx_hash):
-        """Find ALL rows matching txHash (multiple fills in one tx)."""
-        if not isinstance(rows, list):
-            return None
-        matches = [r for r in rows if isinstance(r, dict) and r.get('transactionHash') == tx_hash]
-        return matches or None
-
     def status(self):
-        return {'bridged': self.bridged, 'skipped': self.skipped,
-                'timeouts': self.timeouts, 'already_seen': self.already_seen}
+        return {'bridged': self.bridged, 'skipped': self.skipped, 'timeouts': self.timeouts}
