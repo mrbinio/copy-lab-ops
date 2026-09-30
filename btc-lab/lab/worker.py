@@ -22,6 +22,7 @@ from .feed_watchdog import fresh_messages
 from .wallet_observer import WalletObserver
 from .wallet_discovery import WalletDiscovery
 from .wallet_copy import WalletCopy
+from .wallet_chain_monitor import ChainMonitor, ChainToActivityBridge
 from .opportunity_research import OpportunityResearch
 from .value_execution import ValueExecution
 from .reference import classify_rule, observation, SPOT, TWAP60, TWAP30
@@ -462,6 +463,20 @@ class Worker:
         wallets=asyncio.create_task(WalletObserver(self.store,get_json).run()) if self.asset=="BTC" else None
         discovery=asyncio.create_task(WalletDiscovery(self.store,get_json).run()) if self.asset=="BTC" else None
         copier=asyncio.create_task(WalletCopy(self.store,get_json,self.is_paused).run()) if self.asset=="BTC" else None
+        # On-chain monitor: streams Polymarket events directly from Polygon blockchain.
+        # Runs alongside REST observer as primary source; REST serves as fallback.
+        chain_task=None
+        if self.asset=="BTC":
+            import os
+            chain_wss=os.environ.get('ALCHEMY_WSS','')
+            if chain_wss:
+                from .wallet_observer import WALLETS as WALLET_LIST
+                bridge=ChainToActivityBridge(self.store)
+                monitor=ChainMonitor(chain_wss,WALLET_LIST,bridge.on_chain_event)
+                chain_task=asyncio.create_task(monitor.run())
+                LOG.info('chain monitor started for %d wallets',len(WALLET_LIST))
+            else:
+                LOG.info('ALCHEMY_WSS not set; chain monitor disabled, using REST polling only')
         try:
             while True:
                 await self.iteration()
@@ -469,6 +484,9 @@ class Worker:
         finally:
             reference.cancel()
             if wallets:wallets.cancel()
+            if discovery:discovery.cancel()
+            if copier:copier.cancel()
+            if chain_task:chain_task.cancel()
             if discovery:discovery.cancel()
             if copier:copier.cancel()
             await asyncio.gather(reference,*([wallets] if wallets else []),*([discovery] if discovery else []),*([copier] if copier else []),return_exceptions=True)
