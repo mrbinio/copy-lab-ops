@@ -114,6 +114,11 @@ def main():
     import sqlite3
     for asset,db_path in [('btc',root/'data/lab.sqlite'),('eth',root/'data/eth/lab.sqlite')]:
         if db_path.exists():
+            free=shutil.disk_usage(root).free
+            db_size=db_path.stat().st_size
+            if free < db_size + 512*1024**2:
+                print(f'Pomijam backup {asset} — za malo miejsca (wolne {free/1024**3:.1f} GB, baza {db_size/1024**3:.1f} GB)')
+                continue
             backup_dir=root/'backups';backup_dir.mkdir(mode=0o700,exist_ok=True)
             destination=backup_dir/f'pre-{asset}-{revision[:12]}-{time.time_ns()}.sqlite'
             partial=Path(str(destination)+'.partial')
