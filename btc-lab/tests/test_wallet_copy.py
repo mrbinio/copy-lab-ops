@@ -77,7 +77,7 @@ class CopyTests(unittest.TestCase):
         self.raw['feeSchedule']={};self.process(self.row('fee'));self.assertEqual(self.reason(),'ERROR');self.assertEqual(self.book_calls,0)
     def test_separate_wallets_and_no_additional_position(self):
         self.buy();self.now+=2;self.process(self.row('two'));self.assertEqual(self.reason(),'COPY_POSITION_ALREADY_OPEN')
-        self.process(self.row('other',wallet=WALLETS[1]));self.assertEqual([a['trades'] for a in self.state()['accounts']],[1,1,0])
+        self.process(self.row('other',wallet=WALLETS[1]));self.assertEqual([a['trades'] for a in self.state()['accounts']],[1,1,0,0])
     def test_cash_corruption_blocks_before_processing(self):
         with self.store.connect() as db:db.execute('UPDATE wallet_copy_accounts SET cash=cash-1 WHERE wallet=?',(WALLETS[0],))
         with self.assertRaises(CopyLedgerError):asyncio.run(self.engine.step())
