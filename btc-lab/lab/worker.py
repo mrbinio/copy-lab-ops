@@ -486,7 +486,7 @@ class Worker:
                 if monitor and time.time()-last_wallet_refresh>=60:
                     monitor.update_wallets(get_active_wallets(self.store))
                     last_wallet_refresh=time.time()
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(2)
         finally:
             reference.cancel()
             if wallets:wallets.cancel()
