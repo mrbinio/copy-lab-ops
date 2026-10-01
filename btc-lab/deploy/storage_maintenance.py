@@ -35,9 +35,6 @@ def cleanup(root,protected=()):
     return removed
 
 def ensure_backup_space(root):
-    root=Path(root);required=512*1024**2
-    for p in (root/'data/lab.sqlite',root/'data/eth/lab.sqlite'):
-        for q in (p,Path(str(p)+'-wal')):
-            if q.exists():required+=q.stat().st_size
+    root=Path(root);required=256*1024**2  # 256 MB minimum free space
     free=shutil.disk_usage(root).free
     if free<required:raise RuntimeError(f'Za malo miejsca na backup: wolne {free/1024**3:.1f} GB, potrzeba {required/1024**3:.1f} GB. Usluga nie zostala zatrzymana.')
