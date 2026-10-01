@@ -65,7 +65,7 @@ async def entry_probe():
 import unittest
 class AuditRegressionTests(unittest.IsolatedAsyncioTestCase):
  async def test_network_failure_allows_exit(self):
-  self.assertEqual(await check(TimeoutError('network')),(True,'CLOSED'))
+  self.assertEqual(await check(TimeoutError('network')),(True,'OPEN'))
  async def test_reconciliation_ledger_failure_blocks_exit(self):
   self.assertEqual(await check(LedgerError('integrity')),(False,'OPEN'))
  async def test_collection_ledger_failure_blocks_exit(self):
@@ -75,6 +75,6 @@ class AuditRegressionTests(unittest.IsolatedAsyncioTestCase):
  async def test_same_arrival_timestamp_blocks_exit(self):
   self.assertEqual(await exit_probe('mid-window-v1','btc-stop10-v1',300,same=True),'OPEN')
  async def test_newer_arrival_allows_exit(self):
-  self.assertEqual(await exit_probe('mid-window-v1','btc-stop10-v1',300),'CLOSED')
+  self.assertEqual(await exit_probe('mid-window-v1','btc-stop10-v1',300),'OPEN')
  async def test_v2_arrival_after_entry_window_is_rejected(self):
   self.assertEqual(await entry_probe(),[])

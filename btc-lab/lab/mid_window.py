@@ -56,6 +56,27 @@ def simulate_sale(book, shares_micro, fee_rate, floor=None):
     return {'shares':shares_micro,'proceeds':units(gross),'fee':fee,'fills':fills,'floor':str(floor)}
 
 def exit_intent(position, market, now):
-    """v1: hold to official resolution. No stop, no TP, no early exit."""
-    return None, 'HOLD_TO_OFFICIAL_RESOLUTION'
+    """v1 mid-window / eth: hold to official resolution.
+    early-v1 retains the original stop-loss / deadline exit."""
+    strategy = position.get('strategy', 'mid-window-v1')
+    if strategy in ('mid-window-v1', 'eth-mid-window-v1'):
+        return None, 'HOLD_TO_OFFICIAL_RESOLUTION'
+    # early-v1: preserve original exit logic
+    elapsed = now - market['start']
+    protected = json.loads(position.get('evidence', '{}')).get('risk_policy') in ('btc-stop10-v1', 'eth-stop10-v1')
+    if elapsed >= 900 or (elapsed >= 600 and not protected):
+        return None, 'HOLD_TO_OFFICIAL_RESOLUTION'
+    book = market['books'][position['side']]
+    if not -.25 <= now - book['source_ts'] <= 3:
+        return None, 'EXIT_BOOK_STALE'
+    fill = simulate_sale(book, position['shares'], market['fee_rate'])
+    if not fill:
+        return None, 'EXIT_NO_FULL_FILL'
+    basis = position['cost'] + position['fee']
+    net = fill['proceeds'] - fill['fee'] - basis
+    stop = .10 if protected else .20
+    why = 'EXIT_STOP' if net <= -stop * basis else 'EXIT_DEADLINE' if elapsed >= 590 else 'EXIT_PROFIT' if net >= .10 * basis else None
+    if not why:
+        return None, 'EXIT_HOLD'
+    return {'reason': why, 'floor': fill['fills'][-1]['price'], 'decision_at': now}, why
 

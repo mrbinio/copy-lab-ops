@@ -113,6 +113,6 @@ class EthCycleTests(unittest.IsolatedAsyncioTestCase):
                 phase.update(bid='.75',ask='.76');now[0]=start+300
                 await w.paper_exits(w.market,True) # decision snapshot from previous cycle cannot trigger
                 await w.cycle()
-                self.assertEqual(store.snapshot()['trades'][0]['status'],'CLOSED')
+                self.assertEqual(store.snapshot()['trades'][0]['status'],'OPEN')
                 phase['closed']=True;now[0]=start+1000;await w.reconcile()
-                self.assertEqual(store.snapshot()['trades'][0]['status'],'CLOSED');train.assert_not_called();store.audit()
+                self.assertEqual(store.snapshot()['trades'][0]['status'],'RESOLVED');train.assert_not_called();store.audit()

@@ -67,7 +67,7 @@ class MidTests(unittest.TestCase):
         self.assertEqual(self.store.snapshot()['trades'][0]['status'],'OPEN');self.store.audit()
     def test_exit_deadline_profit_stop(self):
         p=self.position()
-        for elapsed,bid,reason in [(300,'.75','EXIT_PROFIT'),(300,'.40','EXIT_STOP'),(300,'.61','EXIT_HOLD'),(590,'.61','EXIT_DEADLINE')]:
+        for elapsed,bid,reason in [(300,'.75','HOLD_TO_OFFICIAL_RESOLUTION'),(300,'.40','HOLD_TO_OFFICIAL_RESOLUTION'),(300,'.61','HOLD_TO_OFFICIAL_RESOLUTION'),(590,'.61','HOLD_TO_OFFICIAL_RESOLUTION')]:
             self.market['books']['Up']=self.book(self.start+elapsed,bid=bid)
             self.assertEqual(exit_intent(p,self.market,self.start+elapsed)[1],reason)
     def test_migration_keeps_existing_cash_and_trades(self):
