@@ -30,9 +30,8 @@ CHAIN_ID = 137  # Polygon mainnet
 class CLOBClient:
     """Thin wrapper around py-clob-client for copy trading."""
 
-    def __init__(self, private_key: str, api_key: str, api_secret: str,
-                 api_passphrase: str, funder: str | None = None,
-                 max_order_usd: float = 5.0):
+    def __init__(self, private_key: str, max_order_usd: float = 5.0,
+                 funder: str | None = None):
         """
         Args:
             private_key: Polygon wallet private key (hex, with or without 0x)
@@ -54,10 +53,9 @@ class CLOBClient:
         self.max_order_usd = min(max_order_usd, MAX_ORDER_USD)
         self.client = ClobClient(
             host="https://clob.polymarket.com",
-            key=api_key,
             chain_id=CHAIN_ID,
             private_key=private_key,
-            signature_type=2,  # POLY_GNOSIS_SAFE for proxy wallets
+            signature_type=0,  # EOA wallet
             funder=funder,
         )
         self.client.set_api_creds(self.client.create_or_derive_api_creds())

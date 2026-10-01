@@ -466,6 +466,8 @@ class Worker:
         clob_client = None
         if self.asset == "BTC":
             config_path = self.data / 'config.json'
+            if not config_path.exists():
+                config_path = self.data.parent / 'config.json'
             if config_path.exists():
                 try:
                     config = json.loads(config_path.read_text())
@@ -475,10 +477,6 @@ class Worker:
                         from .clob_order import CLOBClient as _CLOBClient
                         clob_client = _CLOBClient(
                             private_key=clob_key,
-                            api_key=config.get('clob_api_key', ''),
-                            api_secret=config.get('clob_api_secret', ''),
-                            api_passphrase=config.get('clob_api_passphrase', ''),
-                            funder=config.get('clob_funder'),
                             max_order_usd=5.0,
                         )
                         LOG.info('CLOB live orders ENABLED (max $5/order, $10 exposure)')
