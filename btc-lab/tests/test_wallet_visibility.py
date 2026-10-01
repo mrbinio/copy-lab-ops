@@ -10,7 +10,7 @@ class WalletVisibilityTests(unittest.TestCase):
     def test_snapshot_missing_and_observed_are_distinct(self):
         with tempfile.TemporaryDirectory() as d:
             store=Store(Path(d)/'lab.db')
-            self.assertEqual([w['status'] for w in store.snapshot()['wallet_observer']],['NOT_STARTED']*3)
+            self.assertEqual([w['status'] for w in store.snapshot()['wallet_observer']],['NOT_STARTED']*4)
             obs=WalletObserver(store,None)
             obs.ingest(WALLETS[0],[{'proxyWallet':WALLETS[0],'timestamp':100,'transactionHash':'test','type':'TRADE','side':'BUY','price':.6,'size':10,'title':'BTC'}],101)
             store.set('wallet_observer:'+WALLETS[0],{'wallet':WALLETS[0],'status':'POLL_OK','checked_at':101,'unique_fingerprints':1})

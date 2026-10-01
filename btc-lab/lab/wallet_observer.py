@@ -10,6 +10,7 @@ SEED_WALLETS = (
  '0x16217458b59b3458149918058754cd234096b159',
  '0xeda9247a2b3c99a9e0bf46cdac6e1974365cf589',
  '0x943cea746e701823b6902a6f4eaeed58207e77c2',
+ '0xeebde7a0e019a63e6b476eb425505b7b3e6eba30',
 )
 
 # Backward compatibility — existing imports of WALLETS keep working.
