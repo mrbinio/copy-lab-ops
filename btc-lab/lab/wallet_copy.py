@@ -109,9 +109,9 @@ class WalletCopy:
         self.store.set(KEY,dict(spec='wallet-signal-copy-v1',status=status,error=error,updated_at=now,started_at=self.started,
             mode='PAPER ONLY',accounts=[a for a in accounts if a['trades']>0 or a['wallet'] in SEED_WALLETS],recent_trades=[public_trade(t) for t in sorted(trades,key=lambda t:t['opened'],reverse=True)[:100]],
             trades_truncated=len(trades)>100,reasons=reasons,recent_decisions=recent,
-            skip_review=self.skip_summary(),recent_errors=errors,entry_policy='source-band10c-age60s-v2',
+            skip_review=self.skip_summary(),recent_errors=errors,entry_policy='source-band3c-age15s-v3',
             scope='BTC/ETH 5m and 15m only; fixed <=5USD all-in,500USD separate virtual scenarios; first SELL closes full copied lot',
-            limitation='Not identical source sizing/partial exits. Public indexed activity,1s target polling,BUY<=60s age and +/-10c from source; SELL<=90s age; FOK at fresh delayed books with50% depth. No profitability guarantee.'))
+            limitation='Not identical source sizing/partial exits. Public indexed activity,1s target polling,BUY<=15s age and +/-3c from source; SELL<=90s age; FOK at fresh delayed books with50% depth. No profitability guarantee.'))
 
     def skip_summary(self):
         with self.store.connect() as db:
