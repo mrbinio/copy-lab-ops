@@ -56,19 +56,6 @@ def simulate_sale(book, shares_micro, fee_rate, floor=None):
     return {'shares':shares_micro,'proceeds':units(gross),'fee':fee,'fills':fills,'floor':str(floor)}
 
 def exit_intent(position, market, now):
-    elapsed=now-market['start']
-    protected=json.loads(position.get('evidence','{}')).get('risk_policy') in ('btc-stop10-v1','eth-stop10-v1')
-    if elapsed>=900 or (elapsed>=600 and not protected):return None,'HOLD_TO_OFFICIAL_RESOLUTION'
-    book=market['books'][position['side']]
-    if not -.25<=now-book['source_ts']<=3:return None,'EXIT_BOOK_STALE'
-    fill=simulate_sale(book,position['shares'],market['fee_rate'])
-    if not fill:return None,'EXIT_NO_FULL_FILL'
-    basis=position['cost']+position['fee']
-    net=fill['proceeds']-fill['fee']-basis
-    stop=.10 if protected else .20
-    mid=position.get('strategy','mid-window-v1') in ('mid-window-v1','eth-mid-window-v1')
-    why='EXIT_STOP' if net<=-stop*basis else 'EXIT_DEADLINE' if mid and elapsed>=590 else 'EXIT_PROFIT' if mid and net>=.10*basis else None
-    if not why:return None,'EXIT_HOLD'
-    # Fixed floor from decision depth: no chasing a deteriorating arrival quote.
-    return {'reason':why,'floor':fill['fills'][-1]['price'],'decision_at':now},why
+    """v1: hold to official resolution. No stop, no TP, no early exit."""
+    return None, 'HOLD_TO_OFFICIAL_RESOLUTION'
 
