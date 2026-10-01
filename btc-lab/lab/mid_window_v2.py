@@ -1,16 +1,7 @@
-"""mid-window-v2 — frozen forward PAPER hypothesis, 2026-09-30.
+"""mid-window-v2 — book favorite, hold to expiry, like Mitch.
 
-Tighter parameters based on independent audit of v1 results (44 trades).
-Key changes from v1:
-  - Entry window narrowed: [180, 300] (3–5 min, matching Mitch's stated range)
-  - Ask range tightened: [0.50, 0.70] (better EV at lower prices)
-  - Z-score threshold raised: 1.5 (stronger filter, fewer but higher-quality entries)
-  - Take profit raised: 15% (breakeven WR ≈ 40% vs 67% in v1)
-  - Stop loss: 10% (unchanged from v1 protected)
-  - Max spread tightened: 2.5 cents
-
-NOT a reproduction of Mitch's undisclosed algorithm. This is a preregistered
-research variant with frozen parameters. Do not optimize on forward data.
+Entry: minutes 3-7, ask 55-80c, buy the book favorite (lower ask side).
+Exit: hold to official resolution, no stop-loss, no take-profit.
 """
 import json
 from decimal import Decimal, ROUND_FLOOR, ROUND_CEILING
