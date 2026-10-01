@@ -6,6 +6,50 @@ import re
 import time
 from urllib.parse import urlencode
 
+from .wallet_observer import ensure_active_wallets_table, SEED_WALLETS
+
+# Promotion criteria: positive PnL both week AND month, week volume > 1000.
+MIN_WEEK_VOLUME = 1000
+
+
+def score_candidate(candidate):
+    """Estimate a win-rate score from leaderboard data.
+
+    Uses a simple heuristic: normalized PnL relative to volume as a proxy
+    for edge. Higher is better, range roughly 0-1.
+    """
+    week_pnl = candidate.get('week_reported_pnl', 0)
+    month_pnl = candidate.get('month_reported_pnl', 0)
+    week_vol = candidate.get('week_volume', 1)
+    month_vol = candidate.get('month_volume', 1)
+    if week_vol <= 0 or month_vol <= 0:
+        return 0.0
+    # Edge estimate: average of week and month PnL/volume ratios, clamped to [0, 1]
+    week_edge = max(0, week_pnl / week_vol)
+    month_edge = max(0, month_pnl / month_vol)
+    return min(1.0, (week_edge + month_edge) / 2)
+
+
+def promote(store, wallet, score=0.0):
+    """Add a wallet to active_wallets with source='discovery'."""
+    ensure_active_wallets_table(store)
+    with store.connect() as db:
+        db.execute('INSERT OR IGNORE INTO active_wallets VALUES (?,?,?,?,?)',
+                   (wallet, 'discovery', time.time(), score, 0))
+        # Update score if already exists
+        db.execute('UPDATE active_wallets SET score=? WHERE wallet=? AND source=?',
+                   (score, wallet, 'discovery'))
+
+
+def demote(store, wallet):
+    """Remove a discovery wallet from active_wallets. Seed wallets cannot be demoted."""
+    if wallet in SEED_WALLETS:
+        return
+    with store.connect() as db:
+        db.execute("DELETE FROM active_wallets WHERE wallet=? AND source='discovery'",
+                   (wallet,))
+
+
 class WalletDiscovery:
     def __init__(self, store, fetch):
         self.store, self.fetch = store, fetch
@@ -39,6 +83,14 @@ class WalletDiscovery:
                         'month_reported_pnl':m['pnl'],'week_volume':w['volume'],'month_volume':m['volume'],
                         'status':'UNVERIFIED_CANDIDATE','copy_enabled':False})
             now=time.time()
+
+            # Auto-promote candidates meeting stricter criteria into active_wallets
+            for c in candidates:
+                if (c['week_reported_pnl'] > 0 and c['month_reported_pnl'] > 0
+                        and c['week_volume'] > MIN_WEEK_VOLUME):
+                    score = score_candidate(c)
+                    promote(self.store, c['wallet'], score)
+
             state={'status':'SCAN_OK','checked_at':now,'last_success_at':now,'interval_seconds':3600,
                 'category':'CRYPTO','scope':'Top 50 WEEK and MONTH by reported PNL; intersection with positive PNL and volume',
                 'candidates':candidates,'copy_enabled':False,

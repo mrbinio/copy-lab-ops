@@ -251,8 +251,8 @@ class Store:
             decisions = [dict(d) for d in db.execute("SELECT ts,strategy,market,reason FROM decisions ORDER BY id DESC LIMIT 25")]
             count = db.execute("SELECT COUNT(*) FROM observations").fetchone()[0]
             labels = db.execute("SELECT COUNT(*) FROM labels").fetchone()[0]
-        from .wallet_observer import WALLETS
-        wallets=[self.get('wallet_observer:'+w,{'wallet':w,'status':'NOT_STARTED','checked_at':None}) for w in WALLETS] if self.asset=='BTC' else []
+        from .wallet_observer import get_active_wallets
+        wallets=[self.get('wallet_observer:'+w,{'wallet':w,'status':'NOT_STARTED','checked_at':None}) for w in get_active_wallets(self)] if self.asset=='BTC' else []
         wallet_events=[]
         with self.connect() as db:
             if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='wallet_activity'").fetchone():

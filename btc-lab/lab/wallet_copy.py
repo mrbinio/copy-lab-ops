@@ -10,7 +10,7 @@ from urllib.parse import quote
 from .core import simulate_fill
 from .mid_window import simulate_sale
 from .reference import classify_rule
-from .wallet_observer import WALLETS
+from .wallet_observer import WALLETS, get_active_wallets
 
 class CopyLedgerError(ValueError):pass
 
@@ -66,7 +66,7 @@ class WalletCopy:
               CREATE TABLE IF NOT EXISTS wallet_copy_positions(id TEXT PRIMARY KEY,wallet TEXT,body TEXT);
               CREATE TABLE IF NOT EXISTS wallet_copy_ledger(id TEXT PRIMARY KEY,wallet TEXT,amount INTEGER NOT NULL);
             ''')
-            for wallet in WALLETS:db.execute('INSERT OR IGNORE INTO wallet_copy_accounts VALUES (?,?)',(wallet,INITIAL))
+            for wallet in get_active_wallets(store):db.execute('INSERT OR IGNORE INTO wallet_copy_accounts VALUES (?,?)',(wallet,INITIAL))
             db.execute("UPDATE wallet_copy_events SET reason='ABORTED_ON_RESTART' WHERE reason='PROCESSING'")
         if not store.get('wallet_copy_start',{}):store.set('wallet_copy_start',{'at':clock()})
         self.started=store.get('wallet_copy_start',{})['at']
@@ -82,7 +82,8 @@ class WalletCopy:
         now=self.clock()
         with self.store.connect() as db:
             trades=self.positions(db);accounts=[]
-            for wallet in WALLETS:
+            for wallet in get_active_wallets(self.store):
+                db.execute('INSERT OR IGNORE INTO wallet_copy_accounts VALUES (?,?)',(wallet,INITIAL))
                 rows=[t for t in trades if t['wallet']==wallet]
                 closed=sorted((t for t in rows if t['status'] in ('CLOSED','SETTLED')),key=lambda t:t['closed_at'])
                 pnl=sum(t['pnl_micro'] for t in closed);exposure=sum(t['cost']+t['fee'] for t in rows if t['status'] in ('OPEN','RESOLVED'))
@@ -336,7 +337,7 @@ class WalletCopy:
                     db.execute("INSERT OR IGNORE INTO wallet_copy_events SELECT wallet,event_key,?,'PRE_ACTIVATION','{}' FROM wallet_activity WHERE source_ts<? OR first_seen<?",(self.clock(),self.started,self.started))
                 rows=[dict(r) for r in db.execute('SELECT a.* FROM wallet_activity a LEFT JOIN wallet_copy_events e ON a.wallet=e.wallet AND a.event_key=e.event_key WHERE e.event_key IS NULL ORDER BY a.source_ts,a.first_seen LIMIT 100')] if has else []
             for row in rows:
-                if row['wallet'] in WALLETS:await self.process(row)
+                if row['wallet'] in get_active_wallets(self.store):await self.process(row)
             if rows or self.clock()-self.last_publish>=2:
                 self.publish('RUNNING');self.last_publish=self.clock()
             self.store.set('wallet_copy_error',{})

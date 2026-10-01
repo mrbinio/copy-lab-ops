@@ -19,7 +19,7 @@ from .mid_window_v2 import exit_intent_v2
 from .exit_comparison import ExitComparison
 from .complete_set import CompleteSetObserver
 from .feed_watchdog import fresh_messages
-from .wallet_observer import WalletObserver
+from .wallet_observer import WalletObserver, get_active_wallets
 from .wallet_discovery import WalletDiscovery
 from .wallet_copy import WalletCopy
 from .opportunity_research import OpportunityResearch
@@ -467,20 +467,25 @@ class Worker:
         # Data API until source trade with confirmed price appears (~5-10s total).
         # Uses same key format as REST observer — true dedup, no duplicates.
         chain_task=None
+        monitor=None
         if self.asset=="BTC":
             chain_wss=os.environ.get('ALCHEMY_WSS','')
             if chain_wss:
                 from .wallet_chain_monitor import ChainMonitor, ChainBridge
-                from .wallet_observer import WALLETS as WALLET_LIST
                 bridge=ChainBridge(self.store,get_json)
-                monitor=ChainMonitor(chain_wss,WALLET_LIST,bridge.on_event)
+                monitor=ChainMonitor(chain_wss,get_active_wallets(self.store),bridge.on_event)
                 chain_task=asyncio.create_task(monitor.run())
                 LOG.info('chain monitor: detect on-chain → poll Data API for price')
             else:
                 LOG.info('ALCHEMY_WSS not set; REST-only polling')
+        last_wallet_refresh=time.time()
         try:
             while True:
                 await self.iteration()
+                # Refresh chain monitor wallet set every 60s
+                if monitor and time.time()-last_wallet_refresh>=60:
+                    monitor.update_wallets(get_active_wallets(self.store))
+                    last_wallet_refresh=time.time()
                 await asyncio.sleep(2)
         finally:
             reference.cancel()

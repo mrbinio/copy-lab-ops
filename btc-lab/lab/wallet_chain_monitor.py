@@ -91,6 +91,10 @@ class ChainMonitor:
                 'events_matched': self.events_matched, 'errors': self.errors,
                 'events_dropped': self.events_dropped, 'pending_tasks': len(self._tasks)}
 
+    def update_wallets(self, new_set):
+        """Update the set of monitored wallets at runtime."""
+        self.wallets = {w.lower() for w in new_set}
+
     async def run(self):
         import websockets
         while True:

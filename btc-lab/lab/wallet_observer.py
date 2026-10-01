@@ -6,11 +6,47 @@ import math
 import time
 from urllib.parse import urlencode
 
-WALLETS = (
+SEED_WALLETS = (
  '0x16217458b59b3458149918058754cd234096b159',
  '0xeda9247a2b3c99a9e0bf46cdac6e1974365cf589',
  '0x943cea746e701823b6902a6f4eaeed58207e77c2',
 )
+
+# Backward compatibility — existing imports of WALLETS keep working.
+WALLETS = SEED_WALLETS
+
+
+def ensure_active_wallets_table(store):
+    """Create the active_wallets table and seed it with SEED_WALLETS."""
+    with store.connect() as db:
+        db.execute('''CREATE TABLE IF NOT EXISTS active_wallets (
+            wallet TEXT PRIMARY KEY,
+            source TEXT NOT NULL,
+            added_at REAL NOT NULL,
+            score REAL DEFAULT 0,
+            copy_enabled INTEGER DEFAULT 0
+        )''')
+        for w in SEED_WALLETS:
+            db.execute('INSERT OR IGNORE INTO active_wallets VALUES (?,?,?,?,?)',
+                       (w, 'seed', time.time(), 0, 0))
+
+
+def get_active_wallets(store):
+    """Return SEED_WALLETS + any promoted discovery wallets from DB.
+
+    Seed wallets are always included even if somehow missing from the table.
+    """
+    ensure_active_wallets_table(store)
+    with store.connect() as db:
+        rows = db.execute('SELECT wallet FROM active_wallets').fetchall()
+    db_wallets = tuple(r[0] for r in rows)
+    # Guarantee seed wallets are always present
+    combined = list(SEED_WALLETS)
+    for w in db_wallets:
+        if w not in combined:
+            combined.append(w)
+    return tuple(combined)
+
 
 class WalletObserver:
     def __init__(self, store, fetch):
@@ -18,6 +54,7 @@ class WalletObserver:
         if not hasattr(store,"wallet_activity_ready"):store.wallet_activity_ready=asyncio.Event()
         with store.connect() as db:
             db.execute('CREATE TABLE IF NOT EXISTS wallet_activity (wallet TEXT, event_key TEXT, first_seen REAL, source_ts REAL, body TEXT, PRIMARY KEY(wallet,event_key))')
+        ensure_active_wallets_table(store)
 
     def ingest(self, wallet, rows, now):
         if not isinstance(rows, list): raise ValueError('activity response must be a list')
@@ -76,4 +113,13 @@ class WalletObserver:
             await asyncio.sleep(max(.1,interval-(time.monotonic()-started)))
 
     async def run(self):
-        await asyncio.gather(*(self.run_wallet(w) for w in WALLETS))
+        active = set()
+        tasks = {}
+        while True:
+            current = set(get_active_wallets(self.store))
+            # Start tasks for new wallets
+            for w in current - active:
+                tasks[w] = asyncio.create_task(self.run_wallet(w))
+            active = current
+            # Check every 60s for new wallets from discovery
+            await asyncio.sleep(60)
