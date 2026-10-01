@@ -32,20 +32,11 @@ def ensure_active_wallets_table(store):
 
 
 def get_active_wallets(store):
-    """Return SEED_WALLETS + any promoted discovery wallets from DB.
-
-    Seed wallets are always included even if somehow missing from the table.
+    """Return SEED_WALLETS only. Discovery wallets are excluded to reduce
+    polling load (30 → 3 wallets). Discovery is already disabled in worker.py.
     """
     ensure_active_wallets_table(store)
-    with store.connect() as db:
-        rows = db.execute('SELECT wallet FROM active_wallets').fetchall()
-    db_wallets = tuple(r[0] for r in rows)
-    # Guarantee seed wallets are always present
-    combined = list(SEED_WALLETS)
-    for w in db_wallets:
-        if w not in combined:
-            combined.append(w)
-    return tuple(combined)
+    return SEED_WALLETS
 
 
 class WalletObserver:

@@ -58,6 +58,7 @@ def public_trade(t):
 class WalletCopy:
     def __init__(self,store,fetch,paused=lambda:False,clock=time.time,sleep=asyncio.sleep):
         self.store,self.fetch,self.paused,self.clock,self.sleep=store,fetch,paused,clock,sleep
+        self._market_cache={}
         with store.connect() as db:
             db.executescript('''
               CREATE TABLE IF NOT EXISTS wallet_copy_skip_reviews(wallet TEXT,event_key TEXT,end REAL,checked REAL DEFAULT 0,body TEXT,PRIMARY KEY(wallet,event_key));
@@ -243,7 +244,11 @@ class WalletCopy:
             if event.get('type')!='TRADE' or event.get('side') not in ('BUY','SELL'):self.reason(row,'NOT_BUY_OR_SELL');return
             if self.paused():self.reason(row,'PAUSED');return
             if not re.fullmatch(r'(btc|eth)-updown-(5m|15m)-\d+',str(event.get('slug',''))):self.reason(row,'UNSUPPORTED_MARKET');return
-            raw=await asyncio.to_thread(self.fetch,'https://gamma-api.polymarket.com/markets/slug/'+quote(event['slug'],safe=''))
+            slug=str(event['slug']);cached=self._market_cache.get(slug)
+            if cached and self.clock()-cached[1]<30:raw=cached[0]
+            else:
+                raw=await asyncio.to_thread(self.fetch,'https://gamma-api.polymarket.com/markets/slug/'+quote(slug,safe=''))
+                self._market_cache[slug]=(raw,self.clock())
             m=market_spec(raw,event,self.clock());kind=event['side']
             with self.store.connect() as db:
                 open_trade=next((t for t in self.positions(db) if t['wallet']==wallet and t['token']==m['token'] and t['status']=='OPEN'),None)

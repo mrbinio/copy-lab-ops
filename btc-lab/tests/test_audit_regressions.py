@@ -45,7 +45,7 @@ async def exit_probe(strategy,policy,elapsed,corrupt=False,same=False):
 
 async def entry_probe():
  with tempfile.TemporaryDirectory() as d:
-  s=Store(Path(d)/'db');w=Worker(s,d);clock=[9299.9];w.reference={'price':70100,'source_ts':9299.9,'received_at':9299.9};w.history.append((9000,70000))
+  s=Store(Path(d)/'db');w=Worker(s,d);clock=[9420.5];w.reference={'price':70100,'source_ts':9420.5,'received_at':9420.5};w.history.append((9000,70000))
   raw={'slug':'btc-updown-15m-9000','conditionId':'c','outcomes':'["Up","Down"]','clobTokenIds':'["u","d"]','active':True,'closed':False,'acceptingOrders':True,'feesEnabled':True,'feeSchedule':{'rate':.07,'exponent':1},'description':'Bitcoin at the end is greater than or equal to the beginning. Source: Chainlink.'}
   def fetch(url):
    if '/markets/slug/' in url:return raw

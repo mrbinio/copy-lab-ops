@@ -380,7 +380,7 @@ class Worker:
                 if intent['strategy']==self.entry_strategy:
                     time_valid=180<=elapsed_at_arrival<=420
                 elif intent['strategy']=='mid-window-v2':
-                    time_valid=180<=elapsed_at_arrival<=300
+                    time_valid=180<=elapsed_at_arrival<=420
                 else:
                     time_valid=True  # other strategies have their own window checks in choose()
                 # P0-2 FIX: Arrival book must have a strictly newer source_ts than decision.
@@ -396,7 +396,7 @@ class Worker:
                     reason='CAPACITY_BELOW_MARKET_MINIMUM' if float(budget)<float(book['min_shares'])*float(intent['limit']) else 'NO_FULL_FILL'
                     if fill and intent['strategy']==self.entry_strategy and any(not .50<=float(f['price'])<=.80 for f in fill['fills']):
                         fill=None;reason='ARRIVAL_PRICE_OUTSIDE_RANGE'
-                    if fill and intent['strategy']=='mid-window-v2' and any(not .50<=float(f['price'])<=.70 for f in fill['fills']):
+                    if fill and intent['strategy']=='mid-window-v2' and any(not .55<=float(f['price'])<=.80 for f in fill['fills']):
                         fill=None;reason='ARRIVAL_PRICE_OUTSIDE_RANGE'
                     if fill:
                         if intent['probability'] is not None and intent['probability']-fill['vwap']-fill['fee']/fill['shares']-.03<.02:
@@ -486,7 +486,7 @@ class Worker:
                 if monitor and time.time()-last_wallet_refresh>=60:
                     monitor.update_wallets(get_active_wallets(self.store))
                     last_wallet_refresh=time.time()
-                await asyncio.sleep(2)
+                await asyncio.sleep(0.5)
         finally:
             reference.cancel()
             if wallets:wallets.cancel()
