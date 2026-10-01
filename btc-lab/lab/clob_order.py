@@ -42,11 +42,11 @@ class CLOBClient:
             max_order_usd: Max USD per order (capped at MAX_ORDER_USD)
         """
         # Lazy import — don't crash if py-clob-client not installed
-        from py_order_utils.types import BUY
         from py_clob_client.client import ClobClient
         from py_clob_client.clob_types import OrderArgs, OrderType
 
-        self._BUY = BUY
+        self._BUY = "BUY"
+        self._SELL = "SELL"
         self._OrderArgs = OrderArgs
         self._OrderType = OrderType
 
@@ -130,7 +130,8 @@ class CLOBClient:
             price: Limit price
             size: Number of shares to sell
         """
-        from py_order_utils.types import SELL as SELL_SIDE
+        from py_clob_client.clob_types import OrderArgs, OrderType
+        SELL_SIDE = "SELL"
 
         if not 0.01 <= price <= 0.99:
             raise ValueError(f"Price {price} outside valid range")
