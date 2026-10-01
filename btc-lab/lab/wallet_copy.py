@@ -250,29 +250,28 @@ class WalletCopy:
                 blocked=self.risk_reason(db,wallet,self.clock()) if kind=='BUY' else None
                 if blocked:self.reason(row,blocked);return
                 if kind=='SELL' and not open_trade:self.reason(row,'NO_COPIED_POSITION');return
-            decision=await self.book(m['token']);at=self.clock()
+            # Single book fetch — no sleep, no double fetch. Speed is critical.
+            book=await self.book(m['token']);now=self.clock()
             if kind=='BUY':
                 source_price=Decimal(str(event.get('price',0)))
                 if not source_price.is_finite() or not 0<source_price<1:self.reason(row,'SOURCE_PRICE_INVALID');return
-                if at-row['source_ts']>60:self.reason(row,'COPY_BUY_TOO_LATE',{'decision_book':decision});return
-                if not decision['asks']:self.reason(row,'NO_ASK');return
-                ask=min(Decimal(p) for p,q in decision['asks'])
-                if ask-source_price>Decimal('.10') or source_price-ask>Decimal('.10'):self.reason(row,'SOURCE_PRICE_MOVED',{'decision_book':decision});return
+                if now-row['source_ts']>60:self.reason(row,'COPY_BUY_TOO_LATE',{'decision_book':book});return
+                if not book['asks']:self.reason(row,'NO_ASK');return
+                ask=min(Decimal(p) for p,q in book['asks'])
+                if ask-source_price>Decimal('.10') or source_price-ask>Decimal('.10'):self.reason(row,'SOURCE_PRICE_MOVED',{'decision_book':book});return
                 limit=min(Decimal('.999999'),ask+Decimal('.02'),source_price+Decimal('.10'))
             else:
-                if not decision['bids']:self.reason(row,'NO_BID');return
-                limit=max(Decimal(decision['tick']),max(Decimal(p) for p,q in decision['bids'])-Decimal('.02'))
-            await self.sleep(.25)
-            arrival=await self.book(m['token']);now=self.clock()
-            if not (.25<=now-at<=5 and arrival['source_ts']>decision['source_ts'] and arrival['received_at']>=at+.25 and now<m['end'] and now-row['source_ts']<=90) or self.paused():self.reason(row,'ARRIVAL_REJECTED');return
-            evidence=dict(source_event=event,source_timestamp=row['source_ts'],first_seen=row['first_seen'],decision_at=at,arrival_at=now,
-                detection_delay=row['first_seen']-row['source_ts'],copy_delay=now-row['source_ts'],decision_book=decision,arrival_book=arrival,market_metadata=raw)
+                if not book['bids']:self.reason(row,'NO_BID');return
+                limit=max(Decimal(book['tick']),max(Decimal(p) for p,q in book['bids'])-Decimal('.02'))
+            if not (0<=now-book['source_ts']<=5 and now<m['end'] and now-row['source_ts']<=90) or self.paused():self.reason(row,'ARRIVAL_REJECTED');return
+            evidence=dict(source_event=event,source_timestamp=row['source_ts'],first_seen=row['first_seen'],decision_at=now,arrival_at=now,
+                detection_delay=row['first_seen']-row['source_ts'],copy_delay=now-row['source_ts'],decision_book=book,arrival_book=book,market_metadata=raw)
             if kind=='BUY':
                 if now-row['source_ts']>60:self.reason(row,'COPY_BUY_TOO_LATE',evidence);return
-                if not arrival['asks'] or (lambda a:a-source_price>Decimal('.10') or source_price-a>Decimal('.10'))(min(Decimal(p) for p,q in arrival['asks'])):self.reason(row,'SOURCE_PRICE_MOVED',evidence);return
+                if not book['asks'] or (lambda a:a-source_price>Decimal('.10') or source_price-a>Decimal('.10'))(min(Decimal(p) for p,q in book['asks'])):self.reason(row,'SOURCE_PRICE_MOVED',evidence);return
                 evidence['copy_policy']='source-band10c-age60s-v2'
                 notional=(Decimal(BUDGET)/1_000_000/(1+Decimal(str(m['fee_rate'])))).quantize(Decimal('.000001'),rounding=ROUND_FLOOR)
-                fill=simulate_fill(arrival['asks'],notional,limit,m['fee_rate'],arrival['min_shares'],arrival['tick'])
+                fill=simulate_fill(book['asks'],notional,limit,m['fee_rate'],book['min_shares'],book['tick'])
                 if not fill or fill['cost']+fill['fee']>BUDGET:self.reason(row,'BUY_NO_FULL_FILL_OR_MINIMUM',evidence);return
                 trade=dict(id=wallet+':'+key,wallet=wallet,strategy='copy-'+wallet,market=m['slug'],condition=m['condition'],asset=m['asset'],interval=m['interval'],
                     token=m['token'],side=m['side'],end=m['end'],status='OPEN',opened=now,shares=fill['shares'],cost=fill['cost'],fee=fill['fee'],exit_fee=0,
@@ -286,7 +285,7 @@ class WalletCopy:
                     db.execute('INSERT INTO wallet_copy_ledger VALUES (?,?,?)',('buy:'+trade['id'],wallet,debit))
                     db.execute("UPDATE wallet_copy_events SET reason='COPIED_BUY',body=? WHERE wallet=? AND event_key=?",(json.dumps(evidence),wallet,key))
             else:
-                fill=simulate_sale(arrival,open_trade['shares'],m['fee_rate'],limit)
+                fill=simulate_sale(book,open_trade['shares'],m['fee_rate'],limit)
                 if not fill:self.reason(row,'SELL_NO_FULL_FILL',evidence);return
                 self.close(open_trade,fill['proceeds'],fill['fee'],now,'CLOSED',{'fill':fill,'evidence':evidence},row)
         except Exception as error:self.reason(row,'ERROR',{'error':str(error)[:400]})
