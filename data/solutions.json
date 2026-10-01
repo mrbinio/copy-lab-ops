@@ -29,19 +29,15 @@
       300
     ]
   },
-  "dead_pl": [
-    "Erasmus. · CULTURE · jeden event / veto"
-  ],
-  "dead_en": [
-    "Erasmus. · CULTURE · jeden event / veto"
-  ],
+  "dead_pl": [],
+  "dead_en": [],
   "error": "http 404 claude-sonnet-4-20250514",
-  "updated_at": "2026-10-01T00:41:54.683917+00:00",
-  "hunt_updated_at": "2026-10-01T00:41:41.305457+00:00",
+  "updated_at": "2026-10-01T10:15:34.099111+00:00",
+  "hunt_updated_at": "2026-10-01T10:15:19.286152+00:00",
   "x_source": "error",
   "x_model": null,
   "x_error": "http 403 grok-4.6 {\"code\":\"permission-denied\",\"error\":\"Your newly created team doesn't have any credits or licenses yet. You can purchase those on https://conso",
   "x_pl": "Filtr X: błąd API. Zostają sity. Copy off.",
   "x_en": "X filter: API error. Gates stand. Copy off.",
-  "x_updated_at": "2026-10-01T00:41:54.818138+00:00"
+  "x_updated_at": "2026-10-01T10:15:34.311897+00:00"
 }
