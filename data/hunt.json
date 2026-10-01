@@ -1,7 +1,7 @@
 {
   "status": "done",
   "goal": "Find one specialist a $39 stack can copy at $5 after 60/90d, not Top 8.",
-  "checked": 1055,
+  "checked": 1074,
   "log": [
     "plan cats=ECONOMICS,SPORTS,POLITICS,FINANCE,CULTURE,TECH extra={\"ECONOMICS\":[250,300]} x_skip=",
     "LB ECONOMICS ALL off=150 n=50",
@@ -30,53 +30,40 @@
     "LB TECH ALL off=200 n=50",
     "LB TECH MONTH off=100 n=50",
     "LB TECH MONTH off=150 n=50",
-    "new wallets to scan: 1067",
+    "new wallets to scan: 1074",
     "scanned 30, queued 6",
     "scanned 45, queued 6",
     "scanned 60, queued 6",
     "scanned 90, queued 6",
-    "scanned 135, queued 12",
-    "scanned 150, queued 19",
-    "scanned 195, queued 24",
-    "scanned 225, queued 24",
+    "scanned 120, queued 12",
+    "scanned 150, queued 20",
     "scanned 240, queued 24",
-    "scanned 270, queued 24",
-    "scanned 300, queued 24",
+    "scanned 255, queued 24",
+    "scanned 285, queued 24",
     "scanned 315, queued 24",
-    "scanned 345, queued 24",
+    "scanned 330, queued 24",
     "scanned 360, queued 24",
+    "scanned 420, queued 24",
     "scanned 435, queued 24",
-    "scanned 450, queued 27",
-    "scanned 465, queued 29",
+    "scanned 480, queued 30",
     "scanned 495, queued 30",
     "scanned 510, queued 30",
-    "scanned 525, queued 30",
-    "scanned 540, queued 30",
+    "scanned 555, queued 30",
     "scanned 570, queued 30",
-    "scanned 585, queued 34",
-    "scanned 600, queued 36",
+    "scanned 585, queued 31",
     "scanned 645, queued 36",
     "scanned 660, queued 36",
     "scanned 675, queued 36",
+    "scanned 690, queued 36",
     "scanned 705, queued 36",
     "scanned 720, queued 36",
     "scanned 735, queued 36",
     "scanned 750, queued 36",
     "scanned 765, queued 36",
-    "scanned 780, queued 36",
-    "scanned 795, queued 36",
     "scanned 810, queued 36",
     "scanned 825, queued 36",
-    "scanned 855, queued 36",
-    "scanned 885, queued 36",
     "scanned 900, queued 36",
-    "scanned 915, queued 36",
-    "scanned 930, queued 36",
     "scanned 945, queued 36",
-    "scanned 975, queued 36",
-    "scanned 990, queued 36",
-    "scanned 1005, queued 36",
-    "scanned 1050, queued 36",
     "simming 36",
     "SuperApe         POLITICS   d=682 60=+0.0 90=+0.0 conc=0.6 cg=None",
     "5332321          POLITICS   d=348 60=+0.0 90=+0.0 conc=0.53 cg=None",
@@ -99,15 +86,15 @@
     "0xbandit         FINANCE    d=220 60=+0.0 90=+0.0 conc=0.24 cg=None",
     "completion       FINANCE    d=209 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "AZwater          FINANCE    d=141 60=+0.0 90=+0.0 conc=1.0 cg=None",
+    "teyice           FINANCE    d=244 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "aikko            FINANCE    d=280 60=+0.0 90=+0.0 conc=0.33 cg=None",
     "Red781RuM        FINANCE    d=206 60=+0.0 90=+0.0 conc=1.0 cg=None",
-    "gings            FINANCE    d=462 60=+0.0 90=+0.0 conc=0.31 cg=None",
-    "lucidarderi      SPORTS     d=126 60=+7.4 90=+7.4 conc=0.51 cg=None",
     "DimSumConnoisseu SPORTS     d=144 60=+0.0 90=+0.0 conc=1.0 cg=None",
-    "IAmHomelessNow   SPORTS     d=207 60=+7.7 90=+0.0 conc=1.0 cg=None",
+    "0x760f1063f9f07d SPORTS     d=126 60=+41.9 90=+5.9 conc=0.44 cg=None",
     "PatienceCapital  SPORTS     d=265 60=-5.0 90=+0.0 conc=0.51 cg=None",
     "SharkbettingCom  SPORTS     d=195 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "Hypurrrrrr       SPORTS     d=192 60=+0.0 90=+0.0 conc=1.0 cg=None",
+    "Flueme           SPORTS     d=142 60=-5.0 90=-5.0 conc=0.13 cg=None",
     "torrest          ECONOMICS  d=109 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "SwissMiss        ECONOMICS  d=145 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "gopfan2          ECONOMICS  d=194 60=+0.0 90=+0.0 conc=1.0 cg=None",
@@ -117,6 +104,23 @@
     "hunt finished"
   ],
   "candidates": [
+    {
+      "username": "0x760f1063f9f07d5125de802b16775a967b7f326a",
+      "wallet": "0x760f1063f9f07d5125de802b16775a967b7f326a",
+      "cat": "SPORTS",
+      "domain": "sport",
+      "history_days": 125.6,
+      "w60": 41.89,
+      "w90": 5.92,
+      "copies": 6,
+      "conc": 0.44,
+      "top_market": "Will PSG win the 2025\u201326 Champions League?",
+      "candle": 0.02,
+      "copygrade": {
+        "status": "rate_limit"
+      },
+      "score": 42.5
+    },
     {
       "username": "ps5",
       "wallet": "0x1ea77a5e8191db9f2c0a18f2692feccd0c47bcd9",
@@ -130,26 +134,9 @@
       "top_market": "Will the Oklahoma City Thunder win the 2025 NBA Finals?",
       "candle": 0.13,
       "copygrade": {
-        "status": "not_indexed"
-      },
-      "score": 28.9
-    },
-    {
-      "username": "lucidarderi",
-      "wallet": "0xc7b555bf52c96d319e6d0431bb1a19caa3fa4527",
-      "cat": "SPORTS",
-      "domain": "sport",
-      "history_days": 126.0,
-      "w60": 7.39,
-      "w90": 7.39,
-      "copies": 5,
-      "conc": 0.51,
-      "top_market": "Will Como 1907 win on 2026-09-10?",
-      "candle": 0.0,
-      "copygrade": {
         "status": "rate_limit"
       },
-      "score": -29.3
+      "score": 28.9
     },
     {
       "username": "Erasmus.",
@@ -165,9 +152,9 @@
       "candle": 0.0,
       "copygrade": {
         "status": "ok",
-        "score": 57,
+        "score": 56,
         "label": "Copy with caution",
-        "edge_real": -17.2,
+        "edge_real": -17.7,
         "farming": {
           "level": "watch",
           "signals": 1
@@ -177,21 +164,21 @@
     }
   ],
   "pick": {
-    "username": "ps5",
-    "wallet": "0x1ea77a5e8191db9f2c0a18f2692feccd0c47bcd9",
-    "cat": "ECONOMICS",
-    "domain": "other",
-    "history_days": 675.0,
-    "w60": 13.56,
-    "w90": 14.69,
-    "copies": 8,
-    "conc": 0.41,
-    "top_market": "Will the Oklahoma City Thunder win the 2025 NBA Finals?",
-    "candle": 0.13,
+    "username": "0x760f1063f9f07d5125de802b16775a967b7f326a",
+    "wallet": "0x760f1063f9f07d5125de802b16775a967b7f326a",
+    "cat": "SPORTS",
+    "domain": "sport",
+    "history_days": 125.6,
+    "w60": 41.89,
+    "w90": 5.92,
+    "copies": 6,
+    "conc": 0.44,
+    "top_market": "Will PSG win the 2025\u201326 Champions League?",
+    "candle": 0.02,
     "copygrade": {
-      "status": "not_indexed"
+      "status": "rate_limit"
     },
-    "score": 28.9
+    "score": 42.5
   },
-  "updated_at": "2026-09-30T20:10:01.264573+00:00"
+  "updated_at": "2026-10-01T00:41:41.305457+00:00"
 }

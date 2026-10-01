@@ -30,20 +30,18 @@
     ]
   },
   "dead_pl": [
-    "lucidarderi · SPORTS · jeden event / veto",
     "Erasmus. · CULTURE · jeden event / veto"
   ],
   "dead_en": [
-    "lucidarderi · SPORTS · jeden event / veto",
     "Erasmus. · CULTURE · jeden event / veto"
   ],
   "error": "http 404 claude-sonnet-4-20250514",
-  "updated_at": "2026-09-30T20:10:15.147057+00:00",
-  "hunt_updated_at": "2026-09-30T20:10:01.264573+00:00",
+  "updated_at": "2026-10-01T00:41:54.683917+00:00",
+  "hunt_updated_at": "2026-10-01T00:41:41.305457+00:00",
   "x_source": "error",
   "x_model": null,
   "x_error": "http 403 grok-4.6 {\"code\":\"permission-denied\",\"error\":\"Your newly created team doesn't have any credits or licenses yet. You can purchase those on https://conso",
   "x_pl": "Filtr X: błąd API. Zostają sity. Copy off.",
   "x_en": "X filter: API error. Gates stand. Copy off.",
-  "x_updated_at": "2026-09-30T20:10:15.341051+00:00"
+  "x_updated_at": "2026-10-01T00:41:54.818138+00:00"
 }
