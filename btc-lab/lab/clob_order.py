@@ -52,10 +52,10 @@ class CLOBClient:
 
         self.max_order_usd = min(max_order_usd, MAX_ORDER_USD)
         self.client = ClobClient(
-            host="https://clob.polymarket.com",
+            "https://clob.polymarket.com",
+            key=private_key,
             chain_id=CHAIN_ID,
-            private_key=private_key,
-            signature_type=0,  # EOA wallet
+            signature_type=0,
             funder=funder,
         )
         self.client.set_api_creds(self.client.create_or_derive_api_creds())
