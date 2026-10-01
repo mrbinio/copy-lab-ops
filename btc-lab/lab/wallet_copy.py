@@ -264,7 +264,7 @@ class WalletCopy:
                 limit=max(Decimal(decision['tick']),max(Decimal(p) for p,q in decision['bids'])-Decimal('.02'))
             await self.sleep(.05)
             arrival=await self.book(m['token']);now=self.clock()
-            if not (0<now-at<=5 and 0<=now-arrival['source_ts']<=5 and now<m['end'] and now-row['source_ts']<=90) or self.paused():self.reason(row,'ARRIVAL_REJECTED');return
+            if not (0<now-at<=5 and 0<=now-arrival['source_ts']<=5 and arrival['source_ts']>decision['source_ts'] and now<m['end'] and now-row['source_ts']<=90) or self.paused():self.reason(row,'ARRIVAL_REJECTED');return
             evidence=dict(source_event=event,source_timestamp=row['source_ts'],first_seen=row['first_seen'],decision_at=at,arrival_at=now,
                 detection_delay=row['first_seen']-row['source_ts'],copy_delay=now-row['source_ts'],decision_book=decision,arrival_book=arrival,market_metadata=raw)
             if kind=='BUY':
