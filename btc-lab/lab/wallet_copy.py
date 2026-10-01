@@ -1,7 +1,8 @@
-"""Forward-only fixed-size wallet-signal PAPER copy. Never signs real orders."""
+"""Forward-only fixed-size wallet-signal copy with optional CLOB live orders."""
 import asyncio
 import copy
 import json
+import logging
 import math
 import re
 import time
@@ -12,6 +13,8 @@ from .core import simulate_fill
 from .mid_window import simulate_sale
 from .reference import classify_rule
 from .wallet_observer import WALLETS, get_active_wallets, SEED_WALLETS
+
+log = logging.getLogger(__name__)
 
 class CopyLedgerError(ValueError):pass
 
@@ -57,8 +60,13 @@ def public_trade(t):
     return result
 
 class WalletCopy:
-    def __init__(self,store,fetch,paused=lambda:False,clock=time.time,sleep=asyncio.sleep):
+    # Max total CLOB exposure across all open orders (safety cap)
+    CLOB_MAX_EXPOSURE_USD = 10.0
+
+    def __init__(self,store,fetch,paused=lambda:False,clock=time.time,sleep=asyncio.sleep,clob_client=None):
         self.store,self.fetch,self.paused,self.clock,self.sleep=store,fetch,paused,clock,sleep
+        self.clob_client = clob_client
+        self._clob_exposure_usd = 0.0  # running total of CLOB orders placed
         self._market_cache={}
         with store.connect() as db:
             db.executescript('''
@@ -107,11 +115,11 @@ class WalletCopy:
                 e=json.loads(r['body']);recent.append({k:r[k] for k in ('wallet','event_key','ts','reason')}|{'error':e.get('error'),'copy_delay':e.get('copy_delay')})
             errors=[dict(r)|{'detail':json.loads(r['body']).get('error')} for r in db.execute("SELECT wallet,event_key,ts,body FROM wallet_copy_events WHERE reason='ERROR' ORDER BY ts DESC LIMIT 30")]
         self.store.set(KEY,dict(spec='wallet-signal-copy-v1',status=status,error=error,updated_at=now,started_at=self.started,
-            mode='PAPER ONLY',accounts=[a for a in accounts if a['trades']>0 or a['wallet'] in SEED_WALLETS],recent_trades=[public_trade(t) for t in sorted(trades,key=lambda t:t['opened'],reverse=True)[:100]],
+            mode='PAPER + CLOB' if self.clob_client else 'PAPER ONLY',accounts=[a for a in accounts if a['trades']>0 or a['wallet'] in SEED_WALLETS],recent_trades=[public_trade(t) for t in sorted(trades,key=lambda t:t['opened'],reverse=True)[:100]],
             trades_truncated=len(trades)>100,reasons=reasons,recent_decisions=recent,
-            skip_review=self.skip_summary(),recent_errors=errors,entry_policy='source-band3c-age15s-v3',
+            skip_review=self.skip_summary(),recent_errors=errors,entry_policy='source-band3c-age30s-v4',
             scope='BTC/ETH 5m and 15m only; fixed <=5USD all-in,500USD separate virtual scenarios; first SELL closes full copied lot',
-            limitation='Not identical source sizing/partial exits. Public indexed activity,1s target polling,BUY<=15s age and +/-3c from source; SELL<=90s age; FOK at fresh delayed books with50% depth. No profitability guarantee.'))
+            limitation='Not identical source sizing/partial exits. Public indexed activity,1s target polling,BUY<=30s age and +/-3c from source; SELL<=90s age; FOK at fresh delayed books with50% depth. No profitability guarantee.'))
 
     def skip_summary(self):
         with self.store.connect() as db:
@@ -258,7 +266,7 @@ class WalletCopy:
             if kind=='BUY':
                 source_price=Decimal(str(event.get('price',0)))
                 if not source_price.is_finite() or not 0<source_price<1:self.reason(row,'SOURCE_PRICE_INVALID');return
-                if at-row['source_ts']>15:self.reason(row,'COPY_BUY_TOO_LATE',{'decision_book':decision});return
+                if at-row['source_ts']>30:self.reason(row,'COPY_BUY_TOO_LATE',{'decision_book':decision});return
                 if not decision['asks']:self.reason(row,'NO_ASK');return
                 ask=min(Decimal(p) for p,q in decision['asks'])
                 if ask-source_price>Decimal('.03') or source_price-ask>Decimal('.03'):self.reason(row,'SOURCE_PRICE_MOVED',{'decision_book':decision});return
@@ -272,9 +280,9 @@ class WalletCopy:
             evidence=dict(source_event=event,source_timestamp=row['source_ts'],first_seen=row['first_seen'],decision_at=at,arrival_at=now,
                 detection_delay=row['first_seen']-row['source_ts'],copy_delay=now-row['source_ts'],decision_book=decision,arrival_book=arrival,market_metadata=raw)
             if kind=='BUY':
-                if now-row['source_ts']>15:self.reason(row,'COPY_BUY_TOO_LATE',evidence);return
+                if now-row['source_ts']>30:self.reason(row,'COPY_BUY_TOO_LATE',evidence);return
                 if not arrival['asks'] or (lambda a:a-source_price>Decimal('.03') or source_price-a>Decimal('.03'))(min(Decimal(p) for p,q in arrival['asks'])):self.reason(row,'SOURCE_PRICE_MOVED',evidence);return
-                evidence['copy_policy']='source-band3c-age15s-v3'
+                evidence['copy_policy']='source-band3c-age30s-v4'
                 notional=(Decimal(BUDGET)/1_000_000/(1+Decimal(str(m['fee_rate'])))).quantize(Decimal('.000001'),rounding=ROUND_FLOOR)
                 fill=simulate_fill(arrival['asks'],notional,limit,m['fee_rate'],arrival['min_shares'],arrival['tick'])
                 if not fill or fill['cost']+fill['fee']>BUDGET:self.reason(row,'BUY_NO_FULL_FILL_OR_MINIMUM',evidence);return
@@ -289,6 +297,44 @@ class WalletCopy:
                     db.execute('UPDATE wallet_copy_accounts SET cash=cash+? WHERE wallet=?',(debit,wallet))
                     db.execute('INSERT INTO wallet_copy_ledger VALUES (?,?,?)',('buy:'+trade['id'],wallet,debit))
                     db.execute("UPDATE wallet_copy_events SET reason='COPIED_BUY',body=? WHERE wallet=? AND event_key=?",(json.dumps(evidence),wallet,key))
+                # --- CLOB live order (optional, after paper accounting) ---
+                if self.clob_client:
+                    try:
+                        clob_budget = min(5.0, float(fill['cost'] + fill['fee']) / 1e6)
+                        clob_price = float(limit)
+                        clob_size = clob_budget / clob_price if clob_price > 0 else 0
+                        remaining_exposure = self.CLOB_MAX_EXPOSURE_USD - self._clob_exposure_usd
+                        if clob_budget > remaining_exposure:
+                            clob_budget = max(0, remaining_exposure)
+                            clob_size = clob_budget / clob_price if clob_price > 0 else 0
+                        log.info(
+                            'CLOB BUY attempt: token=%s price=%.4f size=%.2f budget=$%.2f exposure=$%.2f/%s',
+                            m['token'][:16], clob_price, clob_size, clob_budget,
+                            self._clob_exposure_usd, self.CLOB_MAX_EXPOSURE_USD,
+                        )
+                        if clob_budget >= 0.50 and clob_size >= 5:
+                            clob_result = self.clob_client.buy(
+                                token_id=m['token'],
+                                price=clob_price,
+                                size=round(clob_size, 2),
+                            )
+                            self._clob_exposure_usd += clob_budget
+                            log.info('CLOB order result: %s', json.dumps(clob_result, default=str)[:500])
+                            evidence['clob_order'] = clob_result
+                        else:
+                            evidence['clob_order'] = {
+                                'ok': False, 'reason': 'BELOW_MINIMUM',
+                                'budget': clob_budget, 'size': clob_size,
+                                'remaining_exposure': remaining_exposure,
+                            }
+                            log.info('CLOB order skipped: budget=$%.2f size=%.2f below minimums', clob_budget, clob_size)
+                    except Exception as clob_err:
+                        log.error('CLOB order error: %s', clob_err)
+                        evidence['clob_order'] = {'ok': False, 'error': str(clob_err)[:400]}
+                    # Update stored evidence with CLOB result
+                    with self.store.connect() as db:
+                        db.execute("UPDATE wallet_copy_events SET body=? WHERE wallet=? AND event_key=?",
+                            (json.dumps(evidence),wallet,key))
             else:
                 fill=simulate_sale(arrival,open_trade['shares'],m['fee_rate'],limit)
                 if not fill:self.reason(row,'SELL_NO_FULL_FILL',evidence);return

@@ -462,7 +462,33 @@ class Worker:
         observer=WalletObserver(self.store,get_json) if self.asset=="BTC" else None
         wallets=asyncio.create_task(observer.run()) if observer else None
         discovery=None  # Disabled: too many unverified wallets. Seed wallets only.
-        copier=asyncio.create_task(WalletCopy(self.store,get_json,self.is_paused).run()) if self.asset=="BTC" else None
+        # --- CLOB live order support (optional, off by default) ---
+        clob_client = None
+        if self.asset == "BTC":
+            config_path = self.data / 'config.json'
+            if config_path.exists():
+                try:
+                    config = json.loads(config_path.read_text())
+                    clob_key = config.get('clob_private_key', '')
+                    clob_live = config.get('clob_live', False)
+                    if clob_key and clob_live is True:
+                        from .clob_order import CLOBClient as _CLOBClient
+                        clob_client = _CLOBClient(
+                            private_key=clob_key,
+                            api_key=config.get('clob_api_key', ''),
+                            api_secret=config.get('clob_api_secret', ''),
+                            api_passphrase=config.get('clob_api_passphrase', ''),
+                            funder=config.get('clob_funder'),
+                            max_order_usd=5.0,
+                        )
+                        LOG.info('CLOB live orders ENABLED (max $5/order, $10 exposure)')
+                    else:
+                        LOG.info('CLOB live orders disabled (clob_live=%s, key=%s)',
+                                 clob_live, 'present' if clob_key else 'missing')
+                except Exception as e:
+                    LOG.warning('Failed to initialize CLOB client: %s', e)
+                    clob_client = None
+        copier=asyncio.create_task(WalletCopy(self.store,get_json,self.is_paused,clob_client=clob_client).run()) if self.asset=="BTC" else None
         # Chain monitor: detects trades on-chain (~2s), then aggressively polls
         # Data API until source trade with confirmed price appears (~5-10s total).
         # Uses same key format as REST observer — true dedup, no duplicates.
