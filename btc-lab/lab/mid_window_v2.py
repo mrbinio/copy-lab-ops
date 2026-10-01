@@ -45,14 +45,14 @@ def entry(m, reference, history, now):
     z = m['features'][1]
     if abs(z) < 1.5:
         return None, 'NORMALIZED_DISTANCE_SMALL'
-    side = 'Up' if reference['price'] >= m['opening'] else 'Down'
-    # Momentum confirmation: 30 seconds of consistent directional movement.
-    past = [(t, p) for t, p in history if now - 35 <= t <= now]
-    if len(past) < 20 or now - past[0][0] < 30 or any(b[0] - a[0] > 5 for a, b in zip(past, past[1:])):
-        return None, 'MOMENTUM_HISTORY_MISSING'
-    direction = 1 if side == 'Up' else -1
-    if any(direction * (p - m['opening']) <= 0 for _, p in past) or direction * (past[-1][1] - past[0][1]) <= 0:
-        return None, 'MOMENTUM_UNCONFIRMED'
+    # Side = book favorite (lower ask = higher implied probability), like Mitch.
+    up_book = m['books'].get('Up', {})
+    down_book = m['books'].get('Down', {})
+    if not up_book.get('asks') or not down_book.get('asks'):
+        return None, 'BOOK_STALE'
+    up_ask = min(float(x[0]) for x in up_book['asks'])
+    down_ask = min(float(x[0]) for x in down_book['asks'])
+    side = 'Up' if up_ask <= down_ask else 'Down'
     b = m['books'][side]
     if not b.get('bids'):
         return None, 'BOOK_STALE'
