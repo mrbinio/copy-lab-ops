@@ -4,7 +4,7 @@ from decimal import Decimal, ROUND_FLOOR, ROUND_CEILING
 from .core import number, units
 
 SPEC = {'id':'mid-window-v1','entry_elapsed_seconds':[180,420],
-        'ask_range':[.50,.80], 'last_sale_elapsed_exclusive':600,
+        'ask_range':[.50,.60], 'last_sale_elapsed_exclusive':600,
         'deadline_exit_from':590, 'momentum_seconds':30,
         'minimum_normalized_distance':1.0, 'max_spread':.03,
         'take_profit_net_fraction':.10,'stop_loss_net_fraction':.20,
@@ -28,9 +28,9 @@ def entry(m, reference, history, now):
     b=m['books'][side]
     if not b.get('bids'): return None,'BOOK_STALE'
     ask=min(float(x[0]) for x in b['asks']);bid=max(float(x[0]) for x in b['bids'])
-    if not .50<=ask<=.80: return None,'PRICE_OUTSIDE_RANGE'
+    if not .50<=ask<=.60: return None,'PRICE_OUTSIDE_RANGE'
     if not 0<=ask-bid<=.030000001: return None,'SPREAD_TOO_WIDE'
-    return {'side':side,'limit':min(.80,ask+.01),'probability':None,
+    return {'side':side,'limit':min(.60,ask+.01),'probability':None,
             'decision_at':now,'strategy':'mid-window-v1','market':m['slug'],
             'config_version':'mid-window-v1','feature_schema':m.get('feature_schema'),
             'hypothesis':SPEC},'SIGNAL'

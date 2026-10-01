@@ -394,7 +394,7 @@ class Worker:
                     fill=simulate_fill(book['asks'],budget,str(intent['limit']),str(m['fee_rate']),book['min_shares'],book['tick'])
                     if fill and fill['cost']+fill['fee']>capacity:fill=None
                     reason='CAPACITY_BELOW_MARKET_MINIMUM' if float(budget)<float(book['min_shares'])*float(intent['limit']) else 'NO_FULL_FILL'
-                    if fill and intent['strategy']==self.entry_strategy and any(not .50<=float(f['price'])<=.80 for f in fill['fills']):
+                    if fill and intent['strategy']==self.entry_strategy and any(not .50<=float(f['price'])<=.60 for f in fill['fills']):
                         fill=None;reason='ARRIVAL_PRICE_OUTSIDE_RANGE'
                     if fill and intent['strategy']=='mid-window-v2' and any(not .55<=float(f['price'])<=.80 for f in fill['fills']):
                         fill=None;reason='ARRIVAL_PRICE_OUTSIDE_RANGE'
