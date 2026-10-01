@@ -461,7 +461,7 @@ class Worker:
         reference=asyncio.create_task(self.reference_stream())
         observer=WalletObserver(self.store,get_json) if self.asset=="BTC" else None
         wallets=asyncio.create_task(observer.run()) if observer else None
-        discovery=asyncio.create_task(WalletDiscovery(self.store,get_json).run()) if self.asset=="BTC" else None
+        discovery=None  # Disabled: too many unverified wallets. Seed wallets only.
         copier=asyncio.create_task(WalletCopy(self.store,get_json,self.is_paused).run()) if self.asset=="BTC" else None
         # Chain monitor: detects trades on-chain (~2s), then aggressively polls
         # Data API until source trade with confirmed price appears (~5-10s total).

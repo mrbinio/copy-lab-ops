@@ -10,7 +10,7 @@ from urllib.parse import quote
 from .core import simulate_fill
 from .mid_window import simulate_sale
 from .reference import classify_rule
-from .wallet_observer import WALLETS, get_active_wallets
+from .wallet_observer import WALLETS, get_active_wallets, SEED_WALLETS
 
 class CopyLedgerError(ValueError):pass
 
@@ -105,7 +105,7 @@ class WalletCopy:
                 e=json.loads(r['body']);recent.append({k:r[k] for k in ('wallet','event_key','ts','reason')}|{'error':e.get('error'),'copy_delay':e.get('copy_delay')})
             errors=[dict(r)|{'detail':json.loads(r['body']).get('error')} for r in db.execute("SELECT wallet,event_key,ts,body FROM wallet_copy_events WHERE reason='ERROR' ORDER BY ts DESC LIMIT 30")]
         self.store.set(KEY,dict(spec='wallet-signal-copy-v1',status=status,error=error,updated_at=now,started_at=self.started,
-            mode='PAPER ONLY',accounts=accounts,recent_trades=[public_trade(t) for t in sorted(trades,key=lambda t:t['opened'],reverse=True)[:100]],
+            mode='PAPER ONLY',accounts=[a for a in accounts if a['trades']>0 or a['wallet'] in SEED_WALLETS],recent_trades=[public_trade(t) for t in sorted(trades,key=lambda t:t['opened'],reverse=True)[:100]],
             trades_truncated=len(trades)>100,reasons=reasons,recent_decisions=recent,
             skip_review=self.skip_summary(),recent_errors=errors,entry_policy='source-band10c-age60s-v2',
             scope='BTC/ETH 5m and 15m only; fixed <=5USD all-in,500USD separate virtual scenarios; first SELL closes full copied lot',
