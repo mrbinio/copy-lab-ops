@@ -1,5 +1,6 @@
 """Forward-only fixed-size wallet-signal PAPER copy. Never signs real orders."""
 import asyncio
+import copy
 import json
 import math
 import re
@@ -244,11 +245,8 @@ class WalletCopy:
             if event.get('type')!='TRADE' or event.get('side') not in ('BUY','SELL'):self.reason(row,'NOT_BUY_OR_SELL');return
             if self.paused():self.reason(row,'PAUSED');return
             if not re.fullmatch(r'(btc|eth)-updown-(5m|15m)-\d+',str(event.get('slug',''))):self.reason(row,'UNSUPPORTED_MARKET');return
-            slug=str(event['slug']);cached=self._market_cache.get(slug)
-            if cached and self.clock()-cached[1]<30:raw=cached[0]
-            else:
-                raw=await asyncio.to_thread(self.fetch,'https://gamma-api.polymarket.com/markets/slug/'+quote(slug,safe=''))
-                self._market_cache[slug]=(raw,self.clock())
+            slug=str(event['slug'])
+            raw=await asyncio.to_thread(self.fetch,'https://gamma-api.polymarket.com/markets/slug/'+quote(slug,safe=''))
             m=market_spec(raw,event,self.clock());kind=event['side']
             with self.store.connect() as db:
                 open_trade=next((t for t in self.positions(db) if t['wallet']==wallet and t['token']==m['token'] and t['status']=='OPEN'),None)
