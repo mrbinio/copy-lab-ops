@@ -258,11 +258,11 @@ class WalletCopy:
             if kind=='BUY':
                 source_price=Decimal(str(event.get('price',0)))
                 if not source_price.is_finite() or not 0<source_price<1:self.reason(row,'SOURCE_PRICE_INVALID');return
-                if at-row['source_ts']>60:self.reason(row,'COPY_BUY_TOO_LATE',{'decision_book':decision});return
+                if at-row['source_ts']>15:self.reason(row,'COPY_BUY_TOO_LATE',{'decision_book':decision});return
                 if not decision['asks']:self.reason(row,'NO_ASK');return
                 ask=min(Decimal(p) for p,q in decision['asks'])
-                if ask-source_price>Decimal('.10') or source_price-ask>Decimal('.10'):self.reason(row,'SOURCE_PRICE_MOVED',{'decision_book':decision});return
-                limit=min(Decimal('.999999'),ask+Decimal('.02'),source_price+Decimal('.10'))
+                if ask-source_price>Decimal('.03') or source_price-ask>Decimal('.03'):self.reason(row,'SOURCE_PRICE_MOVED',{'decision_book':decision});return
+                limit=min(Decimal('.999999'),ask+Decimal('.01'),source_price+Decimal('.03'))
             else:
                 if not decision['bids']:self.reason(row,'NO_BID');return
                 limit=max(Decimal(decision['tick']),max(Decimal(p) for p,q in decision['bids'])-Decimal('.02'))
@@ -272,9 +272,9 @@ class WalletCopy:
             evidence=dict(source_event=event,source_timestamp=row['source_ts'],first_seen=row['first_seen'],decision_at=at,arrival_at=now,
                 detection_delay=row['first_seen']-row['source_ts'],copy_delay=now-row['source_ts'],decision_book=decision,arrival_book=arrival,market_metadata=raw)
             if kind=='BUY':
-                if now-row['source_ts']>60:self.reason(row,'COPY_BUY_TOO_LATE',evidence);return
-                if not arrival['asks'] or (lambda a:a-source_price>Decimal('.10') or source_price-a>Decimal('.10'))(min(Decimal(p) for p,q in arrival['asks'])):self.reason(row,'SOURCE_PRICE_MOVED',evidence);return
-                evidence['copy_policy']='source-band10c-age60s-v2'
+                if now-row['source_ts']>15:self.reason(row,'COPY_BUY_TOO_LATE',evidence);return
+                if not arrival['asks'] or (lambda a:a-source_price>Decimal('.03') or source_price-a>Decimal('.03'))(min(Decimal(p) for p,q in arrival['asks'])):self.reason(row,'SOURCE_PRICE_MOVED',evidence);return
+                evidence['copy_policy']='source-band3c-age15s-v3'
                 notional=(Decimal(BUDGET)/1_000_000/(1+Decimal(str(m['fee_rate'])))).quantize(Decimal('.000001'),rounding=ROUND_FLOOR)
                 fill=simulate_fill(arrival['asks'],notional,limit,m['fee_rate'],arrival['min_shares'],arrival['tick'])
                 if not fill or fill['cost']+fill['fee']>BUDGET:self.reason(row,'BUY_NO_FULL_FILL_OR_MINIMUM',evidence);return
