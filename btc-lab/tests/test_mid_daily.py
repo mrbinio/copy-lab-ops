@@ -27,7 +27,7 @@ class MidTests(unittest.TestCase):
     def test_entry_boundaries_and_prices(self):
         for elapsed,allowed in [(179.99,False),(180,True),(420,True),(420.01,False)]:
             now=self.start+elapsed
-            for price,price_ok in [('.49',False),('.50',True),('.80',True),('.81',False)]:
+            for price,price_ok in [('.49',False),('.50',True),('.60',True),('.61',False)]:
                 self.market['books']={s:self.book(now,bid=str(float(price)-.01),ask=price) for s in ('Up','Down')}
                 history=[(now-35+i,70050+i) for i in range(36)]
                 intent,_=entry(self.market,{'price':70085},history,now)
