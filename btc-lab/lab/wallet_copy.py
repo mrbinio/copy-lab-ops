@@ -165,7 +165,7 @@ class WalletCopy:
 
     def risk_reason(self,db,wallet,now):
         rows=[t for t in self.positions(db) if t['wallet']==wallet]
-        if any(t['status'] in ('OPEN','RESOLVED') for t in rows):return 'COPY_POSITION_ALREADY_OPEN'
+        if sum(1 for t in rows if t['status'] in ('OPEN','RESOLVED'))>=3:return 'COPY_POSITION_ALREADY_OPEN'
         if db.execute('SELECT cash FROM wallet_copy_accounts WHERE wallet=?',(wallet,)).fetchone()[0]<BUDGET:return 'COPY_CASH_LIMIT'
         closed=[t for t in rows if t['status'] in ('CLOSED','SETTLED')]
         for h,cap,reason in [(86400,15_000_000,'COPY_DAY_LOSS_LIMIT'),(604800,30_000_000,'COPY_WEEK_LOSS_LIMIT')]:
@@ -249,6 +249,7 @@ class WalletCopy:
                 open_trade=next((t for t in self.positions(db) if t['wallet']==wallet and t['token']==m['token'] and t['status']=='OPEN'),None)
                 blocked=self.risk_reason(db,wallet,self.clock()) if kind=='BUY' else None
                 if blocked:self.reason(row,blocked);return
+                if kind=='BUY' and any(t for t in self.positions(db) if t['wallet']==wallet and t['market']==m['slug'] and t['status'] in ('OPEN','RESOLVED')):self.reason(row,'COPY_POSITION_ALREADY_OPEN');return
                 if kind=='SELL' and not open_trade:self.reason(row,'NO_COPIED_POSITION');return
             decision=await self.book(m['token']);at=self.clock()
             if kind=='BUY':
