@@ -18,8 +18,8 @@ from .core import number, units
 
 SPEC_V2 = {
     'id': 'mid-window-v2',
-    'entry_elapsed_seconds': [180, 300],       # 3–5 minutes (was 3–7)
-    'ask_range': [0.50, 0.70],                 # tighter upper bound (was 0.80)
+    'entry_elapsed_seconds': [180, 420],       # 3–7 minutes (Mitch)
+    'ask_range': [0.55, 0.80],                 # 55-80c (Mitch)
     'last_sale_elapsed_exclusive': 600,         # unchanged
     'deadline_exit_from': 590,                  # unchanged
     'momentum_seconds': 30,                     # unchanged
@@ -35,16 +35,10 @@ SPEC_V2 = {
 def entry(m, reference, history, now):
     """Entry signal for mid-window-v2. Returns (intent, reason) tuple."""
     elapsed = now - m['start']
-    if not 180 <= elapsed <= 300:
+    if not 180 <= elapsed <= 420:
         return None, 'OUTSIDE_ENTRY_WINDOW'
     if not all(-0.25 <= now - b['source_ts'] <= 3 for b in m['books'].values()):
         return None, 'BOOK_STALE'
-    if not m.get('features'):
-        return None, 'FEATURES_MISSING'
-    # z scales distance by trailing volatility and remaining time. Not a probability.
-    z = m['features'][1]
-    if abs(z) < 1.5:
-        return None, 'NORMALIZED_DISTANCE_SMALL'
     # Side = book favorite (lower ask = higher implied probability), like Mitch.
     up_book = m['books'].get('Up', {})
     down_book = m['books'].get('Down', {})
@@ -58,14 +52,14 @@ def entry(m, reference, history, now):
         return None, 'BOOK_STALE'
     ask = min(float(x[0]) for x in b['asks'])
     bid = max(float(x[0]) for x in b['bids'])
-    if not 0.50 <= ask <= 0.70:
+    if not 0.55 <= ask <= 0.80:
         return None, 'PRICE_OUTSIDE_RANGE'
     spread = ask - bid
     if not 0 <= spread <= 0.025 + 1e-9:
         return None, 'SPREAD_TOO_WIDE'
     return {
         'side': side,
-        'limit': min(0.70, ask + 0.01),
+        'limit': min(0.80, ask + 0.01),
         'probability': None,
         'decision_at': now,
         'strategy': 'mid-window-v2',
