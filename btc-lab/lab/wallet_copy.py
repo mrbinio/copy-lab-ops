@@ -117,9 +117,9 @@ class WalletCopy:
         self.store.set(KEY,dict(spec='wallet-signal-copy-v1',status=status,error=error,updated_at=now,started_at=self.started,
             mode='PAPER + CLOB' if self.clob_client else 'PAPER ONLY',accounts=[a for a in accounts if a['trades']>0 or a['wallet'] in SEED_WALLETS],recent_trades=[public_trade(t) for t in sorted(trades,key=lambda t:t['opened'],reverse=True)[:100]],
             trades_truncated=len(trades)>100,reasons=reasons,recent_decisions=recent,
-            skip_review=self.skip_summary(),recent_errors=errors,entry_policy='source-band3c-age30s-v4',
+            skip_review=self.skip_summary(),recent_errors=errors,entry_policy='source-band5c-age30s-v5',
             scope='BTC/ETH 5m and 15m only; fixed <=5USD all-in,500USD separate virtual scenarios; first SELL closes full copied lot',
-            limitation='Not identical source sizing/partial exits. Public indexed activity,1s target polling,BUY<=30s age and +/-3c from source; SELL<=90s age; FOK at fresh delayed books with50% depth. No profitability guarantee.'))
+            limitation='Not identical source sizing/partial exits. Public indexed activity,1s target polling,BUY<=30s age and +/-5c from source; SELL<=90s age; FOK at fresh delayed books with50% depth. No profitability guarantee.'))
 
     def skip_summary(self):
         with self.store.connect() as db:
@@ -269,8 +269,8 @@ class WalletCopy:
                 if at-row['source_ts']>30:self.reason(row,'COPY_BUY_TOO_LATE',{'decision_book':decision});return
                 if not decision['asks']:self.reason(row,'NO_ASK');return
                 ask=min(Decimal(p) for p,q in decision['asks'])
-                if ask-source_price>Decimal('.03') or source_price-ask>Decimal('.03'):self.reason(row,'SOURCE_PRICE_MOVED',{'decision_book':decision});return
-                limit=min(Decimal('.999999'),ask+Decimal('.01'),source_price+Decimal('.03'))
+                if ask-source_price>Decimal('.05') or source_price-ask>Decimal('.05'):self.reason(row,'SOURCE_PRICE_MOVED',{'decision_book':decision});return
+                limit=min(Decimal('.999999'),ask+Decimal('.01'),source_price+Decimal('.05'))
             else:
                 if not decision['bids']:self.reason(row,'NO_BID');return
                 limit=max(Decimal(decision['tick']),max(Decimal(p) for p,q in decision['bids'])-Decimal('.02'))
@@ -281,8 +281,8 @@ class WalletCopy:
                 detection_delay=row['first_seen']-row['source_ts'],copy_delay=now-row['source_ts'],decision_book=decision,arrival_book=arrival,market_metadata=raw)
             if kind=='BUY':
                 if now-row['source_ts']>30:self.reason(row,'COPY_BUY_TOO_LATE',evidence);return
-                if not arrival['asks'] or (lambda a:a-source_price>Decimal('.03') or source_price-a>Decimal('.03'))(min(Decimal(p) for p,q in arrival['asks'])):self.reason(row,'SOURCE_PRICE_MOVED',evidence);return
-                evidence['copy_policy']='source-band3c-age30s-v4'
+                if not arrival['asks'] or (lambda a:a-source_price>Decimal('.05') or source_price-a>Decimal('.05'))(min(Decimal(p) for p,q in arrival['asks'])):self.reason(row,'SOURCE_PRICE_MOVED',evidence);return
+                evidence['copy_policy']='source-band5c-age30s-v5'
                 notional=(Decimal(BUDGET)/1_000_000/(1+Decimal(str(m['fee_rate'])))).quantize(Decimal('.000001'),rounding=ROUND_FLOOR)
                 fill=simulate_fill(arrival['asks'],notional,limit,m['fee_rate'],arrival['min_shares'],arrival['tick'])
                 if not fill or fill['cost']+fill['fee']>BUDGET:self.reason(row,'BUY_NO_FULL_FILL_OR_MINIMUM',evidence);return
