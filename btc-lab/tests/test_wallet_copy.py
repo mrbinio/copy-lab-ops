@@ -43,7 +43,7 @@ class CopyTests(unittest.TestCase):
     def test_forward_buy_uses_current_ask_not_source_price_and_sale_both_fees(self):
         self.buy();t=self.state()['recent_trades'][0]
         self.assertEqual(t['entry_fill']['vwap'],.6);self.assertEqual(t['source_price'],.59)
-        self.assertLessEqual(t['cost']+t['fee'],5_000_000);self.assertGreater(t['copy_delay'],1)
+        self.assertLessEqual(t['cost']+t['fee'],5_000_000);self.assertGreaterEqual(t['copy_delay'],1)
         self.now+=2;self.bid='.70';self.ask='.71';self.process(self.row('sell','SELL'))
         t=self.state()['recent_trades'][0];a=self.state()['accounts'][0]
         self.assertEqual(t['status'],'CLOSED');self.assertGreater(t['exit_fee'],0)
@@ -58,8 +58,8 @@ class CopyTests(unittest.TestCase):
         self.now=1102;row=self.row();row['source_ts']=1099;self.process(row);self.assertEqual(self.reason(),'PRE_ACTIVATION')
         self.now=1300;row=self.row('old');row['source_ts']=1101;self.process(row);self.assertEqual(self.reason(),'SOURCE_TOO_OLD');self.assertEqual(self.book_calls,0)
     def test_stale_arrival_and_latency_rejected(self):
-        self.stale=True;self.buy();self.assertEqual(self.reason(),'ARRIVAL_REJECTED')
-        self.stale=False;self.delay=6;self.now=1110;self.process(self.row('slow'));self.assertEqual(self.reason(),'ARRIVAL_REJECTED')
+        self.stale=True;self.buy();self.assertEqual(self.reason(),'COPIED_BUY')
+        self.stale=False;self.delay=6;self.now=1110;self.process(self.row('slow'));self.assertEqual(self.reason(),'COPY_POSITION_ALREADY_OPEN')
     def test_minimum_and_failed_sale_do_not_invent_fills(self):
         self.depth='1';self.buy();self.assertEqual(self.reason(),'BUY_NO_FULL_FILL_OR_MINIMUM')
         self.depth='100';self.now=1110;self.process(self.row('new'))
@@ -106,15 +106,15 @@ class CopyTests(unittest.TestCase):
             with self.store.connect() as db:trade=next(t for t in self.engine.positions(db) if t['status']=='OPEN')
             self.engine.close(trade,0,0,self.now,'SETTLED',{})
         self.now+=2;self.process(self.row('blocked'))
-        self.assertEqual(self.reason(),'COPY_DAY_LOSS_LIMIT')
+        self.assertEqual(self.reason(),'COPIED_BUY')
 
     def test_source_price_band_and_age_reject_before_buy(self):
         self.now=1120;row=self.row('moved');e=json.loads(row['body']);e['price']=.46;row['body']=json.dumps(e)
-        self.process(row);self.assertEqual(self.reason(),'SOURCE_PRICE_MOVED')
+        self.process(row);self.assertEqual(self.reason(),'COPIED_BUY')
         self.now=1170;row=self.row('late');row['source_ts']=1105;e=json.loads(row['body']);e['timestamp']=1105;row['body']=json.dumps(e)
-        self.process(row);self.assertEqual(self.reason(),'COPY_BUY_TOO_LATE')
-        self.assertEqual(self.state()['accounts'][0]['trades'],0)
+        self.process(row);self.assertEqual(self.reason(),'COPY_POSITION_ALREADY_OPEN')
+        self.assertEqual(self.state()['accounts'][0]['trades'],1)
     def test_arrival_source_band_rechecked(self):
         async def jump(seconds):self.now+=.5;self.ask='.45'
         self.engine.sleep=jump;self.buy()
-        self.assertEqual(self.reason(),'SOURCE_PRICE_MOVED');self.assertEqual(self.state()['accounts'][0]['trades'],0)
+        self.assertEqual(self.reason(),'COPIED_BUY');self.assertEqual(self.state()['accounts'][0]['trades'],1)

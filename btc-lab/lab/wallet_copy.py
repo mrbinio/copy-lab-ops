@@ -327,7 +327,7 @@ class WalletCopy:
                         db.execute("UPDATE wallet_copy_events SET body=? WHERE wallet=? AND event_key=?",
                             (json.dumps(evidence),wallet,key))
             else:
-                fill=simulate_sale(arrival,open_trade['shares'],m['fee_rate'],limit)
+                fill=simulate_sale(decision,open_trade['shares'],m['fee_rate'],limit)
                 if not fill:self.reason(row,'SELL_NO_FULL_FILL',evidence);return
                 self.close(open_trade,fill['proceeds'],fill['fee'],now,'CLOSED',{'fill':fill,'evidence':evidence},row)
         except Exception as error:self.reason(row,'ERROR',{'error':str(error)[:400]})
