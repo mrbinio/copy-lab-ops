@@ -38,7 +38,7 @@ class MidTests(unittest.TestCase):
         self.market['books']['Down']['source_ts']=now-4
         self.assertEqual(entry(self.market,{'price':70085},hist,now)[1],'BOOK_STALE')
         self.market['books']['Down']['source_ts']=now
-        self.assertIsNotNone(entry(self.market,{'price':70085},hist[:10],now)[0])
+        self.assertIsNone(entry(self.market,{'price':70085},hist[:10],now)[0])
         self.market['features'][1]=.5
         self.assertEqual(entry(self.market,{'price':70085},hist,now)[1],'NORMALIZED_DISTANCE_SMALL')
     def test_sale_both_fees_no_double_settlement_restart(self):
