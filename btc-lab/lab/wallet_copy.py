@@ -1055,8 +1055,10 @@ class WalletCopy:
             # A hypothetical ticket stays on the direct process() path.
             # The full decision-table scan is cached inside publish.
             if rows or self.clock()-self.last_publish>=2:
-                self.publish('RUNNING');self.last_publish=self.clock()
+                await asyncio.to_thread(self.publish,'RUNNING')
+                self.last_publish=self.clock()
             self.store.set('wallet_copy_error',{})
+            return len(rows)
         except Exception as error:
             # A ledger mismatch blocks further execution until process/operator review.
             self.store.set('wallet_copy_error',{'at':self.clock(),'error':str(error)[:400]})
@@ -1107,7 +1109,7 @@ class WalletCopy:
         try:
             while True:
                 self.store.wallet_activity_ready.clear()
-                try:await self.step()
+                try:n=await self.step()
                 except CopyLedgerError:
                     log.error('copy ledger mismatch; retrying in 30s')
                     await self.sleep(30)
@@ -1115,6 +1117,8 @@ class WalletCopy:
                 except Exception:
                     await self.sleep(10)
                     continue
+                # A full batch means more fresh rows are already waiting.
+                if n>=20:continue
                 try:await asyncio.wait_for(self.store.wallet_activity_ready.wait(),timeout=1)
                 except asyncio.TimeoutError:pass
         finally:

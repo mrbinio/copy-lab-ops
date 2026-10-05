@@ -500,7 +500,7 @@ class Worker:
                 failure('research',e)
         if time.time()-self.last_prune>=600:
             try:
-                dropped=self.store.prune_ephemeral()
+                dropped=await asyncio.to_thread(self.store.prune_ephemeral)
                 self.last_prune=time.time()
                 if dropped:
                     LOG.info('pruned %d old book/price notes',dropped)

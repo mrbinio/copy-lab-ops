@@ -314,7 +314,9 @@ class Store:
         wallet_events=[]
         with self.connect() as db:
             if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='wallet_activity'").fetchone():
-                for row in db.execute('SELECT wallet,source_ts,first_seen,body FROM wallet_activity ORDER BY first_seen DESC LIMIT 30'):
+                indexed=db.execute("SELECT 1 FROM sqlite_master WHERE type='index' AND name='wallet_activity_seen'").fetchone()
+                hint=' INDEXED BY wallet_activity_seen' if indexed else ''
+                for row in db.execute(f'SELECT wallet,source_ts,first_seen,body FROM wallet_activity{hint} ORDER BY first_seen DESC LIMIT 30'):
                     body=json.loads(row['body'])
                     wallet_events.append({'wallet':row['wallet'],'source_ts':row['source_ts'],'first_seen':row['first_seen'],
                         **{k:body.get(k) for k in ('type','side','title','price','size','transactionHash')}})

@@ -33,7 +33,13 @@ def wallet_label(wallet):
 
 
 def ensure_active_wallets_table(store):
-    """Create the active_wallets table and seed it with SEED_WALLETS."""
+    """Create the active_wallets table and seed it once.
+
+    A later read must not take the write lock. The dashboard and the copy
+    loop call this on the event loop.
+    """
+    if getattr(store, '_active_wallets_ready', False):
+        return
     with store.connect() as db:
         db.execute('''CREATE TABLE IF NOT EXISTS active_wallets (
             wallet TEXT PRIMARY KEY,
@@ -46,6 +52,11 @@ def ensure_active_wallets_table(store):
             db.execute('INSERT OR IGNORE INTO active_wallets VALUES (?,?,?,?,?)',
                        (w, 'seed', time.time(), 0, 0))
             db.execute("UPDATE active_wallets SET source='seed' WHERE wallet=?", (w,))
+        for w in PAPER_EXTRA:
+            db.execute('INSERT OR IGNORE INTO active_wallets VALUES (?,?,?,?,?)',
+                       (w, 'paper_pick', time.time(), 0, 1))
+            db.execute("UPDATE active_wallets SET source='paper_pick', copy_enabled=1 WHERE wallet=?", (w,))
+    store._active_wallets_ready = True
 
 
 def get_active_wallets(store):
@@ -55,11 +66,6 @@ def get_active_wallets(store):
     active_wallets are not a second list.
     """
     ensure_active_wallets_table(store)
-    with store.connect() as db:
-        for w in PAPER_EXTRA:
-            db.execute('INSERT OR IGNORE INTO active_wallets VALUES (?,?,?,?,?)',
-                       (w, 'paper_pick', time.time(), 0, 1))
-            db.execute("UPDATE active_wallets SET source='paper_pick', copy_enabled=1 WHERE wallet=?", (w,))
     seen=[]
     for w in SEED_WALLETS + PAPER_EXTRA:
         if w not in seen: seen.append(w)
@@ -99,28 +105,37 @@ class WalletObserver:
         if inserted:self.store.wallet_activity_ready.set()
         return inserted
 
-    async def poll(self, wallet):
+    def _poll_sync(self, wallet, previous):
+        """Fetch and insert off the event loop.
+
+        A page of 500 rows inserted on the loop froze the price feed and the
+        chain socket long enough for both handshakes to time out.
+        """
         key = 'wallet_observer:'+wallet
-        previous = self.store.get(key,{})
         end = int(time.time())
         start = max(0,int(previous.get('cursor',end-86400))-120)
         added = 0
+        complete = False
+        for page in range(4):
+            query = urlencode(dict(user=wallet,start=start,end=end,limit=500,offset=page*500,sortBy='TIMESTAMP',sortDirection='DESC'))
+            rows = self.fetch('https://data-api.polymarket.com/activity?'+query)
+            added += self.ingest(wallet,rows,time.time())
+            if len(rows)<500:
+                complete=True
+                break
+        with self.store.connect() as db:
+            count,last = db.execute('SELECT COUNT(*),MAX(source_ts) FROM wallet_activity WHERE wallet=?',(wallet,)).fetchone()
+        self.store.set(key,dict(wallet=wallet,status='POLL_OK' if complete else 'INCOMPLETE_PAGE_LIMIT',
+            checked_at=time.time(),last_event_at=last,unique_fingerprints=count,new_rows=added,
+            cursor=end if complete else previous.get('cursor',start+120),
+            source='DATA_API_V1_INDEXED_ONCHAIN',poll_seconds=1,history_complete=False,
+            identity_limitation='No log index; identical fills may collapse. Not a PnL ledger.',error=None))
+
+    async def poll(self, wallet):
+        key = 'wallet_observer:'+wallet
+        previous = self.store.get(key,{})
         try:
-            complete = False
-            for page in range(4):
-                query = urlencode(dict(user=wallet,start=start,end=end,limit=500,offset=page*500,sortBy='TIMESTAMP',sortDirection='DESC'))
-                rows = await asyncio.to_thread(self.fetch,'https://data-api.polymarket.com/activity?'+query)
-                added += self.ingest(wallet,rows,time.time())
-                if len(rows)<500:
-                    complete=True
-                    break
-            with self.store.connect() as db:
-                count,last = db.execute('SELECT COUNT(*),MAX(source_ts) FROM wallet_activity WHERE wallet=?',(wallet,)).fetchone()
-            self.store.set(key,dict(wallet=wallet,status='POLL_OK' if complete else 'INCOMPLETE_PAGE_LIMIT',
-                checked_at=time.time(),last_event_at=last,unique_fingerprints=count,new_rows=added,
-                cursor=end if complete else previous.get('cursor',start+120),
-                source='DATA_API_V1_INDEXED_ONCHAIN',poll_seconds=1,history_complete=False,
-                identity_limitation='No log index; identical fills may collapse. Not a PnL ledger.',error=None))
+            await asyncio.to_thread(self._poll_sync, wallet, previous)
         except Exception as error:
             self.store.set(key,{**previous,'wallet':wallet,'status':'ERROR','checked_at':time.time(),
                 'error':str(error)[:300],'history_complete':False})

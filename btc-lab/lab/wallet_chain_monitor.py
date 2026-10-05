@@ -24,7 +24,7 @@ EXCHANGE_OPERATORS = {
 }
 ZERO_ADDRESS = '0x' + '0' * 40
 
-POLL_TIMEOUT = 60
+POLL_TIMEOUT = 2
 POLL_INTERVAL = 0.5
 # A seed can fill ten times inside one block. Off-market events now return at
 # once, so the queue only holds short book lookups.
