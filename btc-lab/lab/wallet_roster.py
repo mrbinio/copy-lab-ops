@@ -1,16 +1,20 @@
 """Versioned PAPER roster. History is never rewritten. Not live money.
 
-paper-roster-v1 states:
+paper-roster-v2 states:
   observed    — watched, no new copy buys
   paper_test  — isolated PAPER copy, low confidence if under 30 days
   paper_active— isolated PAPER copy after a longer paper_test
   paused      — no new buys; open tickets still settle; losses stay
 
-Pause at -15 USD / 7 days is several min-lot losses, not one unlucky ticket.
-The 14-day calendar waits are off: a paused wallet can return when the new
-observation book clears +8 USD and 10 trades, and a paper test can become
-the regular copy when it has 30 closes, a positive net and no single day
-above 70% of the gains. One green afternoon still does not flip a wallet.
+The current copying period is the closed PAPER copies opened since this
+wallet entered its current paper_test or paper_active stint. A known
+negative net in that period pauses new buys. A missing close result is
+not zero and does not pause. Open positions are not part of that net.
+Return uses only observations opened after the pause. A positive net
+after costs is enough. Fewer than 10 such closes is an uncertain sample:
+the wallet can return, and the old losses stay in the book.
+There is no calendar wait on observation, activation, or return.
+paper-roster-v1 is kept below. Its results are not rewritten.
 This is a PAPER experiment. It does not prove an edge and it does not raise risk limits.
 """
 import json
@@ -18,7 +22,8 @@ import time
 from .wallet_observer import SEED_WALLETS, PAPER_EXTRA
 from .strategy_control import set_paused
 
-SPEC = 'paper-roster-v1'
+SPEC = 'paper-roster-v2'
+PREVIOUS_SPEC = 'paper-roster-v1'
 KEY = 'wallet_roster'
 AUDIT_KEY = 'wallet_selection_audit'
 AUDIT_TABLE = 'wallet_selection_audit'
@@ -29,8 +34,9 @@ STATES = ('observed', 'paper_test', 'paper_active', 'paused')
 # How many isolated PAPER tests run at once. Not fit to a PnL curve.
 PAPER_TEST_SLOTS = 3
 
-RULES = {
-    'spec': SPEC,
+# Frozen previous definition. Do not use these numbers for new decisions.
+RULES_V1 = {
+    'spec': PREVIOUS_SPEC,
     'observed_to_paper_test': {
         'min_our_trades': 20,
         'min_windows': 5,
@@ -54,6 +60,33 @@ RULES = {
         'min_hyp_trades': 10,
     },
 }
+
+RULES = {
+    'spec': SPEC,
+    'observed_to_paper_test': {
+        'min_our_trades': 20,
+        'min_windows': 5,
+        'min_days': 0,
+        'min_copy_sim_net_usd': 0.01,
+        'max_best_day_share': 0.70,
+    },
+    'paper_test_to_paper_active': {
+        'min_copy_trades': 30,
+        'min_days': 0,
+        'min_net_usd': 0.01,
+        'max_best_day_share': 0.70,
+    },
+    'paper_active_to_paused': {
+        'period_net_negative_blocks_buys': True,
+    },
+    'paused_to_paper_test': {
+        'min_pause_days': 0,
+        'uncertain_below_trades': 10,
+    },
+}
+PAUSE_REASON = 'paper-roster-v2 pause: current period closed net is negative'
+RETEST_REASON = 'paper-roster-v2 retest'
+PROMOTE_REASON = 'paper-roster-v2 paper_test'
 
 SEED_STATE = {
     '0x16217458b59b3458149918058754cd234096b159': 'paper_active',
@@ -133,7 +166,15 @@ def audit(store, now, wallet, action, reason, evidence=None):
 def bootstrap(store, now=None):
     now = now if now is not None else time.time()
     current = store.get(KEY, {})
-    if current.get('spec') == SPEC and current.get('wallets'):
+    if current.get('wallets') and current.get('spec') in (SPEC, PREVIOUS_SPEC):
+        if current.get('spec') != SPEC:
+            current = dict(current)
+            current['previous_spec'] = current.get('spec')
+            current['previous_rules'] = current.get('rules') or RULES_V1
+            current['spec'] = SPEC
+            current['rules'] = RULES
+            current['updated_at'] = now
+            store.set(KEY, current)
         return current
     wallets = {}
     for w, state in SEED_STATE.items():
@@ -191,14 +232,32 @@ def rolling_net(closed, now, days):
     return sum((t.get('pnl_micro') or 0) / 1e6 for t in closed if t.get('closed_at', 0) >= start)
 
 
-def evaluate_copy_book(closed, now, first_open):
-    """Decide from OUR copy book, not the source wallet's public month."""
+def _known_net(settled):
+    """Sum of known close results. A missing pnl is not zero."""
+    if any(t.get('pnl_micro') is None for t in settled):
+        return None
+    return sum(t.get('pnl_micro') for t in settled) / 1e6
+
+
+def evaluate_copy_book(closed, now, first_open, opened_after=None):
+    """Decide from OUR copy book, not the source wallet's public month.
+
+    first_open is only the age of the book. It does not drop rows.
+    opened_after drops every row that was not opened strictly later.
+    The return path passes the pause timestamp there.
+    """
     rules = RULES
     settled = [t for t in closed if t.get('status') in ('CLOSED', 'SETTLED')]
-    net = sum((t.get('pnl_micro') or 0) / 1e6 for t in settled)
+    if opened_after is not None:
+        settled = [
+            t for t in settled
+            if t.get('opened') is not None and t.get('opened') > opened_after
+        ]
+    net = _known_net(settled)
     windows = len({t.get('market') for t in settled})
     age_days = (now - first_open) / 86400 if first_open else 0
-    share = concentration(settled)
+    share = concentration(settled) if net is not None else None
+    small = rules['paused_to_paper_test']['uncertain_below_trades']
     return {
         'net_usd': net,
         'trades': len(settled),
@@ -206,22 +265,28 @@ def evaluate_copy_book(closed, now, first_open):
         'age_days': age_days,
         'best_day_share': share,
         'loss_streak': loss_streak(settled),
-        'net_7d': rolling_net(settled, now, 7),
+        'net_7d': rolling_net(settled, now, 7) if net is not None else None,
+        'uncertain': len(settled) < small,
         'can_activate': (
-            len(settled) >= rules['paper_test_to_paper_active']['min_copy_trades']
+            net is not None
+            and len(settled) >= rules['paper_test_to_paper_active']['min_copy_trades']
             and age_days >= rules['paper_test_to_paper_active']['min_days']
             and net >= rules['paper_test_to_paper_active']['min_net_usd']
             and (share is None or share <= rules['paper_test_to_paper_active']['max_best_day_share'])
         ),
-        'should_pause': (
-            rolling_net(settled, now, 7) <= rules['paper_active_to_paused']['rolling_7d_net_usd']
-            or loss_streak(settled) >= rules['paper_active_to_paused']['loss_streak']
-        ),
-        'can_retest': (
-            rolling_net(settled, now, 7) >= rules['paused_to_paper_test']['hyp_7d_net_usd']
-            and sum(1 for t in settled if t.get('closed_at', 0) >= now - 7 * 86400) >= rules['paused_to_paper_test']['min_hyp_trades']
-        ),
+        'should_pause': net is not None and net < 0,
+        'can_retest': net is not None and net > 0,
     }
+
+
+def period_closes(closed, since):
+    """Closed copies opened in the current stint. Open rows stay out."""
+    return [
+        t for t in closed
+        if t.get('status') in ('CLOSED', 'SETTLED')
+        and t.get('opened') is not None
+        and t.get('opened') >= since
+    ]
 
 
 def can_observe_to_test(stats):
@@ -375,7 +440,7 @@ def _promote_paper_test(store, state, wallet, stats, now, closed_by):
     row['state'] = 'paper_test'
     row['since'] = now
     row['confidence'] = 'low' if (stats.get('age_days') or 0) < 30 else 'medium'
-    row['reason'] = 'paper-roster-v1 paper_test'
+    row['reason'] = PROMOTE_REASON
     row['stats'] = stats
     audit(store, now, wallet, 'promoted', row['reason'], stats)
     return True
@@ -401,34 +466,41 @@ def tick(store, now=None, candidate_stats=None):
     for w, row in list(state['wallets'].items()):
         closed = closed_by.get(w, [])
         first = first_by.get(w) or row.get('since')
-        book = evaluate_copy_book(closed, now, first) if row['state'] in ('paper_test', 'paper_active', 'paused') else None
+        since = row.get('since') or first
+        book = evaluate_copy_book(period_closes(closed, since), now, since) if row['state'] in ('paper_test', 'paper_active', 'paused') else None
         if row['state'] in ('paper_active', 'paper_test') and book and book['should_pause']:
             row['state'] = 'paused'
             row['since'] = now
-            row['reason'] = 'paper-roster-v1 pause'
+            row['reason'] = PAUSE_REASON
             changed.append(w)
             audit(store, now, w, 'paused', row['reason'], {
-                'net_7d': book['net_7d'], 'loss_streak': book['loss_streak'], 'net_usd': book['net_usd'],
+                'net_usd': book['net_usd'], 'trades': book['trades'],
             })
         elif row['state'] == 'paper_test' and book and book['can_activate']:
             row['state'] = 'paper_active'
             row['since'] = now
-            row['reason'] = 'paper-roster-v1 activate'
+            row['reason'] = 'paper-roster-v2 activate'
             changed.append(w)
             audit(store, now, w, 'promoted', row['reason'], {
                 'net_usd': book['net_usd'], 'trades': book['trades'], 'best_day_share': book['best_day_share'],
             })
         elif row['state'] == 'paused':
-            # Return looks at the versioned observation after the pause, not old losses
-            # and not the independent hold-to-settlement tickets.
-            hyp_book = evaluate_copy_book(observed_book.get(w, []), now, row.get('since') or now)
-            if hyp_book['can_retest'] and now - row.get('since', now) >= RULES['paused_to_paper_test']['min_pause_days'] * 86400:
+            # opened_after cuts observations from before this pause.
+            # first_open alone does not. Independent tickets are not in this book.
+            pause_since = row.get('since') or now
+            hyp_book = evaluate_copy_book(
+                observed_book.get(w, []), now, pause_since, opened_after=pause_since,
+            )
+            if hyp_book['can_retest'] and now - pause_since >= RULES['paused_to_paper_test']['min_pause_days'] * 86400:
                 row['state'] = 'paper_test'
                 row['since'] = now
-                row['reason'] = 'paper-roster-v1 retest'
+                row['confidence'] = 'low' if hyp_book['uncertain'] else 'medium'
+                row['sample'] = 'uncertain' if hyp_book['uncertain'] else 'enough'
+                row['reason'] = RETEST_REASON
                 changed.append(w)
                 audit(store, now, w, 'restored', row['reason'], {
-                    'net_7d': hyp_book['net_7d'], 'trades': hyp_book['trades'],
+                    'net_usd': hyp_book['net_usd'], 'trades': hyp_book['trades'],
+                    'sample': row['sample'],
                 })
         elif row['state'] == 'observed':
             stats = (candidate_stats or {}).get(w)

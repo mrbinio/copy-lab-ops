@@ -451,8 +451,8 @@ class WalletDiscovery:
                     'Reported month PnL is not copy profit. Passing the copier price and time gates is not '
                     'a fill after fees; that number stays empty until a hypothetical ticket settles with a fee. '
                     'Admitted wallets are watched with buys paused. '
-                    'PAPER_TEST starts only after 20 settled hypothetical copies, 5 windows, 7 days, '
-                    'positive copy net and no single day above 70% of gains. Live trading is off.'
+                    'PAPER_TEST starts only after 20 settled hypothetical copies, 5 windows, '
+                    'positive copy net and no single day above 70% of gains. There is no calendar-day wait. Live trading is off.'
                 ),
                 'recent_audit': audit_log[-12:] if isinstance(audit_log, list) else [],
                 'error': None,

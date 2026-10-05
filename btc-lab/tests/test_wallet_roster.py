@@ -4,17 +4,23 @@ import unittest
 from pathlib import Path
 from lab.core import Store
 from lab.wallet_roster import (
-    RULES, can_observe_to_test, evaluate_copy_book, tick, bootstrap, SPEC,
-    hypothetical_settled, audit, AUDIT_TABLE, AUDIT_DISPLAY_LIMIT,
+    RULES, RULES_V1, can_observe_to_test, evaluate_copy_book, tick, bootstrap, SPEC,
+    PREVIOUS_SPEC, hypothetical_settled, audit, AUDIT_TABLE, AUDIT_DISPLAY_LIMIT,
+    PAUSE_REASON, RETEST_REASON, PROMOTE_REASON,
 )
 
 class RosterTests(unittest.TestCase):
     def test_rules_reenable_harder_than_pause(self):
-        self.assertLess(RULES['paper_active_to_paused']['rolling_7d_net_usd'], 0)
-        self.assertGreater(RULES['paused_to_paper_test']['hyp_7d_net_usd'], 0)
-        self.assertGreaterEqual(
-            RULES['paused_to_paper_test']['min_pause_days'], 0)
+        self.assertEqual(RULES['observed_to_paper_test']['min_days'], 0)
         self.assertEqual(RULES['paper_test_to_paper_active']['min_days'], 0)
+        self.assertEqual(RULES['paused_to_paper_test']['min_pause_days'], 0)
+        self.assertNotIn('hyp_7d_net_usd', RULES['paused_to_paper_test'])
+        self.assertNotIn('min_hyp_trades', RULES['paused_to_paper_test'])
+        self.assertTrue(RULES['paper_active_to_paused']['period_net_negative_blocks_buys'])
+        self.assertEqual(RULES_V1['spec'], PREVIOUS_SPEC)
+        self.assertEqual(RULES_V1['observed_to_paper_test']['min_days'], 7)
+        self.assertEqual(RULES_V1['paper_active_to_paused']['rolling_7d_net_usd'], -15.0)
+        self.assertEqual(RULES_V1['paused_to_paper_test']['hyp_7d_net_usd'], 8.0)
 
     def test_leaderboard_alone_does_not_qualify(self):
         self.assertFalse(can_observe_to_test({
@@ -22,7 +28,7 @@ class RosterTests(unittest.TestCase):
             'copy_sim_net_usd': None, 'best_day_share': 0.2,
         }))
         self.assertTrue(can_observe_to_test({
-            'our_trades': 40, 'windows': 10, 'age_days': 30,
+            'our_trades': 40, 'windows': 10, 'age_days': 0,
             'copy_sim_net_usd': 12, 'best_day_share': 0.2,
         }))
 
@@ -39,6 +45,11 @@ class RosterTests(unittest.TestCase):
         book=evaluate_copy_book(losses,now,now-20*86400)
         self.assertTrue(book['should_pause'])
         self.assertFalse(book['can_retest'])
+        one=[{'status':'CLOSED','closed_at':now-1,'opened':now-2,'pnl_micro':-1,'market':'only'}]
+        self.assertTrue(evaluate_copy_book(one,now,now-2)['should_pause'])
+        unknown=[{'status':'CLOSED','closed_at':now-1,'opened':now-2,'pnl_micro':None,'market':'x'}]
+        self.assertFalse(evaluate_copy_book(unknown,now,now-2)['should_pause'])
+        self.assertIsNone(evaluate_copy_book(unknown,now,now-2)['net_usd'])
 
     def test_bootstrap_keeps_seed_states_and_is_versioned(self):
         with tempfile.TemporaryDirectory() as d:
@@ -85,12 +96,15 @@ class RosterTests(unittest.TestCase):
                             'market': str(i),
                         }),),
                     )
+            state = store.get('wallet_roster')
+            state['wallets'][w]['since'] = now - 86400
+            store.set('wallet_roster', state)
             state, changed = tick(store, now=now)
             self.assertIn(w, changed)
             self.assertEqual(state['wallets'][w]['state'], 'paused')
             paused = [row for row in store.get('wallet_selection_audit') if row['wallet'] == w]
             self.assertEqual(paused[0]['action'], 'paused')
-            self.assertEqual(paused[0]['reason'], 'paper-roster-v1 pause')
+            self.assertEqual(paused[0]['reason'], PAUSE_REASON)
 
     def test_retest_uses_versioned_observation_not_independent_tickets(self):
         with tempfile.TemporaryDirectory() as d:
@@ -129,16 +143,29 @@ class RosterTests(unittest.TestCase):
                     db.execute(
                         'INSERT INTO wallet_observation_positions VALUES (?,?,?)',
                         (str(i), w, json.dumps({
-                            'policy': 'copy-observe-v1', 'status': 'CLOSED', 'opened': now - 20 * 86400,
-                            'closed_at': now - 86400, 'pnl_micro': 1_000_000, 'market': f'obs{i}', 'fee': 1000,
+                            'policy': 'copy-observe-v1', 'status': 'CLOSED', 'opened': now - 21 * 86400,
+                            'closed_at': now - 20 * 86400, 'pnl_micro': 2_000_000, 'market': f'old{i}', 'fee': 1000,
                         })),
                     )
+            held, changed = tick(store, now=now)
+            self.assertEqual(changed, [])
+            self.assertEqual(held['wallets'][w]['state'], 'paused')
+            with store.connect() as db:
+                db.execute(
+                    'INSERT INTO wallet_observation_positions VALUES (?,?,?)',
+                    ('after', w, json.dumps({
+                        'policy': 'copy-observe-v1', 'status': 'CLOSED', 'opened': now - 86400,
+                        'closed_at': now - 3600, 'pnl_micro': 50_000, 'market': 'new', 'fee': 1000,
+                    })),
+                )
             updated, changed = tick(store, now=now)
             self.assertIn(w, changed)
             self.assertEqual(updated['wallets'][w]['state'], 'paper_test')
+            self.assertEqual(updated['wallets'][w]['sample'], 'uncertain')
             restored = [row for row in store.get('wallet_selection_audit', []) if row['action'] == 'restored']
-            self.assertEqual(restored[0]['reason'], 'paper-roster-v1 retest')
+            self.assertEqual(restored[0]['reason'], RETEST_REASON)
             self.assertEqual(restored[0]['wallet'], w)
+            self.assertEqual(restored[0]['evidence']['sample'], 'uncertain')
 
     def test_observed_wallet_promotes_to_paper_test_not_active(self):
         with tempfile.TemporaryDirectory() as d:
@@ -156,7 +183,7 @@ class RosterTests(unittest.TestCase):
             self.assertIn(wallet, changed)
             promoted = [row for row in store.get('wallet_selection_audit') if row['wallet'] == wallet]
             self.assertEqual([row['action'] for row in promoted], ['promoted'])
-            self.assertEqual(promoted[0]['reason'], 'paper-roster-v1 paper_test')
+            self.assertEqual(promoted[0]['reason'], PROMOTE_REASON)
 
     def test_first_sight_stays_observed_even_with_copy_evidence(self):
         with tempfile.TemporaryDirectory() as d:
@@ -200,7 +227,7 @@ class RosterTests(unittest.TestCase):
             self.assertEqual(actions[weak]['action'], 'replaced')
             self.assertEqual(actions[weak]['reason'], 'discovery-v1 replaced by stronger paper candidate')
             self.assertEqual(actions[newbie]['action'], 'promoted')
-            self.assertEqual(actions[newbie]['reason'], 'paper-roster-v1 paper_test')
+            self.assertEqual(actions[newbie]['reason'], PROMOTE_REASON)
 
     def test_audit_table_keeps_history_and_display_stops_at_200(self):
         with tempfile.TemporaryDirectory() as d:
@@ -233,3 +260,20 @@ class RosterTests(unittest.TestCase):
                     ).fetchone()[0],
                     '{"note": "existing"}',
                 )
+
+    def test_v1_roster_upgrades_without_resetting_wallets(self):
+        with tempfile.TemporaryDirectory() as d:
+            store = Store(Path(d) / 'lab.db')
+            wallet = '0x' + 'ab' * 20
+            store.set('wallet_roster', {
+                'spec': PREVIOUS_SPEC,
+                'rules': RULES_V1,
+                'updated_at': 10,
+                'wallets': {wallet: {'wallet': wallet, 'state': 'paused', 'since': 4, 'reason': 'old'}},
+            })
+            state = bootstrap(store, now=50)
+            self.assertEqual(state['spec'], SPEC)
+            self.assertEqual(state['previous_spec'], PREVIOUS_SPEC)
+            self.assertEqual(state['previous_rules']['paper_active_to_paused']['rolling_7d_net_usd'], -15.0)
+            self.assertEqual(state['wallets'][wallet]['since'], 4)
+            self.assertEqual(state['wallets'][wallet]['state'], 'paused')

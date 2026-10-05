@@ -19,6 +19,11 @@
 #board-wallets td,#board-sum{font-variant-numeric:tabular-nums}
 #wynik .help-link,#dziennik .help-link{display:none}
 #copy-periods .metric.on{box-shadow:inset 0 0 0 1px #65d7bc}
-#wallet-tiles{margin-top:12px}
+#wallet-tiles{margin-top:12px;grid-template-columns:repeat(auto-fill,minmax(240px,1fr))}
+#wallet-tiles .wallet-tile{padding:14px 16px}
+#wallet-tiles .wallet-tile .strategy-stats{margin-top:12px;padding-top:10px}
+#wallet-tiles .wallet-tile .strategy-stats strong{font-size:22px;letter-spacing:-.4px}
+#wallet-tiles .wallet-tile p{min-height:0;margin:8px 0 0;line-height:1.35}
 #today-lines p{margin:6px 0}
+#copy-rules,#price-band-counts{margin:0 22px 16px;color:var(--muted);font-size:12px;line-height:1.55}
 tfoot th{font-size:13px;color:var(--text)}

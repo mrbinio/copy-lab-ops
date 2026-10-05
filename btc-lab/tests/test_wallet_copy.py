@@ -63,7 +63,12 @@ class CopyTests(unittest.TestCase):
         self.now=1300;row=self.row('old');row['source_ts']=1101;self.process(row);self.assertEqual(self.reason(),'SOURCE_TOO_OLD');self.assertEqual(self.book_calls,0)
     def test_stale_arrival_and_latency_rejected(self):
         self.stale=True;self.buy();self.assertEqual(self.reason(),'COPIED_BUY')
-        self.stale=False;self.delay=6;self.now=1110;self.process(self.row('slow'));self.assertEqual(self.reason(),'COPY_POSITION_ALREADY_OPEN')
+        self.stale=False;self.delay=6;self.now=1110;self.process(self.row('slow'))
+        self.assertEqual(self.reason(),'COPIED_BUY')
+        with self.store.connect() as db:
+            open_rows=[t for t in self.engine.positions(db) if t['status']=='OPEN']
+        self.assertEqual(len(open_rows),1)
+        self.assertGreater(open_rows[0]['shares'],5_000_000)
     def test_minimum_and_failed_sale_do_not_invent_fills(self):
         self.depth='1';self.buy();self.assertEqual(self.reason(),'BUY_NO_FULL_FILL_OR_MINIMUM')
         self.depth='100';self.now=1110;self.process(self.row('new'))
@@ -94,7 +99,7 @@ class CopyTests(unittest.TestCase):
     def test_separate_wallets_and_no_additional_position(self):
         from lab.strategy_control import set_paused
         set_paused(self.store,'copy-'+WALLETS[1],False)
-        self.buy();self.now+=2;self.process(self.row('two'));self.assertEqual(self.reason(),'COPY_POSITION_ALREADY_OPEN')
+        self.buy();self.now+=2;self.process(self.row('two'));self.assertEqual(self.reason(),'COPIED_BUY')
         self.process(self.row('other',wallet=WALLETS[1]));self.assertEqual([a['trades'] for a in self.state()['accounts']][:4],[1,1,0,0])
     def test_settlement_runs_beside_copy_not_inside_it(self):
         """A fresh copy must not wait for ended windows to settle."""
@@ -259,3 +264,51 @@ class CopyTests(unittest.TestCase):
         self.assertIn('honey-spot', names[PAPER_EXTRA[1]])
         extras=[a for a in self.state()['accounts'] if a['wallet'] in PAPER_EXTRA]
         self.assertEqual([a['trades'] for a in extras],[0,0])
+
+    def test_partial_sell_keeps_remainder_and_balances_the_ledger(self):
+        self.buy()
+        self.now+=2
+        self.process(self.row('add','BUY'))
+        self.assertEqual(self.reason(),'COPIED_BUY')
+        self.now+=2
+        self.bid='.70'
+        self.ask='.71'
+        sell=self.row('part','SELL')
+        body=json.loads(sell['body'])
+        body['size']=100
+        sell['body']=json.dumps(body)
+        self.process(sell)
+        self.assertEqual(self.reason(),'COPIED_SELL')
+        with self.store.connect() as db:
+            rows=self.engine.positions(db)
+            cash=db.execute('SELECT cash FROM wallet_copy_accounts WHERE wallet=?',(WALLETS[0],)).fetchone()[0]
+            ledger=db.execute('SELECT COALESCE(SUM(amount),0) FROM wallet_copy_ledger WHERE wallet=?',(WALLETS[0],)).fetchone()[0]
+        closed=[t for t in rows if t['status']=='CLOSED']
+        opened=[t for t in rows if t['status']=='OPEN']
+        self.assertEqual(len(closed),1)
+        self.assertEqual(len(opened),1)
+        self.assertLess(opened[0]['shares'],closed[0]['shares']+opened[0]['shares'])
+        self.assertEqual(closed[0]['shares']+opened[0]['shares'],closed[0]['shares']+opened[0]['shares'])
+        whole_shares=closed[0]['shares']+opened[0]['shares']
+        self.assertEqual(closed[0]['cost']+opened[0]['cost']+closed[0]['fee']+opened[0]['fee']>0,True)
+        self.assertEqual(closed[0]['pnl_micro'],closed[0]['payout']-closed[0]['exit_fee']-closed[0]['cost']-closed[0]['fee'])
+        self.assertGreater(opened[0]['shares'],0)
+        self.assertLess(closed[0]['shares'],whole_shares)
+        self.assertEqual(cash,500_000_000+ledger)
+        realized=closed[0]['pnl_micro']
+        tied=opened[0]['cost']+opened[0]['fee']
+        self.assertEqual(cash,500_000_000-tied+realized)
+
+    def test_missing_sell_size_does_not_close_the_lot(self):
+        self.buy()
+        self.now+=2
+        self.bid='.70'
+        sell=self.row('blind','SELL')
+        body=json.loads(sell['body'])
+        body.pop('size')
+        sell['body']=json.dumps(body)
+        self.process(sell)
+        self.assertEqual(self.reason(),'SOURCE_SIZE_MISSING')
+        with self.store.connect() as db:
+            rows=self.engine.positions(db)
+        self.assertEqual([t['status'] for t in rows],['OPEN'])

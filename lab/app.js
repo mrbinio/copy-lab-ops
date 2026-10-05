@@ -45,19 +45,20 @@ function progressLine(w){
   const settled=p.settled==null?missing():p.settled+'/'+p.need_settled;
   const windows=p.windows==null?missing():p.windows+'/'+p.need_windows;
   const obs=p.observation_days==null?missing():Number(p.observation_days).toFixed(1);
-  const ev=p.evidence_days==null?missing():Number(p.evidence_days).toFixed(1)+'/'+p.need_days;
+  const ev=!(p.need_days>0)?null:p.evidence_days==null?missing():Number(p.evidence_days).toFixed(1)+'/'+p.need_days;
   const left=[];
   if(p.settled==null)left.push(t('settled copies: no data','rozliczone kopie: brak danych'));
   else if(p.settled<p.need_settled)left.push(t('settled copies short ','rozliczonych kopii brakuje ')+(p.need_settled-p.settled));
   if(p.windows==null)left.push(t('windows: no data','okna: brak danych'));
   else if(p.windows<p.need_windows)left.push(t('windows short ','okien brakuje ')+(p.need_windows-p.windows));
-  if(p.evidence_days==null)left.push(t('evidence days: no data','dni dowodu: brak danych'));
-  else if(p.evidence_days<p.need_days)left.push(t('evidence days short ','dni dowodu brakuje ')+(p.need_days-p.evidence_days).toFixed(1));
+  if(p.need_days>0&&p.evidence_days==null)left.push(t('evidence days: no data','dni dowodu: brak danych'));
+  else if(p.need_days>0&&p.evidence_days<p.need_days)left.push(t('evidence days short ','dni dowodu brakuje ')+(p.need_days-p.evidence_days).toFixed(1));
   if(p.net_usd==null)left.push(t('net after costs: no data','netto po kosztach: brak danych'));
   else if(p.net_usd<p.need_net_usd)left.push(t('net below the PAPER test bar','netto poniżej progu testu PAPER'));
   if(p.best_day_share!=null&&p.best_day_share>p.max_best_day_share)left.push(t('best day above 70%','najlepszy dzień powyżej 70%'));
   const rest=left.length?left.join(' · '):t('requirements currently met','wymagania obecnie spełnione');
-  return t('Settled copies','Rozliczone kopie')+' '+settled+' · '+t('windows','okna')+' '+windows+' · '+t('observation days','dni obserwacji')+' '+obs+' · '+t('evidence days','dni dowodu')+' '+ev+' · '+t('still needed','pozostałe wymagania')+': '+rest;
+  const days=ev?(' · '+t('evidence days','dni dowodu')+' '+ev):'';
+  return t('Settled copies','Rozliczone kopie')+' '+settled+' · '+t('windows','okna')+' '+windows+' · '+t('observation days','dni obserwacji')+' '+obs+days+' · '+t('still needed','pozostałe wymagania')+': '+rest;
 }
 function copyLedByPaper(account){
   return account.roster_state==='paper_active'||account.roster_state==='paper_test'||account.roster_state==='paused';
@@ -272,20 +273,19 @@ function fillTodayLines(board){
   box.append(node('p',match?t('These trades are the Today number: ','Te transakcje są liczbą Dzisiaj: ')+money(expected/1e6,true):t('This list does not match the Today number','Ta lista nie zgadza się z liczbą Dzisiaj')));
   text('today-scope',t('Stockholm date ','Data Sztokholmu ')+(board.today||'')+'. '+t('Closed PAPER copies only. This list is the Today number, not the 5–15 min strategies.','Tylko zamknięte kopie PAPER. Ta lista jest liczbą Dzisiaj, nie strategiami 5–15 min.'));
 }
-function walletRole(account){
-  const state=account.roster_state;
-  if(state==='paper_active')return t('Copying now','Kopiujemy teraz');
-  if(state==='paper_test')return t('Copy test, buys on','Test kopiowania, zakupy włączone');
-  if(state==='paused')return t('Paused. Watched, no new buys','Wstrzymany. Śledzimy, nowych zakupów nie ma');
-  if(state==='observed')return t('Observation only. Watched, no buys','Tylko obserwacja. Śledzimy, zakupów nie ma');
-  return t('No roster state','Brak stanu na liście');
+function tileRank(row){
+  if(!row)return 1e18;
+  if(row.net_micro==null)return -1e18;
+  const v=Number(row.net_micro);
+  return v>=0?1e18+v:v;
 }
-function watchLine(account){
+function watchShort(account){
   const checked=account.watch&&account.watch.checked_at;
-  if(checked==null)return t('No confirmation that we are watching this wallet','Brak potwierdzenia, że ten portfel jest śledzony');
+  if(checked==null)return t('No check','Brak sprawdzenia');
   const age=Date.now()/1000-Number(checked);
-  if(age>=0&&age<120)return t('Watched. Last check ','Śledzimy. Ostatnie sprawdzenie ')+formatTime(checked);
-  return t('Watch is stale. Last check ','Śledzenie nieświeże. Ostatnie sprawdzenie ')+formatTime(checked);
+  const clock=formatTime(checked);
+  if(age>=0&&age<300)return t('Watched · ','Śledzony · ')+clock;
+  return t('Last check · ','Ostatnio · ')+clock;
 }
 function fillWalletTiles(s,board,period){
   const box=$('wallet-tiles');if(!box)return;
@@ -293,28 +293,36 @@ function fillWalletTiles(s,board,period){
   const accounts=(s.accounts||[]).filter(a=>String(a.id).startsWith('copy-'));
   const by={};
   for(const row of (period&&period.wallets)||[])by[row.wallet]=row;
-  const order=a=>({paper_active:0,paper_test:1,paused:2,observed:3}[a.roster_state]??4);
-  accounts.sort((a,b)=>order(a)-order(b)||String(a.wallet||a.id).localeCompare(String(b.wallet||b.id)));
+  accounts.sort((a,b)=>tileRank(by[b.wallet||String(b.id).replace(/^copy-/,'')])-tileRank(by[a.wallet||String(a.id).replace(/^copy-/,'')]));
   let copying=0,idle=0;
+  const periodName=paperPeriod==='today'?t('Today','Dzisiaj'):paperPeriod==='week'?t('Last 7 days','Ostatnie 7 dni'):t('From the start','Od początku');
   for(const account of accounts){
     const wallet=account.wallet||String(account.id).replace(/^copy-/,'');
     const row=by[wallet];
     if(account.roster_state==='paper_active'||account.roster_state==='paper_test')copying++;
     if(!(account.trades>0))idle++;
-    const card=node('article',undefined,'strategy-card'+(row&&row.net_micro>0?' profit':row&&row.net_micro<0?' loss':''));
+    const known=!!period&&(!!row&&row.net_micro!=null||!row);
+    const net=row&&row.net_micro!=null?Number(row.net_micro):known?0:null;
+    const card=node('article',undefined,'strategy-card wallet-tile'+(net>0?' profit':net<0?' loss':''));
+    card.dataset.strategy='copy-'+wallet;
     const top=node('div',undefined,'strategy-top');
-    top.append(node('span',String(wallet).slice(-8),'strategy-number'),node('span',walletRole(account),'chip'));
-    card.append(top,node('p',watchLine(account)));
-    let result=missing();
-    if(period&&row&&row.net_micro!=null&&row.closed===0)result=t('Confirmed zero closed copies in this period','Potwierdzone zero zamkniętych kopii w tym okresie');
-    else if(period&&row&&row.net_micro!=null)result=money(row.net_micro/1e6,true)+' · '+row.closed+' '+t('closed','zamkniętych');
-    else if(period&&!row)result=t('No closed copy in this period','W tym okresie brak zamkniętej kopii');
-    card.append(node('p',periodTitle(board,paperPeriod)+' · '+result));
-    if(!(account.trades>0))card.append(node('p',t('No closed PAPER copy at all. Watching is not a profit.','Żadnej zamkniętej kopii PAPER. Śledzenie nie jest zyskiem.')));
-    if(row&&row.pause_reason)card.append(node('p',row.pause_reason));
+    top.append(node('span',String(wallet).slice(-8),'strategy-number'),node('span',rosterLabel(account.roster_state),'chip'));
+    card.append(top);
+    const stats=node('div',undefined,'strategy-stats');
+    const pnl=node('div');
+    const amount=node('strong',net==null?missing():money(net/1e6,true));
+    if(net>0)amount.className='positive';else if(net<0)amount.className='negative';
+    pnl.append(amount,node('small',periodName+' · PAPER'));
+    const closed=node('div');
+    const n=!period?missing():row&&row.closed!=null?String(row.closed):'0';
+    closed.append(node('strong',n),node('small',t('Closed','Zamknięte')));
+    stats.append(pnl,closed);
+    card.append(stats,node('p',watchShort(account),'watch-line'));
+    if(row&&row.pause_reason)card.append(node('p',row.pause_reason,'watch-line'));
+    else if(!(account.trades>0))card.append(node('p',t('No closed copy. Watching is not a result.','Brak zamkniętej kopii. Śledzenie nie jest wynikiem.'),'watch-line'));
     box.append(card);
   }
-  text('wallet-track',t('Watched ','Śledzone ')+accounts.length+' · '+t('copying now ','kopiujemy teraz ')+copying+' · '+t('with no closed PAPER copy ','bez zamkniętej kopii PAPER ')+idle+'. '+t('5–15 min strategies are not on these tiles.','Strategii 5–15 min na tych kafelkach nie ma.'));
+  text('wallet-track',periodName+' · '+t('watched ','śledzone ')+accounts.length+' · '+t('copying now ','kopiujemy teraz ')+copying+' · '+t('no closed copy ','bez zamkniętej kopii ')+idle+'. '+t('Green on top. 5–15 min strategies are on their own tab.','Zielone u góry. Strategie 5–15 min są na osobnej zakładce.'));
 }
 function fillPriceBand(s){
   const high=reasonTotal(s,'COPY_PRICE_TOO_HIGH');
@@ -322,7 +330,8 @@ function fillPriceBand(s){
   const buys=reasonTotal(s,'COPIED_BUY');
   const fmt=n=>n==null?missing():String(n);
   text('price-band-counts',t('Rejected above 70¢: ','Odrzucone powyżej 70¢: ')+fmt(high)+'. '+t('Rejected below 20¢: ','Odrzucone poniżej 20¢: ')+fmt(low)+'. '+t('Copied buys: ','Skopiowane zakupy: ')+fmt(buys)+'.');
-  text('price-band-note',t('A source buy above 70¢ is skipped, including a 75¢ buy like Mitch’s example: you pay 75¢ to win 25¢. The band stays 20–70¢. This wallet copy is not Mitch’s system.','Zakup źródła powyżej 70¢ odpada, także 75¢ z przykładu Mitcha: płacisz 75¢, żeby wygrać 25¢. Pasmo zostaje 20–70¢. To kopiowanie portfela nie jest systemem Mitcha.'));
+  text('price-band-note',t('The 20–70¢ band is a limit of this PAPER version. A 75¢ source buy is rejected by that limit. That is not a claim that 75¢ is automatically a losing trade. Changing the band belongs in a separate PAPER. This copy is not Mitch’s system.','Pasmo 20–70¢ jest limitem tej wersji PAPER. Zakup źródła za 75¢ odpada przez ten limit. To nie jest teza, że 75¢ jest z góry stratnym zakupem. Zmiana pasma należy do osobnego PAPER. To kopiowanie nie jest systemem Mitcha.'));
+  text('copy-rules',t('Copy rules, paper-roster-v2. Observation becomes a test after 20 settled copies, 5 windows, a positive net and no day above 70% of the gains. No calendar wait. A known negative net of closed copies opened in the current stint blocks new buys. A missing result is not zero. Open positions stay separate. A sell and settlement still run. Return needs a positive observation opened after the pause. Fewer than 10 such closes is an uncertain sample, and the old losses stay. An added buy increases the open lot. A source sell closes the same fraction of our shares. A sell without a source size leaves the position open.','Reguły kopiowania, paper-roster-v2. Obserwacja staje się testem po 20 rozliczonych kopiach, 5 oknach, dodatnim wyniku i bez dnia powyżej 70% zysków. Nie ma blokady kalendarzowej. Ujemny, znany wynik zamkniętych kopii otwartych w bieżącym okresie blokuje nowe zakupy. Brak wyniku nie jest zerem. Otwarte pozycje są osobno. Sprzedaż i rozliczenie zostają. Powrót wymaga dodatniej obserwacji otwartej po pauzie. Poniżej 10 takich zamknięć to niepewna próba, a stare straty zostają w księdze. Dokupienie powiększa otwartą pozycję. Sprzedaż źródła zamyka taką samą część naszych udziałów. Sprzedaż bez rozmiaru źródła zostawia pozycję otwartą.'));
 }
 function renderPaperBoard(s){
   const board=paperBoardOf(s);

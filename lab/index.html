@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="pl">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0b1018"><title>BTC Lab · PAPER</title><link rel="stylesheet" href="style.css?v=20261005-tiles"><script defer src="app.js?v=20261005-tiles"></script></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0b1018"><title>BTC Lab · PAPER</title><link rel="stylesheet" href="style.css?v=20261005-rules"><script defer src="app.js?v=20261005-rules"></script></head>
 <body>
 <aside class="sidebar"><a class="brand" href="#wynik"><span class="brand-mark">₿</span><span>BTC<span class="brand-light">LAB</span><small>PAPER</small></span></a>
 <p class="nav-label">WIDOK</p>
@@ -37,8 +37,9 @@
 <div id="today-lines"></div></section>
 <section class="panel"><div class="panel-heading"><div><h2>Śledzone portfele</h2><p id="wallet-track">Każdy kafel to portfel, który usługa sprawdza. Strategii 5–15 min tu nie ma.</p></div></div>
 <div id="wallet-tiles" class="strategy-grid"></div></section>
-<section class="panel"><div class="panel-heading"><div><h2>Filtr ceny 20–70¢</h2><p id="price-band-note">Zakup źródła droższy niż 70¢, także 75¢ z przykładu Mitcha, jest odrzucany. To nie jest system Mitcha i filtra nie rozszerzamy.</p></div></div>
-<p id="price-band-counts">brak danych</p></section>
+<section class="panel"><div class="panel-heading"><div><h2>Filtr ceny 20–70¢</h2><p id="price-band-note">Pasmo 20–70¢ jest limitem tej wersji PAPER. Zakup źródła za 75¢ odpada przez ten limit. To nie jest teza, że 75¢ jest z góry stratnym zakupem. Zmiana pasma należy do osobnego PAPER.</p></div></div>
+<p id="price-band-counts">brak danych</p>
+<p id="copy-rules">Reguły kopiowania, paper-roster-v2. Ujemny wynik zamkniętych kopii bieżącego okresu blokuje nowe zakupy. Sprzedaż i rozliczenie zostają. Powrót jest z dodatniej obserwacji otwartej po pauzie.</p></section>
 <section class="panel"><div class="panel-heading"><div><h2 id="table-title">Portfele w wybranym okresie</h2><p id="table-scope">Ta sama księga i ten sam okres co wyróżniona liczba u góry.</p></div></div>
 <div class="table-scroll"><table><thead><tr><th>Portfel</th><th>Czy teraz kopiujemy?</th><th>Wynik netto</th><th>Zamknięte transakcje</th><th>Powód wstrzymania</th></tr></thead><tbody id="board-wallets"></tbody><tfoot><tr><th>Suma</th><td></td><th id="board-sum">brak danych</th><th id="board-sum-count">brak danych</th><td id="board-sum-note"></td></tr></tfoot></table></div></section>
 </section>
