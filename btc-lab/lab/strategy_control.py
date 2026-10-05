@@ -1,4 +1,6 @@
 """Per-strategy entry switches. Existing positions still settle."""
+import re
+
 from .wallet_observer import SEED_WALLETS, PAPER_EXTRA
 
 COPY_IDS = tuple('copy-' + wallet for wallet in SEED_WALLETS + PAPER_EXTRA)
@@ -26,6 +28,13 @@ TOGGLEABLE = (
     'eth-mid-window-v1',
 ) + COPY_IDS
 KEY = 'strategy_pauses'
+# Newly discovered wallets are not in the seed list. Their pause switch is
+# still per copy id, so observe and pause can block buys without a code change.
+COPY_ID = re.compile(r'^copy-0x[0-9a-f]{40}$')
+
+
+def _known(strategy):
+    return strategy in TOGGLEABLE or bool(COPY_ID.fullmatch(strategy or ''))
 
 
 def pauses(store):
@@ -33,7 +42,7 @@ def pauses(store):
     out = {name: bool(DEFAULT_PAUSED.get(name, False)) for name in TOGGLEABLE}
     if isinstance(raw, dict):
         for name, value in raw.items():
-            if name in TOGGLEABLE:
+            if _known(name):
                 out[name] = bool(value)
     return out
 
@@ -43,7 +52,7 @@ def is_paused(store, strategy):
 
 
 def set_paused(store, strategy, paused):
-    if strategy not in TOGGLEABLE:
+    if not _known(strategy):
         raise ValueError('unknown strategy')
     current = store.get(KEY, {})
     if not isinstance(current, dict):

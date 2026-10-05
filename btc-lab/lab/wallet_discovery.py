@@ -1,23 +1,54 @@
-"""Hourly 30-day shortlist. Candidates are never auto-copied."""
+"""Find wallets from real BTC/ETH 5m/15m prints, then watch them in PAPER.
+
+discovery-v1:
+  The public CRYPTO month table is only a lead. It is not a score and it
+  does not open a copy. The trades tape is the other lead: wallets that
+  actually printed on our markets.
+
+  A lead is admitted to `observed` only after the activity screen below.
+  `paper_test` is a later roster step and uses our own hypothetical copies,
+  not the source wallet's reported month. Live orders stay off.
+"""
 import asyncio
 import json
 import math
 import re
 import time
+from collections import Counter
+from decimal import Decimal
 from urllib.parse import urlencode
 
-from .wallet_observer import ensure_active_wallets_table, SEED_WALLETS
+from .wallet_copy import MAX_SOURCE_PRICE, MIN_SOURCE_PRICE
+from .wallet_observer import SEED_WALLETS, ensure_active_wallets_table
 
+SPEC = 'discovery-v1'
 OUR_MARKETS = re.compile(r'^(btc|eth)-updown-(5m|15m)-')
+WINDOW = re.compile(r'^(btc|eth)-updown-(5m|15m)-(\d+)$')
 LOOKBACK = 30 * 86400
 MIN_MONTH_VOLUME = 1000
-MAX_PROBE = 8
+# Leaderboard names still get a look, then the busiest tape wallets fill the rest.
+LEADERBOARD_PROBES = 8
+PROBE_CAP = 12
+TAPE_PAGES = 3
 MIN_OUR_TRADES = 10
 MIN_OUR_SHARE = 0.25
+MIN_HISTORY_SECONDS = 86400
+# Same freshness window the copier uses before it calls a signal too old.
+COPY_LEAD_SECONDS = 90
+# Same concentration cap the roster uses for one day of copy PnL.
+MAX_ONE_TRADE_SHARE = 0.70
+WALLET_RE = re.compile(r'0x[0-9a-f]{40}')
 
 
 def our_slug(slug):
     return bool(OUR_MARKETS.match(str(slug or '')))
+
+
+def window_end(slug):
+    match = WINDOW.fullmatch(str(slug or ''))
+    if not match:
+        return None
+    return int(match.group(3)) + (300 if match.group(2) == '5m' else 900)
 
 
 def score_candidate(candidate):
@@ -30,7 +61,7 @@ def score_candidate(candidate):
 
 
 def promote(store, wallet, score=0.0):
-    """No-op. Auto-copy from the public table is how we got a losing extra wallet."""
+    """No-op. A public-table score is not permission to copy."""
     return
 
 
@@ -44,7 +75,7 @@ def demote(store, wallet):
 
 
 def prune_discovery_rows(store):
-    """Drop leftover discovery rows. Copy watches seeds only."""
+    """Drop leftover discovery rows. The roster, not this table, decides who is watched."""
     ensure_active_wallets_table(store)
     with store.connect() as db:
         db.execute("DELETE FROM active_wallets WHERE source='discovery'")
@@ -58,6 +89,102 @@ def market_stats(rows):
         'trades_30d': n,
         'our_trades_30d': len(ours),
         'our_share_30d': (len(ours) / n) if n else 0.0,
+    }
+
+
+def parse_trades(rows):
+    """Keep our-market prints. A bad page is empty, not fatal."""
+    if not isinstance(rows, list):
+        return []
+    out = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        wallet = str(row.get('proxyWallet', '')).lower()
+        if not WALLET_RE.fullmatch(wallet) or not our_slug(row.get('slug')):
+            continue
+        out.append(row)
+    return out
+
+
+def screen_activity(rows):
+    """Reject thin, bursty, uncopyable, or one-trade histories. Does not invent PnL."""
+    stats = market_stats(rows)
+    ours = [r for r in rows if isinstance(r, dict) and str(r.get('type', '')).upper() == 'TRADE' and our_slug(r.get('slug'))]
+    parsed = []
+    bad = 0
+    for row in ours:
+        try:
+            price = float(row.get('price'))
+            ts = float(row.get('timestamp'))
+            size = float(0 if row.get('size') is None else row.get('size'))
+        except (TypeError, ValueError):
+            bad += 1
+            continue
+        if not all(math.isfinite(x) for x in (price, ts, size)) or not 0 < price < 1 or size < 0:
+            bad += 1
+            continue
+        parsed.append({
+            'ts': ts,
+            'price': price,
+            'size': size,
+            'slug': str(row.get('slug')),
+            'side': str(row.get('side') or '').upper(),
+        })
+    reasons = []
+    if ours and bad / len(ours) > 0.2:
+        reasons.append('suspicious_activity')
+    if (stats['our_trades_30d'] or 0) < MIN_OUR_TRADES:
+        reasons.append('too_little_history')
+    if (stats['our_share_30d'] or 0) < MIN_OUR_SHARE:
+        reasons.append('wrong_markets')
+    span = (max(p['ts'] for p in parsed) - min(p['ts'] for p in parsed)) if len(parsed) >= 2 else 0
+    if span < MIN_HISTORY_SECONDS and 'too_little_history' not in reasons:
+        reasons.append('too_little_history')
+    if len(parsed) >= MIN_OUR_TRADES:
+        burst = max(Counter(int(p['ts']) for p in parsed).values())
+        if burst / len(parsed) > 0.5:
+            reasons.append('suspicious_activity')
+    in_band = []
+    timely = []
+    for item in parsed:
+        if item['side'] != 'BUY':
+            continue
+        price = Decimal(str(item['price']))
+        if price < MIN_SOURCE_PRICE or price > MAX_SOURCE_PRICE:
+            continue
+        in_band.append(item)
+        end = window_end(item['slug'])
+        if end is not None and item['ts'] <= end - COPY_LEAD_SECONDS:
+            timely.append(item)
+    our_n = stats['our_trades_30d'] or 0
+    buys = [item for item in parsed if item['side'] == 'BUY']
+    band_share = (len(in_band) / our_n) if our_n else 0.0
+    timely_share = (len(timely) / our_n) if our_n else 0.0
+    if our_n and not buys:
+        reasons.append('no_copyable_buys')
+    elif our_n and band_share < MIN_OUR_SHARE:
+        reasons.append('poor_liquidity_or_price_band')
+    elif our_n and timely_share < MIN_OUR_SHARE:
+        reasons.append('cannot_copy_in_time')
+    notionals = [p['price'] * p['size'] for p in parsed if p['size'] > 0]
+    one_share = (max(notionals) / sum(notionals)) if notionals else None
+    if one_share is not None and one_share > MAX_ONE_TRADE_SHARE:
+        reasons.append('one_trade_dominates')
+    deduped = []
+    for reason in reasons:
+        if reason not in deduped:
+            deduped.append(reason)
+    qualified = (stats['our_trades_30d'] or 0) >= MIN_OUR_TRADES and (stats['our_share_30d'] or 0) >= MIN_OUR_SHARE
+    return {
+        **stats,
+        'history_span_seconds': span,
+        'copyable_share': timely_share,
+        'price_band_share': band_share,
+        'best_trade_notional_share': one_share,
+        'reject_reasons': deduped,
+        'status': 'TRADES_OUR_MARKETS' if qualified else 'WRONG_MARKETS',
+        'decision': 'REJECTED' if deduped or not qualified else 'ADMITTED',
     }
 
 
@@ -94,9 +221,24 @@ class WalletDiscovery:
                     break
         except Exception:
             return {'trades_30d': None, 'our_trades_30d': None, 'our_share_30d': None, 'probe': 'ERROR'}
-        stats = market_stats(collected)
+        stats = screen_activity(collected)
         stats['probe'] = 'OK'
         return stats
+
+    async def recent_tape(self):
+        found = []
+        for page in range(TAPE_PAGES):
+            query = urlencode(dict(limit=500, offset=page * 500))
+            try:
+                batch = await asyncio.to_thread(self.fetch, 'https://data-api.polymarket.com/trades?' + query)
+            except Exception:
+                break
+            if not isinstance(batch, list):
+                break
+            found.extend(parse_trades(batch))
+            if len(batch) < 500:
+                break
+        return found
 
     async def scan(self):
         previous = self.store.get('wallet_discovery', {})
@@ -110,49 +252,148 @@ class WalletDiscovery:
                 week = self.parse(await asyncio.to_thread(self.fetch, 'https://data-api.polymarket.com/v1/leaderboard?' + week_q))
             except Exception:
                 week = {}
+            tape = await self.recent_tape()
+            tape_counts = Counter(str(row.get('proxyWallet', '')).lower() for row in tape)
             ranked = sorted((w for w in month.values() if w['pnl'] > 0 and w['volume'] > MIN_MONTH_VOLUME),
                             key=lambda w: w['pnl'], reverse=True)
-            candidates = []
-            for i, w in enumerate(ranked[:20]):
-                wk = week.get(w['wallet'], {})
-                row = {'wallet': w['wallet'], 'name': w['name'],
-                       'month_reported_pnl': w['pnl'], 'month_volume': w['volume'],
-                       'week_reported_pnl': wk.get('pnl'), 'week_volume': wk.get('volume'),
-                       'qualify_days': 30, 'copy_enabled': False, 'status': 'SHORTLIST_30D'}
-                if i < MAX_PROBE:
-                    stats = await self.probe_activity(w['wallet'], now)
-                    row.update(stats)
-                    if stats.get('probe') == 'OK':
-                        if (stats['our_trades_30d'] or 0) >= MIN_OUR_TRADES and (stats['our_share_30d'] or 0) >= MIN_OUR_SHARE:
-                            row['status'] = 'TRADES_OUR_MARKETS'
-                        else:
-                            row['status'] = 'WRONG_MARKETS'
-                candidates.append(row)
+            probe = []
+            for item in ranked[:LEADERBOARD_PROBES]:
+                probe.append(item['wallet'])
+            for wallet, _count in tape_counts.most_common():
+                if wallet not in probe:
+                    probe.append(wallet)
+                if len(probe) >= PROBE_CAP:
+                    break
+            by_wallet = {}
+            for index, item in enumerate(ranked[:20]):
+                wk = week.get(item['wallet'], {})
+                by_wallet[item['wallet']] = {
+                    'wallet': item['wallet'], 'name': item['name'], 'source': 'leaderboard',
+                    'month_reported_pnl': item['pnl'], 'month_volume': item['volume'],
+                    'week_reported_pnl': wk.get('pnl'), 'week_volume': wk.get('volume'),
+                    'qualify_days': 30, 'copy_enabled': False, 'status': 'SHORTLIST_30D',
+                    'decision': 'NOT_PROBED', 'reject_reasons': [],
+                }
+                if index < LEADERBOARD_PROBES:
+                    by_wallet[item['wallet']]['on_probe_list'] = True
+            for wallet in probe:
+                row = by_wallet.get(wallet) or {
+                    'wallet': wallet, 'name': '', 'source': 'market_trades',
+                    'month_reported_pnl': None, 'month_volume': None,
+                    'week_reported_pnl': None, 'week_volume': None,
+                    'qualify_days': 30, 'copy_enabled': False, 'status': 'SHORTLIST_30D',
+                    'decision': 'NOT_PROBED', 'reject_reasons': [],
+                }
+                if wallet in by_wallet and tape_counts.get(wallet):
+                    row['source'] = 'both'
+                stats = await self.probe_activity(wallet, now)
+                row.update({k: v for k, v in stats.items() if k != 'status' and k != 'decision'})
+                if stats.get('probe') == 'OK':
+                    row['status'] = stats['status']
+                    row['decision'] = stats['decision']
+                    row['reject_reasons'] = stats['reject_reasons']
+                else:
+                    row['status'] = 'PROBE_ERROR'
+                    row['decision'] = 'REJECTED'
+                    row['reject_reasons'] = ['probe_error']
+                row['score'] = {
+                    'net_pnl_usd': None,
+                    'net_pnl_note': 'no settled copy evidence yet',
+                    'win_rate': None,
+                    'trades': row.get('our_trades_30d'),
+                    'consistency_best_trade_share': row.get('best_trade_notional_share'),
+                    'drawdown_usd': None,
+                    'recent_7d_usd': None,
+                    'fees_usd': None,
+                    'fee_known': False,
+                    'copyable_share': row.get('copyable_share'),
+                }
+                by_wallet[wallet] = row
+            candidates = list(by_wallet.values())
             prune_discovery_rows(self.store)
-            state = {'status': 'SCAN_OK', 'checked_at': now, 'last_success_at': now, 'interval_seconds': 3600,
-                     'category': 'CRYPTO', 'qualify_days': 30,
-                     'scope': 'Top 50 MONTH by reported PNL; 30-day window; top 8 probed for BTC/ETH 5m/15m share',
-                     'candidates': candidates, 'copy_enabled': False,
-                     'limitation': 'Leaderboard month PnL is not copy profit. A wallet is only a candidate after 30 days of our-market trades. Nobody is auto-copied.',
-                     'error': None}
-            with self.store.connect() as db:
-                db.execute('INSERT INTO wallet_discovery_scans VALUES (?,?)', (now, json.dumps(state)))
-            self.store.set('wallet_discovery', state)
+            from .wallet_roster import (
+                AUDIT_KEY, admit_observed, bootstrap, copy_evidence, tick as roster_tick,
+            )
+            roster = bootstrap(self.store, now)
+            known = set((roster.get('wallets') or {}))
+            observe_stats = {
+                wallet: copy_evidence(self.store, wallet, now)
+                for wallet, row in (roster.get('wallets') or {}).items()
+                if row.get('state') == 'observed'
+            }
             try:
-                from .wallet_roster import tick as roster_tick
-                stats = {}
-                for c in candidates:
-                    if c.get('status') == 'TRADES_OUR_MARKETS':
-                        stats[c['wallet']] = {
-                            'our_trades': c.get('our_trades_30d') or 0,
-                            'windows': c.get('our_trades_30d') or 0,
-                            'age_days': 30,
-                            'copy_sim_net_usd': None,
-                            'best_day_share': None,
-                        }
-                roster_tick(self.store, now, stats)
-            except Exception:
-                pass
+                roster_tick(self.store, now, observe_stats)
+            except Exception as error:
+                self.store.set('wallet_discovery_roster_error', {'error': str(error)[:300], 'at': now})
+            roster = self.store.get('wallet_roster', roster)
+            known = set((roster.get('wallets') or {}))
+            admitted = []
+            from .wallet_roster import audit
+            for row in candidates:
+                wallet = row['wallet']
+                if wallet in known:
+                    row['decision'] = 'already_on_roster'
+                    continue
+                if row.get('decision') != 'ADMITTED':
+                    if row.get('decision') == 'REJECTED':
+                        audit(self.store, now, wallet, 'rejected', ','.join(row.get('reject_reasons') or ['rejected']), {
+                            'status': row.get('status'),
+                            'our_trades_30d': row.get('our_trades_30d'),
+                            'copyable_share': row.get('copyable_share'),
+                            'best_trade_notional_share': row.get('best_trade_notional_share'),
+                        })
+                    continue
+                evidence = {
+                    'source': row.get('source'),
+                    'our_trades_30d': row.get('our_trades_30d'),
+                    'our_share_30d': row.get('our_share_30d'),
+                    'history_span_seconds': row.get('history_span_seconds'),
+                    'copyable_share': row.get('copyable_share'),
+                    'best_trade_notional_share': row.get('best_trade_notional_share'),
+                    'copy_sim_net_usd': None,
+                }
+                _state, added = admit_observed(
+                    self.store, wallet, now, evidence,
+                    'discovery-v1 observed: our-market activity passed the screen; paper test not open',
+                )
+                if added:
+                    admitted.append(wallet)
+            for row in candidates:
+                evidence = copy_evidence(self.store, row['wallet'], now)
+                if evidence['our_trades'] and isinstance(row.get('score'), dict):
+                    row['score'].update({
+                        'net_pnl_usd': evidence['copy_sim_net_usd'],
+                        'net_pnl_note': 'settled hypothetical copies',
+                        'win_rate': evidence['win_rate'],
+                        'drawdown_usd': evidence['max_drawdown_usd'],
+                        'recent_7d_usd': evidence['net_7d'],
+                        'fees_usd': evidence['fees_usd'],
+                        'fee_known': evidence['fee_known'],
+                    })
+            audit_log = self.store.get(AUDIT_KEY, [])
+            state = {
+                'spec': SPEC, 'status': 'SCAN_OK', 'checked_at': now, 'last_success_at': now,
+                'interval_seconds': 3600, 'category': 'CRYPTO', 'qualify_days': 30,
+                'scope': (
+                    'CRYPTO month top 50 is a lead only. Up to 8 of those are probed, '
+                    'then the busiest wallets on the live BTC/ETH 5m/15m trades tape, 12 probes max. '
+                    'Activity must span at least a day, stay inside the 20-70c copy band with 90s to spare, '
+                    'and not be one trade. PAPER_TEST uses the existing roster rules on our hypothetical copies.'
+                ),
+                'candidates': candidates, 'copy_enabled': False,
+                'tape_wallets': len(tape_counts), 'tape_prints': len(tape),
+                'probed': len(probe), 'admitted_observed': admitted,
+                'limitation': (
+                    'Reported month PnL is not copy profit. Admitted wallets are watched with buys paused. '
+                    'PAPER_TEST starts only after 20 settled hypothetical copies, 5 windows, 7 days, '
+                    'positive copy net and no single day above 70% of gains. Live trading is off.'
+                ),
+                'recent_audit': audit_log[-12:] if isinstance(audit_log, list) else [],
+                'error': None,
+            }
+            with self.store.connect() as db:
+                db.execute('INSERT INTO wallet_discovery_scans VALUES (?,?)', (now, json.dumps(state, allow_nan=False)))
+            self.store.set('wallet_discovery', state)
         except Exception as error:
             self.store.set('wallet_discovery', {**previous, 'status': 'ERROR', 'checked_at': time.time(),
                                                 'error': str(error)[:300], 'copy_enabled': False})

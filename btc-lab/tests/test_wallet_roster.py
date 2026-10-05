@@ -116,3 +116,66 @@ class RosterTests(unittest.TestCase):
             updated, changed = tick(store, now=now)
             self.assertIn(w, changed)
             self.assertEqual(updated['wallets'][w]['state'], 'paper_test')
+            actions = [row['action'] for row in store.get('wallet_selection_audit', [])]
+            self.assertIn('restored', actions)
+
+    def test_observed_wallet_promotes_to_paper_test_not_active(self):
+        with tempfile.TemporaryDirectory() as d:
+            store = Store(Path(d) / 'lab.db')
+            now = 8_000_000
+            state = bootstrap(store, now=now)
+            wallet = '0x' + 'ab' * 20
+            state['wallets'][wallet] = {'wallet': wallet, 'state': 'observed', 'since': now - 10}
+            store.set('wallet_roster', state)
+            updated, changed = tick(store, now=now, candidate_stats={wallet: {
+                'our_trades': 40, 'windows': 10, 'age_days': 30,
+                'copy_sim_net_usd': 12, 'best_day_share': 0.2,
+            }})
+            self.assertEqual(updated['wallets'][wallet]['state'], 'paper_test')
+            self.assertIn(wallet, changed)
+            self.assertEqual(
+                [row['action'] for row in store.get('wallet_selection_audit') if row['wallet'] == wallet],
+                ['promoted'],
+            )
+
+    def test_first_sight_stays_observed_even_with_copy_evidence(self):
+        with tempfile.TemporaryDirectory() as d:
+            store = Store(Path(d) / 'lab.db')
+            wallet = '0x' + 'cd' * 20
+            state, _changed = tick(store, now=100, candidate_stats={wallet: {
+                'our_trades': 40, 'windows': 10, 'age_days': 30,
+                'copy_sim_net_usd': 12, 'best_day_share': 0.2,
+            }})
+            self.assertEqual(state['wallets'][wallet]['state'], 'observed')
+
+    def test_stronger_candidate_replaces_weakest_paper_test_without_deleting_losses(self):
+        with tempfile.TemporaryDirectory() as d:
+            store = Store(Path(d) / 'lab.db')
+            now = 9_000_000
+            state = bootstrap(store, now=now)
+            weak = '0x' + 'bb' * 20
+            newbie = '0x' + 'cd' * 20
+            state['wallets'][weak] = {'wallet': weak, 'state': 'paper_test', 'since': now - 5}
+            state['wallets'][newbie] = {'wallet': newbie, 'state': 'observed', 'since': now - 5}
+            store.set('wallet_roster', state)
+            with store.connect() as db:
+                db.execute('CREATE TABLE wallet_copy_positions (id INTEGER PRIMARY KEY, body TEXT)')
+                db.execute(
+                    'INSERT INTO wallet_copy_positions(body) VALUES (?)',
+                    (json.dumps({
+                        'wallet': weak, 'status': 'CLOSED', 'closed_at': now - 10,
+                        'opened': now - 20, 'pnl_micro': -500_000, 'market': 'kept',
+                    }),),
+                )
+            updated, _changed = tick(store, now=now, candidate_stats={newbie: {
+                'our_trades': 40, 'windows': 10, 'age_days': 30,
+                'copy_sim_net_usd': 12, 'best_day_share': 0.2,
+            }})
+            self.assertEqual(updated['wallets'][newbie]['state'], 'paper_test')
+            self.assertEqual(updated['wallets'][weak]['state'], 'observed')
+            with store.connect() as db:
+                kept = db.execute('SELECT body FROM wallet_copy_positions').fetchone()[0]
+            self.assertEqual(json.loads(kept)['pnl_micro'], -500_000)
+            actions = {row['wallet']: row['action'] for row in store.get('wallet_selection_audit')}
+            self.assertEqual(actions[weak], 'replaced')
+            self.assertEqual(actions[newbie], 'promoted')

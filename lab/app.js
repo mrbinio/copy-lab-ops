@@ -126,7 +126,7 @@ function renderWalletPanel(s){
  if(tot.counts_note)add('p',tot.counts_note);
  const roster=s.wallet_roster||{};
  if(roster.spec)add('p',t('Roster ','Lista ')+roster.spec+' · '+stamp(roster.updated_at));
- for(const row of Object.values(roster.wallets||{}))add('p',(row.wallet||'').slice(-8)+' · '+row.state+(row.confidence?' · '+row.confidence:''));
+ for(const row of Object.values(roster.wallets||{}))add('p',(row.wallet||'').slice(-8)+' · '+row.state+(row.confidence?' · '+row.confidence:'')+(row.reason?' · '+row.reason:''));
  const path=cp.path_ms||{};
  add('p',t('Copy path n=','Ścieżka kopii n=')+(path.n??0)+' · median '+(path.median_ms==null?t('no measurement','brak pomiaru'):path.median_ms+' ms')+' · p95 '+(path.p95_ms==null?t('no measurement','brak pomiaru'):path.p95_ms+' ms')+' · '+t('slowest ','najwolniejszy ')+(path.slowest_stage||'—')+' · CLOB '+(path.clob||'inactive_paper')+(path.note?' · '+path.note:'')+' · '+(path.limitation||''));
  add('p',(cp.status||t('NOT STARTED','NIEURUCHOMIONE'))+(!connected||ca<0||ca>30?' · '+t('STALE','NIEAKTUALNE'):'')+' · '+stamp(cp.updated_at));
@@ -163,13 +163,15 @@ function renderWalletPanel(s){
  const da=now-Number(d.last_success_at||0);
  add('p',(d.status||t('NOT STARTED','NIEURUCHOMIONE'))+((!connected||da<0||da>3900)?' · '+t('no fresh successful scan','brak świeżego udanego skanowania'):'')+' · '+t('Last success: ','Ostatni sukces: ')+stamp(d.last_success_at));
  if(d.error)add('p',d.error);
- add('p',t('30-day CRYPTO month board, then a probe of BTC/ETH 5m and 15m share. Public month profit is not copy profit. Nobody is auto-copied. Live money still waits on 30 days of our-market paper.','30-dniowa tablica CRYPTO, potem udział w BTC/ETH 5m i 15m. Publiczny miesiąc to nie zysk z kopii. Nikt nie jest kopiowany sam. Na żywe pieniądze trzeba 30 dni naszego papieru na tych rynkach.'));
+ add('p',t('Leads come from the live BTC/ETH 5m/15m trades tape and the CRYPTO month board. The board is not a score. A wallet is watched first. PAPER_TEST opens only after our own hypothetical copies clear the roster rules. Live orders stay off.','Kandydaci biorą się z bieżącej taśmy BTC/ETH 5m/15m i z miesięcznej tablicy CRYPTO. Tablica nie jest oceną. Portfel najpierw jest obserwowany. PAPER_TEST startuje dopiero, gdy nasze hipotetyczne kopie przejdą reguły listy. Zlecenia na żywo są wyłączone.'));
  if(!(d.candidates||[]).length)add('p',d.status==='SCAN_OK'?t('No candidates met this screen.','Żaden kandydat nie spełnił tego filtra.'):t('Candidate results are unavailable.','Brak wyników wyszukiwania kandydatów.'));
  for(const c of d.candidates||[]){
   const share=c.our_share_30d==null?'—':Math.round(c.our_share_30d*100)+'%';
   const ours=c.our_trades_30d==null?'—':c.our_trades_30d;
-  add('p',c.wallet+' · '+t('month: ','miesiąc: ')+money(c.month_reported_pnl)+' · '+t('our 5m/15m trades: ','nasze 5m/15m: ')+ours+' · '+t('share: ','udział: ')+share+' · '+(c.status||'SHORTLIST_30D'));
+  const why=(c.reject_reasons||[]).join(', ');
+  add('p',c.wallet+' · '+(c.source||'leaderboard')+' · '+t('month: ','miesiąc: ')+money(c.month_reported_pnl)+' · '+t('our 5m/15m trades: ','nasze 5m/15m: ')+ours+' · '+t('share: ','udział: ')+share+' · '+(c.status||'SHORTLIST_30D')+(c.decision?' · '+c.decision:'')+(why?' · '+why:''));
  }
+ for(const a of (d.recent_audit||[]).slice(-8))add('p',stamp(a.ts)+' · '+String(a.action||'')+' · '+String(a.wallet||'').slice(-8)+' · '+String(a.reason||''));
  add('h3',t('Probability experiment','Eksperyment prawdopodobieństwa'));
  const v=s.value_surface_execution||{};const r=s.opportunity_research||{};
  add('p',v.status?reason(v.status):t('No execution state received','Nie otrzymano stanu wykonania'));

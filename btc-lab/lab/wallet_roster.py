@@ -18,7 +18,10 @@ from .strategy_control import set_paused
 
 SPEC = 'paper-roster-v1'
 KEY = 'wallet_roster'
+AUDIT_KEY = 'wallet_selection_audit'
 STATES = ('observed', 'paper_test', 'paper_active', 'paused')
+# How many isolated PAPER tests run at once. Not fit to a PnL curve.
+PAPER_TEST_SLOTS = 3
 
 RULES = {
     'spec': SPEC,
@@ -58,6 +61,23 @@ SEED_STATE = {
 
 def _row(wallet, state, now, **extra):
     return {'wallet': wallet, 'state': state, 'since': now, 'confidence': extra.pop('confidence', 'unknown'), **extra}
+
+
+def audit(store, now, wallet, action, reason, evidence=None):
+    """Append-only reason for discover, reject, promote, pause, restore, replace."""
+    log = store.get(AUDIT_KEY, [])
+    if not isinstance(log, list):
+        log = []
+    log.append({
+        'ts': now,
+        'wallet': wallet,
+        'action': action,
+        'reason': reason,
+        'evidence': evidence or {},
+    })
+    del log[:-200]
+    store.set(AUDIT_KEY, log)
+    return log
 
 
 def bootstrap(store, now=None):
@@ -180,14 +200,113 @@ def hypothetical_settled(store):
             if shadow.get('status') != 'SETTLED' or shadow.get('pnl_micro') is None:
                 continue
             event = review.get('source_event') or {}
-            found.setdefault(wallet, []).append({
+            item = {
                 'status': 'CLOSED',
                 'closed_at': review.get('official_seen_at') or review.get('decision_at') or 0,
                 'pnl_micro': shadow['pnl_micro'],
                 'market': event.get('slug') or event.get('conditionId') or wallet,
                 'hypothetical': True,
-            })
+            }
+            fee = (shadow.get('fill') or {}).get('fee')
+            if isinstance(fee, (int, float)) and fee == fee:
+                item['fee_micro'] = fee
+            found.setdefault(wallet, []).append(item)
     return found
+
+
+def copy_evidence(store, wallet, now):
+    """Our settled hypothetical copies. Public month PnL is not an input."""
+    rows = hypothetical_settled(store).get(wallet, [])
+    empty = {
+        'our_trades': 0,
+        'windows': 0,
+        'age_days': 0,
+        'copy_sim_net_usd': None,
+        'best_day_share': None,
+        'win_rate': None,
+        'max_drawdown_usd': None,
+        'net_7d': None,
+        'fees_usd': None,
+        'fee_known': False,
+    }
+    if not rows:
+        return empty
+    first = min(t.get('closed_at') or 0 for t in rows)
+    book = evaluate_copy_book(rows, now, first)
+    wins = sum(1 for t in rows if (t.get('pnl_micro') or 0) > 0)
+    total = peak = drawdown = 0
+    for t in sorted(rows, key=lambda item: item.get('closed_at') or 0):
+        total += t.get('pnl_micro') or 0
+        peak = max(peak, total)
+        drawdown = max(drawdown, peak - total)
+    fees = [t['fee_micro'] for t in rows if t.get('fee_micro') is not None]
+    fee_known = len(fees) == len(rows)
+    return {
+        'our_trades': book['trades'],
+        'windows': book['windows'],
+        'age_days': book['age_days'],
+        'copy_sim_net_usd': book['net_usd'],
+        'best_day_share': book['best_day_share'],
+        'win_rate': (wins / book['trades']) if book['trades'] else None,
+        'max_drawdown_usd': drawdown / 1e6,
+        'net_7d': book['net_7d'],
+        'fees_usd': (sum(fees) / 1e6) if fee_known else None,
+        'fee_known': fee_known,
+    }
+
+
+def _book_net(closed):
+    return sum(
+        (t.get('pnl_micro') or 0) / 1e6
+        for t in closed
+        if t.get('status') in ('CLOSED', 'SETTLED')
+    )
+
+
+def admit_observed(store, wallet, now, evidence, reason):
+    """Start watching. Does not open a PAPER test."""
+    state = bootstrap(store, now)
+    if wallet in state['wallets']:
+        return state, False
+    state['wallets'][wallet] = _row(
+        wallet, 'observed', now, confidence='low', source='discovery', reason=reason, stats=evidence,
+    )
+    state['updated_at'] = now
+    store.set(KEY, state)
+    _apply_pauses(store, state)
+    audit(store, now, wallet, 'discovered', reason, evidence)
+    return state, True
+
+
+def _promote_paper_test(store, state, wallet, stats, now, closed_by):
+    """Move observed → paper_test. A full slate drops the weakest test, not its history."""
+    tests = [w for w, row in state['wallets'].items() if row['state'] == 'paper_test']
+    if len(tests) >= PAPER_TEST_SLOTS:
+        weakest = min(tests, key=lambda w: (_book_net(closed_by.get(w, [])), w))
+        weak_net = _book_net(closed_by.get(weakest, []))
+        if (stats.get('copy_sim_net_usd') or 0) <= weak_net:
+            audit(store, now, wallet, 'rejected', 'weaker_than_current_paper_test', {
+                'copy_sim_net_usd': stats.get('copy_sim_net_usd'),
+                'weakest': weakest,
+                'weakest_net_usd': weak_net,
+            })
+            return False
+        state['wallets'][weakest]['state'] = 'observed'
+        state['wallets'][weakest]['since'] = now
+        state['wallets'][weakest]['reason'] = 'discovery-v1 replaced by stronger paper candidate'
+        state['wallets'][weakest]['replaced_by'] = wallet
+        audit(store, now, weakest, 'replaced', state['wallets'][weakest]['reason'], {
+            'replaced_by': wallet,
+            'net_usd': weak_net,
+        })
+    row = state['wallets'][wallet]
+    row['state'] = 'paper_test'
+    row['since'] = now
+    row['confidence'] = 'low' if (stats.get('age_days') or 0) < 30 else 'medium'
+    row['reason'] = 'paper-roster-v1 paper_test'
+    row['stats'] = stats
+    audit(store, now, wallet, 'promoted', row['reason'], stats)
+    return True
 
 
 def tick(store, now=None, candidate_stats=None):
@@ -206,6 +325,7 @@ def tick(store, now=None, candidate_stats=None):
                     first_by[t['wallet']] = min(first_by.get(t['wallet'], opened), opened)
     hyp = hypothetical_settled(store)
     changed = []
+    already = set(state['wallets'])
     for w, row in list(state['wallets'].items()):
         closed = closed_by.get(w, [])
         first = first_by.get(w) or row.get('since')
@@ -215,11 +335,17 @@ def tick(store, now=None, candidate_stats=None):
             row['since'] = now
             row['reason'] = 'paper-roster-v1 pause'
             changed.append(w)
+            audit(store, now, w, 'paused', row['reason'], {
+                'net_7d': book['net_7d'], 'loss_streak': book['loss_streak'], 'net_usd': book['net_usd'],
+            })
         elif row['state'] == 'paper_test' and book and book['can_activate']:
             row['state'] = 'paper_active'
             row['since'] = now
             row['reason'] = 'paper-roster-v1 activate'
             changed.append(w)
+            audit(store, now, w, 'promoted', row['reason'], {
+                'net_usd': book['net_usd'], 'trades': book['trades'], 'best_day_share': book['best_day_share'],
+            })
         elif row['state'] == 'paused':
             # Return looks at hypothetical copies after the pause, not the old losses.
             hyp_book = evaluate_copy_book(hyp.get(w, []), now, row.get('since') or now)
@@ -228,13 +354,24 @@ def tick(store, now=None, candidate_stats=None):
                 row['since'] = now
                 row['reason'] = 'paper-roster-v1 retest'
                 changed.append(w)
+                audit(store, now, w, 'restored', row['reason'], {
+                    'net_7d': hyp_book['net_7d'], 'trades': hyp_book['trades'],
+                })
+        elif row['state'] == 'observed':
+            stats = (candidate_stats or {}).get(w)
+            if stats and can_observe_to_test(stats) and _promote_paper_test(store, state, w, stats, now, closed_by):
+                changed.append(w)
     for w, stats in (candidate_stats or {}).items():
-        if w in state['wallets']:
+        if w in already:
             continue
+        # A first sighting is only watched. PAPER_TEST waits for a later tick.
         if can_observe_to_test(stats):
-            conf = 'low' if (stats.get('age_days') or 0) < 30 else 'medium'
-            state['wallets'][w] = _row(w, 'paper_test', now, confidence=conf, source='roster', stats=stats)
+            state['wallets'][w] = _row(
+                w, 'observed', now, confidence='low', source='roster',
+                reason='copy evidence recorded; paper test waits for the next pass', stats=stats,
+            )
             changed.append(w)
+            audit(store, now, w, 'discovered', state['wallets'][w]['reason'], stats)
     state['updated_at'] = now
     store.set(KEY, state)
     _apply_pauses(store, state)

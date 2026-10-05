@@ -204,20 +204,35 @@ class WalletCopy:
         raw=await asyncio.to_thread(self.fetch,'https://clob.polymarket.com/book?token_id='+quote(token,safe=''))
         return normalize_book(raw,token,self.clock(),max_age=15,venue_clock=self.book_clock)
 
+    def _pending_query(self,db,wallets,now,limit):
+        if not wallets or limit<=0:return []
+        marks=','.join('?'*len(wallets))
+        return [dict(r) for r in db.execute(
+            f"SELECT a.* FROM wallet_activity a LEFT JOIN wallet_copy_events e "
+            f"ON a.wallet=e.wallet AND a.event_key=e.event_key "
+            f"WHERE e.event_key IS NULL AND a.wallet IN ({marks}) AND a.first_seen>=? "
+            f"ORDER BY a.first_seen ASC LIMIT ?",(*wallets, now-90, limit))]
+
     def pending_activity(self,db,active=None):
         """Only fresh rows. A full-table INSERT every second blocked the event loop
-        and the WebSocket handshakes timed out while SQLite held the thread."""
+        and the WebSocket handshakes timed out while SQLite held the thread.
+
+        Observed names fill only the slots left after paper and paused wallets,
+        so a noisy new candidate cannot block a wallet we already copy.
+        """
         active=list(active if active is not None else get_active_wallets(self.store))
         now=self.clock()
         if not active:
             return []
         db.execute('CREATE INDEX IF NOT EXISTS wallet_activity_seen ON wallet_activity(first_seen)')
-        marks=','.join('?'*len(active))
-        return [dict(r) for r in db.execute(
-            f"SELECT a.* FROM wallet_activity a LEFT JOIN wallet_copy_events e "
-            f"ON a.wallet=e.wallet AND a.event_key=e.event_key "
-            f"WHERE e.event_key IS NULL AND a.wallet IN ({marks}) AND a.first_seen>=? "
-            f"ORDER BY a.first_seen ASC LIMIT 20",(*active, now-90))]
+        roster=(self.store.get('wallet_roster') or {}).get('wallets') or {}
+        hi=[];lo=[]
+        for wallet in active:
+            if (roster.get(wallet) or {}).get('state')=='observed':lo.append(wallet)
+            else:hi.append(wallet)
+        rows=self._pending_query(db,hi,now,20)
+        if len(rows)<20:rows.extend(self._pending_query(db,lo,now,20-len(rows)))
+        return rows
 
     async def process(self,row):
         await self._process(row)

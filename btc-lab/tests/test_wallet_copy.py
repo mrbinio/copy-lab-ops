@@ -150,6 +150,25 @@ class CopyTests(unittest.TestCase):
         self.assertEqual(seed,'COPIED_BUY')
         self.assertGreaterEqual(self.book_calls,1)
 
+    def test_observed_queue_does_not_take_the_seed_slot(self):
+        self.now = 1102
+        observed = '0x' + 'cd' * 20
+        roster = self.store.get('wallet_roster')
+        roster['wallets'][observed] = {'wallet': observed, 'state': 'observed', 'since': 1}
+        self.store.set('wallet_roster', roster)
+        observer = WalletObserver(self.store, None)
+        for i in range(20):
+            row = self.row('obs' + str(i), wallet=observed)
+            body = json.loads(row['body'])
+            body['transactionHash'] = row['event_key']
+            observer.ingest(observed, [body], self.now - 1 + i * 0.01)
+        fresh = json.loads(self.row('seed-fresh')['body'])
+        observer.ingest(WALLETS[0], [fresh], self.now)
+        with self.store.connect() as db:
+            pending = self.engine.pending_activity(db)
+        self.assertEqual(pending[0]['wallet'], WALLETS[0])
+        self.assertLessEqual(sum(1 for row in pending if row['wallet'] == observed), 19)
+
     def test_source_identity_and_daily_loss_cap(self):
         self.now=1102;row=self.row('wrong-identity');body=json.loads(row['body']);body['proxyWallet']=WALLETS[1];row['body']=json.dumps(body)
         self.process(row);self.assertEqual(self.reason(),'SOURCE_IDENTITY_MISMATCH')

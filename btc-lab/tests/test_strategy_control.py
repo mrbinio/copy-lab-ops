@@ -39,6 +39,14 @@ class StrategyControlTests(unittest.TestCase):
         self.assertTrue(state['copy-0xeebde7a0e019a63e6b476eb425505b7b3e6eba30'])
         self.assertFalse(state['copy-0x16217458b59b3458149918058754cd234096b159'])
 
+    def test_discovered_copy_id_can_be_paused(self):
+        name = 'copy-0x' + ('cd' * 20)
+        self.assertFalse(is_paused(self.store, name))
+        set_paused(self.store, name, True)
+        self.assertTrue(is_paused(self.store, name))
+        set_paused(self.store, name, False)
+        self.assertFalse(is_paused(self.store, name))
+
     def test_copy_wallet_can_be_toggled(self):
         name = 'copy-0xeda9247a2b3c99a9e0bf46cdac6e1974365cf589'
         self.assertTrue(is_paused(self.store, name))

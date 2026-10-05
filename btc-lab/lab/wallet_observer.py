@@ -49,7 +49,11 @@ def ensure_active_wallets_table(store):
 
 
 def get_active_wallets(store):
-    """Seeds plus explicit paper picks. Discovery leftovers stay off this list."""
+    """Seeds, paper picks, and roster wallets we still watch.
+
+    `observed` is watched with copy buys paused. Discovery rows in
+    active_wallets are not a second list.
+    """
     ensure_active_wallets_table(store)
     with store.connect() as db:
         for w in PAPER_EXTRA:
@@ -61,7 +65,7 @@ def get_active_wallets(store):
         if w not in seen: seen.append(w)
     roster = store.get('wallet_roster', {})
     for w, row in (roster.get('wallets') or {}).items():
-        if row.get('state') in ('paper_test', 'paper_active', 'paused') and w not in seen:
+        if row.get('state') in ('paper_test', 'paper_active', 'paused', 'observed') and w not in seen:
             seen.append(w)
     return tuple(seen)
 
