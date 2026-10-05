@@ -212,6 +212,30 @@ class CopyTests(unittest.TestCase):
         self.assertEqual(pending[0]['wallet'], WALLETS[0])
         self.assertLessEqual(sum(1 for row in pending if row['wallet'] == observed), 19)
 
+    def test_pending_read_uses_the_recent_time_index(self):
+        self.now = 5000
+        observer = WalletObserver(self.store, None)
+        old = json.loads(self.row('old')['body'])
+        old['timestamp'] = 1
+        with self.store.connect() as db:
+            for i in range(400):
+                old['transactionHash'] = 'old' + str(i)
+                db.execute(
+                    'INSERT INTO wallet_activity VALUES (?,?,?,?,?)',
+                    (WALLETS[0], 'old' + str(i), 1, 1, json.dumps(old)))
+        fresh = json.loads(self.row('fresh-now')['body'])
+        observer.ingest(WALLETS[0], [fresh], self.now)
+        with self.store.connect() as db:
+            plan = ' '.join(
+                str(row[3]) for row in db.execute(
+                    "EXPLAIN QUERY PLAN SELECT a.event_key FROM wallet_activity a "
+                    "INDEXED BY wallet_activity_seen WHERE a.first_seen>=?",
+                    (self.now - 90,)))
+            pending = self.engine.pending_activity(db)
+        self.assertIn('wallet_activity_seen', plan)
+        self.assertEqual(len(pending), 1)
+        self.assertEqual(pending[0]['first_seen'], self.now)
+
     def test_source_identity_and_daily_loss_cap(self):
         self.now=1102;row=self.row('wrong-identity');body=json.loads(row['body']);body['proxyWallet']=WALLETS[1];row['body']=json.dumps(body)
         self.process(row);self.assertEqual(self.reason(),'SOURCE_IDENTITY_MISMATCH')
@@ -528,6 +552,25 @@ class CopyTests(unittest.TestCase):
         self.assertNotEqual(closed['shares'],int((Decimal(whole)*Decimal('0.5')).to_integral_value(rounding=ROUND_FLOOR)))
         self.assertFalse(after_gap['known'])
         self.assertIsNone(late['proportion'])
+
+    def test_sell_read_does_not_hold_another_wallets_signal(self):
+        import time
+        order=[]
+        async def prepare(row):
+            order.append(('start', time.perf_counter()))
+            await asyncio.sleep(0.2)
+            order.append(('end', time.perf_counter()))
+            return {'proportion': None, 'known': False}, 0.2
+        async def process(row, shadow=True, sell_proportion=None):
+            order.append(('go', row['event_key'], time.perf_counter()))
+        self.engine._prepare_sell=prepare
+        self.engine.process=process
+        sell=self.row('sell','SELL',wallet=WALLETS[0])
+        buy=self.row('buy','BUY',wallet=WALLETS[1])
+        asyncio.run(self.engine._apply_batch([sell, buy]))
+        buy_at=next(item[2] for item in order if item[0]=='go' and item[1]=='buy')
+        sell_end=next(item[1] for item in order if item[0]=='end')
+        self.assertLess(buy_at, sell_end)
 
     def test_copy_flow_names_the_real_block(self):
         now=1_000

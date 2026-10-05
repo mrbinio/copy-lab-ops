@@ -105,11 +105,14 @@ class TokenBalanceReader:
             'to': CTF_TOKEN,
             'data': encode_balance_of(wallet, token_id),
         }, hex(int(block))])
-        if raw in (None, '0x'):
-            return 0
-        if not isinstance(raw, str):
+        # A confirmed zero is a full 32-byte word of zeros. An empty or missing
+        # eth_call result is not that word.
+        if not isinstance(raw, str) or not raw.startswith('0x'):
             raise RuntimeError('balance missing')
-        return int(raw, 16)
+        body = raw[2:]
+        if len(body) != 64 or any(char not in '0123456789abcdefABCDEF' for char in body):
+            raise RuntimeError('balance missing')
+        return int(body, 16)
 
     def transfers(self, tx_hash):
         raw = self._rpc('eth_getTransactionReceipt', [tx_hash])
@@ -547,11 +550,15 @@ def reconcile_recent(store, now, reader=None, environ=None):
 
 
 def proportion_for_transaction(store, wallet, token, tx, size=None):
-    """Proportion already applied for this transaction. None does not clear the book."""
-    if not tx:
+    """One sell log for this wallet, token and size. A tx hash alone is not a match.
+
+    Two fills of the same size stay unconfirmed. A different size uses its own
+    log. Nothing here clears the stored balance.
+    """
+    wanted = _dec(size)
+    if not tx or wanted is None:
         return {'proportion': None, 'known': True}
     prefix = str(tx).lower() + ':'
-    wanted = _dec(size)
     with store.connect() as db:
         ready = db.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='wallet_source_events'"
@@ -559,17 +566,90 @@ def proportion_for_transaction(store, wallet, token, tx, size=None):
         if not ready:
             return {'proportion': None, 'known': True}
         rows = db.execute(
-            '''SELECT side, size, proportion FROM wallet_source_events
+            '''SELECT event_key, side, size, proportion FROM wallet_source_events
                WHERE wallet=? AND token=? AND event_key LIKE ?''',
             (wallet, str(token), prefix + '%')).fetchall()
-    sells = [row for row in rows if row['side'] == 'SELL' and row['proportion']]
-    if wanted is not None:
-        sized = [row for row in sells if _dec(row['size']) == wanted]
-        if len(sized) == 1:
-            sells = sized
-    if len(sells) == 1:
-        return {'proportion': Decimal(sells[0]['proportion']), 'known': True}
-    return {'proportion': None, 'known': True}
+    matched = []
+    seen = set()
+    for row in rows:
+        if row['side'] != 'SELL' or not row['proportion']:
+            continue
+        if _dec(row['size']) != wanted:
+            continue
+        if row['event_key'] in seen:
+            continue
+        seen.add(row['event_key'])
+        matched.append(row)
+    if len(matched) != 1:
+        return {'proportion': None, 'known': True}
+    return {'proportion': Decimal(matched[0]['proportion']), 'known': True}
+
+
+def historical_sell_proportion(reader, wallet, token, tx, size):
+    """Proportion from the balance before the sell's block, plus earlier logs.
+
+    The balance at today's head already includes an old sell. That number is
+    not the position the sell was taken from. This does not write a trade.
+    """
+    wanted = _dec(size)
+    if reader is None or not tx or wanted is None or wanted <= 0:
+        return {'proportion': None, 'known': False}
+    try:
+        parsed = reader.transfers(tx)
+    except Exception:
+        return {'proportion': None, 'known': False}
+    if not parsed or not parsed.get('ok'):
+        return {'proportion': None, 'known': False}
+    hits = []
+    for entry in parsed.get('logs') or []:
+        item = dict(entry)
+        item.setdefault('tx', str(tx).lower())
+        item.setdefault('block', parsed.get('block'))
+        if str(item.get('token_id')) != str(int(token)):
+            continue
+        if _log_side(item, wallet) != 'SELL':
+            continue
+        if _dec(item.get('shares')) != wanted:
+            continue
+        hits.append(item)
+    if len(hits) != 1:
+        return {'proportion': None, 'known': False}
+    sell = hits[0]
+    block = int(sell['block'])
+    if block < 1:
+        return {'proportion': None, 'known': False}
+    try:
+        raw = int(reader.token_balance_raw(wallet, token, block - 1))
+        earlier = reader.transfers_after(wallet, token, block, block)
+    except Exception:
+        return {'proportion': None, 'known': False}
+    if raw < 0 or earlier is None:
+        return {'proportion': None, 'known': False}
+    shares = Decimal(raw) / SHARES_SCALE
+    used = set()
+    for item in earlier:
+        ident = (str(item.get('tx') or '').lower(), int(item['log_index']))
+        if ident in used or int(item['log_index']) >= int(sell['log_index']):
+            continue
+        side = _log_side(item, wallet)
+        moved = _dec(item.get('shares'))
+        if side not in ('BUY', 'SELL') or moved is None or moved <= 0:
+            return {'proportion': None, 'known': False}
+        used.add(ident)
+        if side == 'BUY':
+            shares += moved
+        elif moved > shares:
+            return {'proportion': None, 'known': False}
+        else:
+            shares -= moved
+    if shares <= 0 or wanted > shares:
+        return {'proportion': None, 'known': False}
+    return {
+        'proportion': wanted / shares,
+        'known': True,
+        'block': block - 1,
+        'log_index': int(sell['log_index']),
+    }
 
 
 def resolve_event(store, event, wallet, reader=None):

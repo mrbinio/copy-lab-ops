@@ -603,12 +603,19 @@ class WalletCopy:
 
     def _pending_query(self,db,wallets,now,limit):
         if not wallets or limit<=0:return []
+        # The wallet key walks each trader's whole history. The time index
+        # reads only the last 90 seconds, which is the queue that can still copy.
+        if not db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='index' AND name='wallet_activity_seen'"
+        ).fetchone():
+            db.execute('CREATE INDEX IF NOT EXISTS wallet_activity_seen ON wallet_activity(first_seen)')
         marks=','.join('?'*len(wallets))
         return [dict(r) for r in db.execute(
-            f"SELECT a.* FROM wallet_activity a LEFT JOIN wallet_copy_events e "
+            f"SELECT a.* FROM wallet_activity a INDEXED BY wallet_activity_seen "
+            f"LEFT JOIN wallet_copy_events e "
             f"ON a.wallet=e.wallet AND a.event_key=e.event_key "
-            f"WHERE e.event_key IS NULL AND a.wallet IN ({marks}) AND a.first_seen>=? "
-            f"ORDER BY a.first_seen ASC LIMIT ?",(*wallets, now-90, limit))]
+            f"WHERE e.event_key IS NULL AND a.first_seen>=? AND a.wallet IN ({marks}) "
+            f"ORDER BY a.first_seen ASC LIMIT ?",(now-90,*wallets, limit))]
 
     def pending_activity(self,db,active=None):
         """Only fresh rows. A full-table INSERT every second blocked the event loop
@@ -633,8 +640,8 @@ class WalletCopy:
         if len(rows)<20:rows.extend(self._pending_query(db,lo,now,20-len(rows)))
         return rows
 
-    async def process(self,row,shadow=True):
-        await self._process(row)
+    async def process(self,row,shadow=True,sell_proportion=None):
+        await self._process(row,sell_proportion=sell_proportion)
         if shadow:
             await self._capture_shadow(row)
 
@@ -691,7 +698,52 @@ class WalletCopy:
             shadow.update(status='SETTLED',payout_micro=payout,pnl_micro=payout-fill['cost']-fill['fee'])
             review['counterfactual_pnl']=shadow['pnl_micro']/1e6
 
-    async def _process(self,row):
+    async def _prepare_sell(self,row):
+        """Chain read for one sell. Other wallets keep moving while this runs."""
+        import time as time_module
+        from .source_chain import historical_sell_proportion, reader_from_env
+        event=json.loads(row['body'])
+        reader=getattr(self,'source_reader',None) or reader_from_env()
+        if reader is None:
+            return None,0.0
+        started=time_module.perf_counter()
+        try:
+            result=await asyncio.to_thread(
+                historical_sell_proportion,reader,row['wallet'],str(event.get('asset') or ''),
+                event.get('transactionHash'),event.get('size'))
+        except Exception:
+            result={'proportion':None,'known':False}
+        elapsed=time_module.perf_counter()-started
+        self.last_sell_read_s=elapsed
+        return result,elapsed
+
+    async def _apply_batch(self,rows):
+        """Start every sell read first. Each wallet keeps its own order.
+
+        A sell on one wallet does not wait in front of another wallet's signal.
+        """
+        tasks={}
+        wallets=[]
+        grouped={}
+        for row in rows:
+            grouped.setdefault(row['wallet'],[]).append(row)
+            if row['wallet'] not in wallets:
+                wallets.append(row['wallet'])
+            body=json.loads(row['body'])
+            if body.get('type')=='TRADE' and body.get('side')=='SELL':
+                tasks[row['event_key']]=asyncio.create_task(self._prepare_sell(row))
+        async def drain(wallet):
+            for row in grouped[wallet]:
+                proportion=None
+                task=tasks.get(row['event_key'])
+                if task is not None:
+                    proportion,elapsed=await task
+                    if elapsed:
+                        self.store.set('wallet_source_sell_read_ms',{'ms':round(elapsed*1000,1)})
+                await self.process(row,shadow=False,sell_proportion=proportion)
+        await asyncio.gather(*(drain(wallet) for wallet in wallets))
+
+    async def _process(self,row,sell_proportion=None):
         queued_at=self.clock();wallet=row['wallet'];key=row['event_key'];event=json.loads(row['body'])
         now=queued_at
         with self.store.connect() as db:
@@ -701,23 +753,9 @@ class WalletCopy:
             identity_ok=str(event.get('proxyWallet','')).lower()==wallet and float(event.get('timestamp',0))==row['source_ts']
             source_note=None
             handled=False
-            if identity_ok and event.get('type')=='TRADE' and event.get('side')=='SELL' and event_order(event) is None:
-                token=str(event.get('asset') or '')
-                confirmed=False
-                if token:
-                    with self.store.connect() as db:
-                        confirmed=source_is_confirmed(db, wallet, token)
-                if confirmed:
-                    from .source_chain import proportion_for_transaction, reader_from_env, reconcile_token
-                    reader=reader_from_env()
-                    if reader is not None:
-                        try:
-                            await asyncio.to_thread(reconcile_token, self.store, reader, wallet, token, self.clock())
-                        except Exception:
-                            pass
-                        source_note=proportion_for_transaction(
-                            self.store, wallet, token, event.get('transactionHash'), event.get('size'))
-                        handled=True
+            if sell_proportion is not None and identity_ok and event.get('side')=='SELL':
+                source_note=sell_proportion
+                handled=True
             if not handled and identity_ok and event.get('type')=='TRADE' and event.get('side') in ('BUY','SELL'):
                 with self.store.connect() as db:
                     db.execute('BEGIN IMMEDIATE')
@@ -1000,8 +1038,7 @@ class WalletCopy:
             # The read runs off the event loop so a slow query cannot freeze RTDS.
             active=list(get_active_wallets(self.store))
             rows=await asyncio.to_thread(self._load_pending, active)
-            for row in rows:
-                await self.process(row, shadow=False)
+            await self._apply_batch(rows)
             # A hypothetical ticket stays on the direct process() path.
             # The full decision-table scan is cached inside publish.
             if rows or self.clock()-self.last_publish>=2:

@@ -231,7 +231,8 @@ class SourceChainTests(unittest.TestCase):
             if payload['method'] == 'eth_call':
                 self.assertEqual(payload['params'][1], '0x5f')
                 self.assertEqual(payload['params'][0]['data'][:10], '0x00fdd58e')
-                return {'result': '0x' + format(raw_shares('2.547170'), 'x')}
+                word=format(raw_shares('2.547170'), 'x').rjust(64, '0')
+                return {'result': '0x' + word}
             raise AssertionError(payload['method'])
 
         reader = TokenBalanceReader('https://rpc.test/secret-path', post=post)
@@ -293,6 +294,73 @@ class SourceChainTests(unittest.TestCase):
         self.assertEqual(book['block'], 95)
         again = reconcile_token(self.store, self.chain, WALLET, TOKEN, NOW)
         self.assertEqual(again['shares'], Decimal('75'))
+        with self.store.connect() as db:
+            copies = db.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='wallet_copy_events'"
+            ).fetchone()
+        self.assertIsNone(copies)
+
+    def test_balance_word_must_be_a_full_encoded_zero(self):
+        def reader(result, include=True):
+            def post(url, payload):
+                if include:
+                    return {'result': result}
+                return {}
+            return TokenBalanceReader('https://rpc.test/x', post=post)
+        self.assertEqual(reader('0x' + '0' * 64).token_balance_raw(WALLET, 1, 10), 0)
+        for bad in (None, '0x', '0x0', '0x00'):
+            with self.assertRaises(RuntimeError):
+                reader(bad).token_balance_raw(WALLET, 1, 10)
+        with self.assertRaises(RuntimeError):
+            reader(None, include=False).token_balance_raw(WALLET, 1, 10)
+
+    def test_sell_match_needs_wallet_token_and_size(self):
+        from lab.source_chain import proportion_for_transaction
+        self.chain.logs = [
+            log(1, 10, 'SELL', 96, '0xfill'),
+            log(2, 20, 'SELL', 96, '0xfill'),
+        ]
+        result = reconcile_token(self.store, self.chain, WALLET, TOKEN, NOW)
+        self.assertTrue(result['ok'])
+        ten = proportion_for_transaction(self.store, WALLET, TOKEN, '0xfill', '10')
+        twenty = proportion_for_transaction(self.store, WALLET, TOKEN, '0xfill', '20')
+        other = proportion_for_transaction(self.store, WALLET, TOKEN, '0xfill', '50')
+        missing = proportion_for_transaction(self.store, WALLET, TOKEN, '0xfill', None)
+        self.assertEqual(ten['proportion'], Decimal('0.1'))
+        self.assertEqual(twenty['proportion'], Decimal(20) / Decimal(90))
+        self.assertIsNone(other['proportion'])
+        self.assertIsNone(missing['proportion'])
+        self.chain.logs = [
+            log(1, 10, 'SELL', 96, '0xsame'),
+            log(2, 10, 'SELL', 96, '0xsame'),
+        ]
+        self.chain.balances[(WALLET, TOKEN, 95)] = raw_shares(100)
+        again = reconcile_token(self.store, self.chain, WALLET, TOKEN, NOW)
+        self.assertTrue(again['ok'])
+        tied = proportion_for_transaction(self.store, WALLET, TOKEN, '0xsame', '10')
+        self.assertIsNone(tied['proportion'])
+
+    def test_old_sell_uses_the_balance_before_its_block(self):
+        from lab.source_chain import historical_sell_proportion
+        self.chain.head = 200
+        self.chain.balances[(WALLET, TOKEN, 195)] = raw_shares(150)
+        self.chain.balances[(WALLET, TOKEN, 99)] = raw_shares(100)
+        fills = [
+            log(1, 100, 'BUY', 100, '0xold'),
+            log(2, 50, 'SELL', 100, '0xold'),
+        ]
+        self.chain.logs = fills
+        self.chain.receipts['0xold'] = receipt(100, fills)
+        found = historical_sell_proportion(self.chain, WALLET, TOKEN, '0xold', '50')
+        self.assertEqual(found['proportion'], Decimal('0.25'))
+        self.assertEqual(found['block'], 99)
+        self.assertNotEqual(Decimal(50) / Decimal(150), Decimal('0.25'))
+        self.assertIsNone(historical_sell_proportion(self.chain, WALLET, TOKEN, '0xold', '40')['proportion'])
+        self.chain.receipts['0xold'] = receipt(100, [
+            log(1, 50, 'SELL', 100, '0xold'),
+            log(2, 50, 'SELL', 100, '0xold'),
+        ])
+        self.assertIsNone(historical_sell_proportion(self.chain, WALLET, TOKEN, '0xold', '50')['proportion'])
         with self.store.connect() as db:
             copies = db.execute(
                 "SELECT 1 FROM sqlite_master WHERE type='table' AND name='wallet_copy_events'"
