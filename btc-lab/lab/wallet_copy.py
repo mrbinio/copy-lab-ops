@@ -47,15 +47,21 @@ def _event_size(event):
 
 
 def ensure_source_schema(db):
-    db.executescript('''
-      CREATE TABLE IF NOT EXISTS wallet_source_positions(
-        wallet TEXT, token TEXT, shares TEXT, known INTEGER NOT NULL,
-        PRIMARY KEY(wallet, token));
-      CREATE TABLE IF NOT EXISTS wallet_source_events(
-        wallet TEXT, event_key TEXT, token TEXT, side TEXT, size TEXT,
-        proportion TEXT, known INTEGER NOT NULL,
-        PRIMARY KEY(wallet, event_key));
-    ''')
+    # executescript commits. Skip it once the tables exist so a later
+    # BEGIN IMMEDIATE still covers the anchor and the events together.
+    exists=db.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='wallet_source_positions'"
+    ).fetchone()
+    if not exists:
+        db.executescript('''
+          CREATE TABLE IF NOT EXISTS wallet_source_positions(
+            wallet TEXT, token TEXT, shares TEXT, known INTEGER NOT NULL,
+            PRIMARY KEY(wallet, token));
+          CREATE TABLE IF NOT EXISTS wallet_source_events(
+            wallet TEXT, event_key TEXT, token TEXT, side TEXT, size TEXT,
+            proportion TEXT, known INTEGER NOT NULL,
+            PRIMARY KEY(wallet, event_key));
+        ''')
     position_cols={row[1] for row in db.execute('PRAGMA table_info(wallet_source_positions)')}
     if 'as_of' not in position_cols:
         db.execute('ALTER TABLE wallet_source_positions ADD COLUMN as_of TEXT')
@@ -64,6 +70,8 @@ def ensure_source_schema(db):
     event_cols={row[1] for row in db.execute('PRAGMA table_info(wallet_source_events)')}
     if 'source_ts' not in event_cols:
         db.execute('ALTER TABLE wallet_source_events ADD COLUMN source_ts TEXT')
+    if 'anchor_block' not in position_cols:
+        db.execute('ALTER TABLE wallet_source_positions ADD COLUMN anchor_block TEXT')
     # A book marked known before any timed reading was opened by assuming zero.
     # That is not a confirmed inventory. The events stay.
     db.execute(
@@ -130,23 +138,61 @@ def mark_source_unknown(db, wallet, token, event_key, side, size, source_ts=None
     return _source_result(None, False, None, None)
 
 
-def anchor_source_position(db, wallet, token, shares, as_of):
-    """A confirmed inventory at one moment. A detected trade is not this reading.
+# One block holds far fewer than this many logs. The cursor orders a transfer
+# by its block and the log inside that block. A second timestamp does not.
+ORDER_SCALE=100_000_000
 
-    Events at or before as_of are already inside the reading. Later events apply
-    in time order. This does not open a buy.
+
+def order_cursor(block, log_index):
+    block=int(block)
+    log_index=int(log_index)
+    if block<0 or log_index<0 or log_index>=ORDER_SCALE:
+        return None
+    return Decimal(block)*ORDER_SCALE+Decimal(log_index)
+
+
+def end_of_block(block):
+    return order_cursor(block, ORDER_SCALE-1)
+
+
+def event_order(event):
+    """Block and log index. A second-resolution timestamp is not an order."""
+    if not isinstance(event, dict):
+        return None
+    block=event.get('blockNumber')
+    index=event.get('logIndex')
+    if block is None or index is None:
+        return None
+    try:
+        if isinstance(block, str) and block.startswith('0x'):
+            block=int(block, 16)
+        if isinstance(index, str) and index.startswith('0x'):
+            index=int(index, 16)
+        return order_cursor(block, index)
+    except (TypeError, ValueError):
+        return None
+
+
+def anchor_source_position(db, wallet, token, shares, block):
+    """Confirmed inventory at the end of one block. A trade is not this reading.
+
+    Transfers in that block are already inside the balance. Later transfers
+    apply by block and log index. This does not open a buy.
     """
     ensure_source_schema(db)
     shares=_dec(shares)
-    as_of=_dec(as_of)
-    if not token or shares is None or shares<0 or as_of is None:
+    cursor=end_of_block(block) if block is not None else None
+    if not token or shares is None or shares<0 or cursor is None:
         raise ValueError('SOURCE_ANCHOR_INVALID')
+    stored=format(cursor, 'f')
     db.execute(
-        '''INSERT INTO wallet_source_positions(wallet,token,shares,known,as_of,anchor_at)
-           VALUES (?,?,?,1,?,?)
+        '''INSERT INTO wallet_source_positions
+           (wallet,token,shares,known,as_of,anchor_at,anchor_block)
+           VALUES (?,?,?,1,?,?,?)
            ON CONFLICT(wallet,token) DO UPDATE SET
-             shares=excluded.shares, known=1, as_of=excluded.as_of, anchor_at=excluded.anchor_at''',
-        (wallet, token, format(shares, 'f'), format(as_of, 'f'), format(as_of, 'f')))
+             shares=excluded.shares, known=1, as_of=excluded.as_of,
+             anchor_at=excluded.anchor_at, anchor_block=excluded.anchor_block''',
+        (wallet, token, format(shares, 'f'), stored, stored, str(int(block))))
     return source_position(db, wallet, token)
 
 
@@ -171,7 +217,7 @@ def apply_source_trade(db, wallet, token, event_key, side, size, source_ts):
         (wallet, token)).fetchone()
     anchor=_dec(row['anchor_at']) if row else None
     as_of=_dec(row['as_of']) if row else None
-    if row is None or not row['known'] or not row['shares'] or anchor is None or as_of is None:
+    if row is None or not row['known'] or row['shares'] in (None, '') or anchor is None or as_of is None:
         return mark_source_unknown(db, wallet, token, event_key, side, size, ts)
     shares_before=Decimal(row['shares'])
     if ts<=anchor:
@@ -204,20 +250,39 @@ def note_source_event(db, wallet, event_key, event, started, source_ts, first_se
         return None
     side=event.get('side')
     token=str(event.get('asset') or '')
-    size=_event_size(event)
-    if not token or size is None:
-        return mark_source_unknown(db, wallet, token, event_key, side, size, source_ts)
-    return apply_source_trade(db, wallet, token, event_key, side, size, source_ts)
+    size=_dec(event.get('_chain_shares')) or _event_size(event)
+    order=event_order(event)
+    # A second timestamp is not an order. Without a block and a log index the
+    # proportion stays unknown until a balance read places the trade.
+    if not token or size is None or order is None:
+        return mark_source_unknown(db, wallet, token, event_key, side, size, order or _dec(source_ts))
+    return apply_source_trade(db, wallet, token, event_key, side, size, order)
 
 
 def source_position(db, wallet, token):
     ensure_source_schema(db)
     row=db.execute(
-        'SELECT shares, known FROM wallet_source_positions WHERE wallet=? AND token=?',
+        '''SELECT shares, known, anchor_block FROM wallet_source_positions
+           WHERE wallet=? AND token=?''',
         (wallet, token)).fetchone()
     if not row:
-        return {'shares': None, 'known': False}
-    return {'shares': Decimal(row['shares']) if row['known'] and row['shares'] else None, 'known': bool(row['known'])}
+        return {'shares': None, 'known': False, 'block': None}
+    block=None
+    if row['known'] and row['anchor_block']:
+        try:
+            block=int(row['anchor_block'])
+        except (TypeError, ValueError):
+            block=None
+    shares=Decimal(row['shares']) if row['known'] and row['shares'] not in (None, '') else None
+    return {'shares': shares, 'known': bool(row['known']), 'block': block}
+
+
+def source_is_confirmed(db, wallet, token):
+    ensure_source_schema(db)
+    row=db.execute(
+        'SELECT known, anchor_at FROM wallet_source_positions WHERE wallet=? AND token=?',
+        (wallet, token)).fetchone()
+    return bool(row and row['known'] and row['anchor_at'])
 
 
 def sell_cut(our_shares, proportion):
@@ -631,6 +696,23 @@ class WalletCopy:
             identity_ok=str(event.get('proxyWallet','')).lower()==wallet and float(event.get('timestamp',0))==row['source_ts']
             source_note=None
             if identity_ok and event.get('type')=='TRADE' and event.get('side') in ('BUY','SELL'):
+                # One receipt, and only after a confirmed balance. An unknown book
+                # waits for upkeep so a burst of signals is not a burst of RPC calls.
+                if event_order(event) is None:
+                    token=str(event.get('asset') or '')
+                    confirmed=False
+                    if token:
+                        with self.store.connect() as db:
+                            confirmed=source_is_confirmed(db, wallet, token)
+                    if confirmed:
+                        from .source_chain import resolve_event
+                        try:
+                            found=await asyncio.to_thread(resolve_event, self.store, event, wallet)
+                        except Exception:
+                            found=None
+                        if found:
+                            event=dict(event)
+                            event.update(found)
                 with self.store.connect() as db:
                     db.execute('BEGIN IMMEDIATE')
                     source_note=note_source_event(db,wallet,key,event,self.started,row['source_ts'],row['first_seen'])
@@ -866,6 +948,15 @@ class WalletCopy:
         except Exception as error:
             self.store.set('wallet_watch_error', {'at': self.clock(), 'error': str(error)[:200]})
 
+    async def _reconcile_sources(self):
+        """Block-scoped token balances. The copy loop keeps running on the other task."""
+        from .source_chain import reconcile_recent
+        try:
+            await asyncio.to_thread(reconcile_recent, self.store, self.clock())
+        except Exception as error:
+            self.store.set('wallet_source_anchor_error', {
+                'at': self.clock(), 'error': type(error).__name__})
+
     async def upkeep(self):
         """Settlement and skip review, beside the copy path instead of inside it.
 
@@ -874,6 +965,7 @@ class WalletCopy:
         The watch summary is a read on another thread. It does not scan from step().
         """
         while True:
+            await self._reconcile_sources()
             await asyncio.to_thread(self._write_flow)
             await self._refresh_watch()
             try:

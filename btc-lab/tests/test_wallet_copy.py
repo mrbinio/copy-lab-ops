@@ -20,6 +20,8 @@ class CopyTests(unittest.TestCase):
             outcomes=['Up','Down'],clobTokenIds=['1','2'],description=TWAP_RULE,feesEnabled=True,feeSchedule={'exponent':1,'rate':.07})
         self.official={'condition_id':'condition','closed':True,'tokens':[{'token_id':'1','winner':False},{'token_id':'2','winner':True}]}
         self.engine=WalletCopy(self.store,self.fetch,lambda:self.pause,lambda:self.now,self.sleep)
+        self.source_block=None
+        self.source_log=1
     def tearDown(self):self.temp.cleanup()
     async def sleep(self,seconds):self.now+=self.delay
     def fetch(self,url):
@@ -34,9 +36,14 @@ class CopyTests(unittest.TestCase):
             return copy.deepcopy(self.official)
         raise AssertionError(url)
     def row(self,key='one',side='BUY',wallet=WALLETS[0]):
+        payload=dict(proxyWallet=wallet,type='TRADE',side=side,slug=self.slug,conditionId='condition',asset='1',timestamp=self.now-1,
+            transactionHash=key,price=.59,size=100)
+        if self.source_block is not None:
+            payload['blockNumber']=self.source_block
+            payload['logIndex']=self.source_log
+            self.source_log+=1
         return {'wallet':wallet,'event_key':key,'source_ts':self.now-1,'first_seen':self.now,
-            'body':json.dumps(dict(proxyWallet=wallet,type='TRADE',side=side,slug=self.slug,conditionId='condition',asset='1',timestamp=self.now-1,
-                transactionHash=key,price=.59,size=100))}
+            'body':json.dumps(payload)}
     def process(self,row):asyncio.run(self.engine.process(row));self.engine.publish('TEST')
     def state(self):return self.store.get(KEY,{})
     def buy(self):self.now=1102;row=self.row();self.process(row);return row
@@ -46,6 +53,8 @@ class CopyTests(unittest.TestCase):
         with self.store.connect() as db:
             db.execute('BEGIN IMMEDIATE')
             anchor_source_position(db, wallet or WALLETS[0], token, Decimal(str(shares)), as_of)
+        self.source_block=int(as_of)+1
+        self.source_log=1
     def reason(self):
         with self.store.connect() as db:return db.execute('SELECT reason FROM wallet_copy_events ORDER BY ts DESC,rowid DESC LIMIT 1').fetchone()[0]
     def test_forward_buy_uses_current_ask_not_source_price_and_sale_both_fees(self):
@@ -493,7 +502,7 @@ class CopyTests(unittest.TestCase):
 
     def test_confirmed_prior_inventory_sizes_the_sell_at_a_quarter(self):
         from decimal import Decimal
-        from lab.wallet_copy import apply_source_trade, source_position
+        from lab.wallet_copy import apply_source_trade, order_cursor, source_position
         self.confirm_source(100, 1000)
         self.buy()
         self.now+=2
@@ -507,7 +516,7 @@ class CopyTests(unittest.TestCase):
             book=source_position(db,WALLETS[0],'1')
             rows=self.engine.positions(db)
         with self.store.connect() as db:
-            late=apply_source_trade(db,WALLETS[0],'1','late','BUY',Decimal('10'),1100)
+            late=apply_source_trade(db,WALLETS[0],'1','late','BUY',Decimal('10'),order_cursor(self.source_block,0))
             after_gap=source_position(db,WALLETS[0],'1')
         self.assertEqual(book['shares'],Decimal('150'))
         self.assertTrue(book['known'])
