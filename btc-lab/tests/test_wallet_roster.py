@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from lab.core import Store
 from lab.wallet_roster import (
-    RULES, RULES_V1, RULES_V2, can_observe_to_test, evaluate_copy_book, tick, bootstrap, SPEC,
+    RULES, RULES_V1, RULES_V2, can_observe_to_test, copy_evidence, evaluate_copy_book, tick, bootstrap, SPEC,
     SPEC_V2, PREVIOUS_SPEC, hypothetical_settled, audit, AUDIT_TABLE, AUDIT_DISPLAY_LIMIT,
     PAUSE_REASON, RETEST_REASON, PROMOTE_REASON,
 )
@@ -307,3 +307,41 @@ class RosterTests(unittest.TestCase):
             self.assertEqual(state['rule_history'][0]['spec'], PREVIOUS_SPEC)
             self.assertEqual(state['wallets'][wallet]['since'], 4)
             self.assertEqual(state['wallets'][wallet]['state'], 'paper_test')
+
+    def test_v1_observation_does_not_qualify_without_v2_results(self):
+        with tempfile.TemporaryDirectory() as d:
+            store = Store(Path(d) / 'lab.db')
+            now = 5_000_000
+            wallet = '0x' + 'ab' * 20
+            started = now - 30 * 86400
+            store.set('wallet_observation_meta', {
+                'version': 'copy-observe-v2',
+                'previous_version': 'copy-observe-v1',
+                'paper_policy': 'copy-paper-v2',
+                'started_at': started,
+            })
+            state = bootstrap(store, now=now)
+            state['wallets'][wallet] = {
+                'wallet': wallet, 'state': 'paused', 'since': now - 2 * 86400, 'reason': 'old pause',
+            }
+            store.set('wallet_roster', state)
+            with store.connect() as db:
+                db.execute(
+                    'CREATE TABLE wallet_observation_positions (id TEXT PRIMARY KEY, wallet TEXT, body TEXT)'
+                )
+                for i in range(20):
+                    db.execute(
+                        'INSERT INTO wallet_observation_positions VALUES (?,?,?)',
+                        (f'v1-{i}', wallet, json.dumps({
+                            'policy': 'copy-observe-v1', 'status': 'SETTLED',
+                            'opened': now - 86400, 'closed_at': now - 3600,
+                            'pnl_micro': 1_000_000, 'market': f'm{i}', 'fee': 1000,
+                        })),
+                    )
+            evidence = copy_evidence(store, wallet, now)
+            self.assertEqual(evidence['our_trades'], 0)
+            self.assertIsNone(evidence['copy_sim_net_usd'])
+            self.assertFalse(can_observe_to_test(evidence))
+            updated, changed = tick(store, now=now)
+            self.assertEqual(changed, [])
+            self.assertEqual(updated['wallets'][wallet]['state'], 'paused')

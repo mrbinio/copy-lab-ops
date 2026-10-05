@@ -379,10 +379,9 @@ def observation_settled(store):
             return found
         for wallet, body in db.execute('SELECT wallet, body FROM wallet_observation_positions'):
             trade = json.loads(body)
-            accepted = {version, 'copy-observe-v1', 'copy-observe-v2'}
-            if meta.get('previous_version'):
-                accepted.add(meta.get('previous_version'))
-            if trade.get('policy') not in accepted or (trade.get('opened') or 0) < started:
+            # Only the current observation rules qualify. An older book stays
+            # in the table and still settles, but it is not evidence for this version.
+            if trade.get('policy') != version or (trade.get('opened') or 0) < started:
                 continue
             if trade.get('status') not in ('CLOSED', 'SETTLED') or trade.get('pnl_micro') is None:
                 continue

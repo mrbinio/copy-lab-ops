@@ -28,7 +28,11 @@ def ensure_schema(db):
 
 
 def ensure_meta(store, now):
-    """Set the start once. A later process must not move it backward."""
+    """Set the start once. A later process must not move it backward.
+
+    Moving the stored version forward does not turn older rows into evidence
+    for the new rules, and it does not replay signals as new buys.
+    """
     meta = store.get(META_KEY) or {}
     if meta.get('started_at'):
         meta.setdefault('paper_policy', POLICY)

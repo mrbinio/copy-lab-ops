@@ -40,9 +40,16 @@ class CopyTests(unittest.TestCase):
     def process(self,row):asyncio.run(self.engine.process(row));self.engine.publish('TEST')
     def state(self):return self.store.get(KEY,{})
     def buy(self):self.now=1102;row=self.row();self.process(row);return row
+    def confirm_source(self, shares, as_of, token='1', wallet=None):
+        from decimal import Decimal
+        from lab.wallet_copy import anchor_source_position
+        with self.store.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            anchor_source_position(db, wallet or WALLETS[0], token, Decimal(str(shares)), as_of)
     def reason(self):
         with self.store.connect() as db:return db.execute('SELECT reason FROM wallet_copy_events ORDER BY ts DESC,rowid DESC LIMIT 1').fetchone()[0]
     def test_forward_buy_uses_current_ask_not_source_price_and_sale_both_fees(self):
+        self.confirm_source(0, 1000)
         self.buy();t=self.state()['recent_trades'][0]
         self.assertEqual(t['entry_fill']['vwap'],.6);self.assertEqual(t['source_price'],.59)
         self.assertLessEqual(t['cost']+t['fee'],5_000_000)
@@ -71,7 +78,7 @@ class CopyTests(unittest.TestCase):
         self.assertLessEqual(open_rows[0]['cost']+open_rows[0]['fee'],5_000_000)
     def test_minimum_and_failed_sale_do_not_invent_fills(self):
         self.depth='1';self.buy();self.assertEqual(self.reason(),'BUY_NO_FULL_FILL_OR_MINIMUM')
-        self.depth='100';self.now=1110;self.process(self.row('new'))
+        self.depth='100';self.confirm_source(0, 1000);self.now=1110;self.process(self.row('new'))
         self.depth='1';self.now+=2;self.process(self.row('sell','SELL'))
         self.assertEqual(self.reason(),'SELL_NO_FULL_FILL');self.assertEqual(self.state()['recent_trades'][0]['status'],'OPEN')
     def test_settlement_loss_after_delay_is_idempotent(self):
@@ -127,6 +134,7 @@ class CopyTests(unittest.TestCase):
         self.now=1102;event=json.loads(self.row()['body']);event['slug']='btc-updown-5m-1000'
         raw=copy.deepcopy(self.raw);raw.update(slug=event['slug'],endDate=datetime.fromtimestamp(1300,timezone.utc).isoformat())
         self.assertEqual(market_spec(raw,event,self.now)['end'],1300)
+        self.confirm_source(0, 1000)
         self.buy();self.now=1105;self.bid='.70';self.process(self.row('sell','SELL'))
         from lab.daily_report import build_report
         report=build_report(self.store,day='1970-01-01',now=1800000000)
@@ -228,6 +236,7 @@ class CopyTests(unittest.TestCase):
 
     def test_pause_lets_sell_close_and_blocks_the_next_buy(self):
         from lab.strategy_control import set_paused
+        self.confirm_source(0, 1000)
         self.buy()
         set_paused(self.store,'copy-'+WALLETS[0],True)
         self.now+=2;self.bid='.70';self.process(self.row('sell','SELL'))
@@ -260,6 +269,7 @@ class CopyTests(unittest.TestCase):
     def test_same_stream_matches_the_shared_policy(self):
         from decimal import Decimal
         from lab.copy_policy import decide_buy, decide_sell, remember_fill
+        self.confirm_source(0, 1000)
         self.buy()
         bought=self.state()['recent_trades'][0]
         book={'asks':[['.60','100']],'bids':[['.59','100']],'min_shares':'5','tick':'.01','fee_rate':.07,'token':'1','source_ts':1102}
@@ -288,6 +298,7 @@ class CopyTests(unittest.TestCase):
 
     def test_partial_sell_keeps_remainder_and_balances_the_ledger(self):
         from decimal import Decimal, ROUND_FLOOR
+        self.confirm_source(0, 1000)
         self.buy()
         self.now+=2
         skipped=self.row('skip','BUY')
@@ -347,6 +358,7 @@ class CopyTests(unittest.TestCase):
     def test_failed_sell_copy_still_updates_the_source_position(self):
         from decimal import Decimal
         from lab.wallet_copy import source_position
+        self.confirm_source(0, 1000)
         self.buy()
         self.now+=2
         self.depth='1'
@@ -401,6 +413,7 @@ class CopyTests(unittest.TestCase):
 
     def test_duplicate_restart_and_partial_sell_keep_the_ledger(self):
         from decimal import Decimal, ROUND_FLOOR
+        self.confirm_source(0, 1000)
         self.buy()
         self.now+=2
         self.bid='.70'
@@ -430,6 +443,7 @@ class CopyTests(unittest.TestCase):
         from decimal import Decimal, ROUND_FLOOR
         from lab.wallet_observation import apply_row, ensure_meta
         meta=ensure_meta(self.store,1000)
+        self.confirm_source(0, 1000)
         self.now=1102
         asyncio.run(apply_row(self.engine,self.row('obuy'),meta))
         self.now+=2
@@ -456,6 +470,55 @@ class CopyTests(unittest.TestCase):
         self.assertEqual(closed[0]['shares'],int((Decimal(whole)*Decimal('0.25')).to_integral_value(rounding=ROUND_FLOOR)))
         self.assertEqual(cash,500_000_000+ledger)
         self.assertEqual(cash,500_000_000-(opened[0]['cost']+opened[0]['fee'])+closed[0]['pnl_micro'])
+
+    def test_unconfirmed_opening_is_not_half_of_the_next_sell(self):
+        from decimal import Decimal
+        from lab.wallet_copy import apply_source_trade, source_position
+        self.buy()
+        self.now+=2
+        self.min_shares='1'
+        sell=self.row('halfish','SELL')
+        body=json.loads(sell['body']);body['size']=50;sell['body']=json.dumps(body)
+        self.process(sell)
+        self.assertEqual(self.reason(),'SOURCE_PROPORTION_UNKNOWN')
+        with self.store.connect() as db:
+            book=source_position(db,WALLETS[0],'1')
+            rows=self.engine.positions(db)
+        with self.store.connect() as db:
+            again=apply_source_trade(db,WALLETS[0],'1','halfish','SELL',Decimal('50'),self.now-1)
+        self.assertFalse(book['known'])
+        self.assertIsNone(book['shares'])
+        self.assertIsNone(again['proportion'])
+        self.assertEqual([t['status'] for t in rows],['OPEN'])
+
+    def test_confirmed_prior_inventory_sizes_the_sell_at_a_quarter(self):
+        from decimal import Decimal
+        from lab.wallet_copy import apply_source_trade, source_position
+        self.confirm_source(100, 1000)
+        self.buy()
+        self.now+=2
+        self.bid='.70';self.ask='.71'
+        self.min_shares='1'
+        sell=self.row('quarter','SELL')
+        body=json.loads(sell['body']);body['size']=50;sell['body']=json.dumps(body)
+        self.process(sell)
+        self.assertEqual(self.reason(),'COPIED_SELL')
+        with self.store.connect() as db:
+            book=source_position(db,WALLETS[0],'1')
+            rows=self.engine.positions(db)
+        with self.store.connect() as db:
+            late=apply_source_trade(db,WALLETS[0],'1','late','BUY',Decimal('10'),1100)
+            after_gap=source_position(db,WALLETS[0],'1')
+        self.assertEqual(book['shares'],Decimal('150'))
+        self.assertTrue(book['known'])
+        closed=next(t for t in rows if t['status']=='CLOSED')
+        opened=next(t for t in rows if t['status']=='OPEN')
+        whole=closed['shares']+opened['shares']
+        from decimal import ROUND_FLOOR
+        self.assertEqual(closed['shares'],int((Decimal(whole)*Decimal('0.25')).to_integral_value(rounding=ROUND_FLOOR)))
+        self.assertNotEqual(closed['shares'],int((Decimal(whole)*Decimal('0.5')).to_integral_value(rounding=ROUND_FLOOR)))
+        self.assertFalse(after_gap['known'])
+        self.assertIsNone(late['proportion'])
 
     def test_copy_flow_names_the_real_block(self):
         now=1_000

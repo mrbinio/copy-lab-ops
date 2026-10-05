@@ -59,14 +59,15 @@ def _policy_view(db, wallet, now, meta):
     if not meta.get('version') or meta.get('started_at') is None or not _table(db, 'wallet_observation_positions'):
         return empty
     rows = []
+    earlier = []
     for (body,) in db.execute('SELECT body FROM wallet_observation_positions WHERE wallet=?', (wallet,)):
         trade = json.loads(body)
-        accepted = {meta.get('version'), 'copy-observe-v1', 'copy-observe-v2'}
-        if meta.get('previous_version'):
-            accepted.add(meta.get('previous_version'))
-        if trade.get('policy') not in accepted or (trade.get('opened') or 0) < meta['started_at']:
+        if (trade.get('opened') or 0) < meta['started_at']:
             continue
-        rows.append(trade)
+        if trade.get('policy') == meta.get('version'):
+            rows.append(trade)
+        elif trade.get('policy'):
+            earlier.append(trade)
     open_n = sum(1 for trade in rows if trade.get('status') == 'OPEN')
     closed = [trade for trade in rows if trade.get('status') in ('CLOSED', 'SETTLED') and trade.get('pnl_micro') is not None]
     fees = [trade.get('fee') for trade in closed if isinstance(trade.get('fee'), (int, float))]
@@ -92,14 +93,26 @@ def _policy_view(db, wallet, now, meta):
             'cost_micro': trade.get('cost'),
             'fee_micro': trade.get('fee'),
             'pnl_micro': trade.get('pnl_micro'),
-            'policy': meta['version'],
+            'policy': trade.get('policy'),
         }
         for trade in sorted(closed, key=lambda item: item.get('closed_at') or 0, reverse=True)[:12]
+    ]
+    earlier_journal = [
+        {
+            'opened': trade.get('opened'),
+            'closed_at': trade.get('closed_at'),
+            'market': trade.get('market'),
+            'pnl_micro': trade.get('pnl_micro'),
+            'policy': trade.get('policy'),
+        }
+        for trade in sorted(earlier, key=lambda item: item.get('closed_at') or 0, reverse=True)[:12]
+        if trade.get('status') in ('CLOSED', 'SETTLED')
     ]
     return {
         'known': True, 'version': meta['version'], 'started_at': meta['started_at'],
         'open': open_n, 'settled': len(closed), 'net': net, 'windows': windows,
         'evidence_days': evidence, 'share': share, 'journal': journal,
+        'earlier_journal': earlier_journal,
     }
 
 

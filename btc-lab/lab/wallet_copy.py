@@ -56,6 +56,19 @@ def ensure_source_schema(db):
         proportion TEXT, known INTEGER NOT NULL,
         PRIMARY KEY(wallet, event_key));
     ''')
+    position_cols={row[1] for row in db.execute('PRAGMA table_info(wallet_source_positions)')}
+    if 'as_of' not in position_cols:
+        db.execute('ALTER TABLE wallet_source_positions ADD COLUMN as_of TEXT')
+    if 'anchor_at' not in position_cols:
+        db.execute('ALTER TABLE wallet_source_positions ADD COLUMN anchor_at TEXT')
+    event_cols={row[1] for row in db.execute('PRAGMA table_info(wallet_source_events)')}
+    if 'source_ts' not in event_cols:
+        db.execute('ALTER TABLE wallet_source_events ADD COLUMN source_ts TEXT')
+    # A book marked known before any timed reading was opened by assuming zero.
+    # That is not a confirmed inventory. The events stay.
+    db.execute(
+        """UPDATE wallet_source_positions SET known=0, shares=''
+           WHERE known=1 AND (anchor_at IS NULL OR anchor_at='')""")
 
 
 def _source_result(proportion, known, shares_before, shares_after, duplicate=False):
@@ -74,31 +87,34 @@ def _stored_source(row):
     return _source_result(proportion, row['known'], None, None, duplicate=True)
 
 
-def mark_source_unknown(db, wallet, token, event_key, side, size):
-    """A gap or an unknown opening inventory. Later sells are not a faithful copy."""
-    ensure_source_schema(db)
-    prior=db.execute(
-        'SELECT proportion, known FROM wallet_source_events WHERE wallet=? AND event_key=?',
-        (wallet, event_key)).fetchone()
-    if prior:
-        return _stored_source(prior)
+def _dec(raw):
+    if raw is None or raw=='':
+        return None
+    try:
+        value=Decimal(str(raw))
+    except Exception:
+        return None
+    if not value.is_finite():
+        return None
+    return value
+
+
+def _insert_source_event(db, wallet, event_key, token, side, size, proportion, known, source_ts):
     db.execute(
-        'INSERT INTO wallet_source_events VALUES (?,?,?,?,?,?,?)',
-        (wallet, event_key, token or '', side or '', '' if size is None else format(size, 'f'), '', 0))
-    db.execute(
-        '''INSERT INTO wallet_source_positions(wallet,token,shares,known) VALUES (?,?,?,0)
-           ON CONFLICT(wallet,token) DO UPDATE SET shares='', known=0''',
-        (wallet, token or '', ''))
-    return _source_result(None, False, None, None)
+        '''INSERT INTO wallet_source_events
+           (wallet,event_key,token,side,size,proportion,known,source_ts)
+           VALUES (?,?,?,?,?,?,?,?)''',
+        (wallet, event_key, token or '', side or '',
+         '' if size is None else format(size, 'f'),
+         '' if proportion is None else format(proportion, 'f'),
+         1 if known else 0,
+         '' if source_ts is None else format(source_ts, 'f')))
 
 
-def apply_source_trade(db, wallet, token, event_key, side, size):
-    """Apply one detected source trade once.
+def mark_source_unknown(db, wallet, token, event_key, side, size, source_ts=None):
+    """A gap or an unknown opening inventory. Later sells are not a faithful copy.
 
-    The tracked size starts at zero only for a first sized BUY. A first SELL,
-    a missing size, or a sell larger than the tracked size marks the token
-    unknown. An unknown book stays unknown. The proportion is the sell size
-    divided by the source position immediately before that sell.
+    The recorded event stays. Settlement of our own position does not read this flag.
     """
     ensure_source_schema(db)
     prior=db.execute(
@@ -106,37 +122,76 @@ def apply_source_trade(db, wallet, token, event_key, side, size):
         (wallet, event_key)).fetchone()
     if prior:
         return _stored_source(prior)
-    if size is None or side not in ('BUY', 'SELL') or not token:
-        return mark_source_unknown(db, wallet, token, event_key, side, size)
+    _insert_source_event(db, wallet, event_key, token, side, size, None, False, _dec(source_ts))
+    db.execute(
+        '''INSERT INTO wallet_source_positions(wallet,token,shares,known) VALUES (?,?,?,0)
+           ON CONFLICT(wallet,token) DO UPDATE SET shares='', known=0''',
+        (wallet, token or '', ''))
+    return _source_result(None, False, None, None)
+
+
+def anchor_source_position(db, wallet, token, shares, as_of):
+    """A confirmed inventory at one moment. A detected trade is not this reading.
+
+    Events at or before as_of are already inside the reading. Later events apply
+    in time order. This does not open a buy.
+    """
+    ensure_source_schema(db)
+    shares=_dec(shares)
+    as_of=_dec(as_of)
+    if not token or shares is None or shares<0 or as_of is None:
+        raise ValueError('SOURCE_ANCHOR_INVALID')
+    db.execute(
+        '''INSERT INTO wallet_source_positions(wallet,token,shares,known,as_of,anchor_at)
+           VALUES (?,?,?,1,?,?)
+           ON CONFLICT(wallet,token) DO UPDATE SET
+             shares=excluded.shares, known=1, as_of=excluded.as_of, anchor_at=excluded.anchor_at''',
+        (wallet, token, format(shares, 'f'), format(as_of, 'f'), format(as_of, 'f')))
+    return source_position(db, wallet, token)
+
+
+def apply_source_trade(db, wallet, token, event_key, side, size, source_ts):
+    """Apply one detected source trade once, after a confirmed inventory.
+
+    A first BUY does not prove the book was empty. Without a timed reading the
+    proportion stays unknown. A late event inside an already applied span is a
+    gap. The same event key does not change the shares a second time.
+    """
+    ensure_source_schema(db)
+    prior=db.execute(
+        'SELECT proportion, known FROM wallet_source_events WHERE wallet=? AND event_key=?',
+        (wallet, event_key)).fetchone()
+    if prior:
+        return _stored_source(prior)
+    ts=_dec(source_ts)
+    if size is None or side not in ('BUY', 'SELL') or not token or ts is None:
+        return mark_source_unknown(db, wallet, token, event_key, side, size, ts)
     row=db.execute(
-        'SELECT shares, known FROM wallet_source_positions WHERE wallet=? AND token=?',
+        'SELECT shares, known, as_of, anchor_at FROM wallet_source_positions WHERE wallet=? AND token=?',
         (wallet, token)).fetchone()
-    if row is None:
-        if side!='BUY':
-            return mark_source_unknown(db, wallet, token, event_key, side, size)
-        shares_before=Decimal(0)
-        shares_after=size
+    anchor=_dec(row['anchor_at']) if row else None
+    as_of=_dec(row['as_of']) if row else None
+    if row is None or not row['known'] or not row['shares'] or anchor is None or as_of is None:
+        return mark_source_unknown(db, wallet, token, event_key, side, size, ts)
+    shares_before=Decimal(row['shares'])
+    if ts<=anchor:
+        _insert_source_event(db, wallet, event_key, token, side, size, None, False, ts)
+        return _source_result(None, True, None, shares_before)
+    if ts<=as_of:
+        return mark_source_unknown(db, wallet, token, event_key, side, size, ts)
+    if side=='BUY':
+        shares_after=shares_before+size
         proportion=None
-    elif not row['known'] or not row['shares']:
-        return mark_source_unknown(db, wallet, token, event_key, side, size)
+    elif size>shares_before:
+        return mark_source_unknown(db, wallet, token, event_key, side, size, ts)
     else:
-        shares_before=Decimal(row['shares'])
-        if side=='BUY':
-            shares_after=shares_before+size
-            proportion=None
-        elif size>shares_before:
-            return mark_source_unknown(db, wallet, token, event_key, side, size)
-        else:
-            proportion=size/shares_before
-            shares_after=shares_before-size
+        proportion=size/shares_before
+        shares_after=shares_before-size
+    _insert_source_event(db, wallet, event_key, token, side, size, proportion, True, ts)
     db.execute(
-        'INSERT INTO wallet_source_events VALUES (?,?,?,?,?,?,?)',
-        (wallet, event_key, token, side, format(size, 'f'),
-         '' if proportion is None else format(proportion, 'f'), 1))
-    db.execute(
-        '''INSERT INTO wallet_source_positions(wallet,token,shares,known) VALUES (?,?,?,1)
-           ON CONFLICT(wallet,token) DO UPDATE SET shares=excluded.shares, known=1''',
-        (wallet, token, format(shares_after, 'f')))
+        '''UPDATE wallet_source_positions
+           SET shares=?, known=1, as_of=? WHERE wallet=? AND token=?''',
+        (format(shares_after, 'f'), format(ts, 'f'), wallet, token))
     return _source_result(proportion, True, shares_before, shares_after)
 
 
@@ -150,9 +205,9 @@ def note_source_event(db, wallet, event_key, event, started, source_ts, first_se
     side=event.get('side')
     token=str(event.get('asset') or '')
     size=_event_size(event)
-    if source_ts<started or first_seen<started or not token or size is None:
-        return mark_source_unknown(db, wallet, token, event_key, side, size)
-    return apply_source_trade(db, wallet, token, event_key, side, size)
+    if not token or size is None:
+        return mark_source_unknown(db, wallet, token, event_key, side, size, source_ts)
+    return apply_source_trade(db, wallet, token, event_key, side, size, source_ts)
 
 
 def source_position(db, wallet, token):
