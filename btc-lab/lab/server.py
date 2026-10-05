@@ -27,6 +27,9 @@ def dashboard_state(store):
         if hit and now - hit[0] < _SNAP_TTL:
             return hit[1]
         value = store.snapshot()
+        value['revision'] = os.environ.get('LAB_REVISION') or None
+        value['view'] = 'live'
+        value['dashboard_port'] = 8769
         _SNAP[key] = (time.time(), value)
         return value
 

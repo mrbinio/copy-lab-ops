@@ -1,7 +1,11 @@
 """Separate copy results. Virtual $500 books are not one real wallet."""
+from datetime import datetime
 from statistics import median
+from zoneinfo import ZoneInfo
 
 SPEC = 'copy-totals-v1'
+BOARD = 'paper-board-v1'
+STOCKHOLM = ZoneInfo('Europe/Stockholm')
 
 
 def _pnl(trade):
@@ -86,6 +90,110 @@ def summarize(trades, pauses, now, observed=0, copy_wallets=None, roster=None):
         'active_wallets': active_wallets,
         'paused_wallets': paused_wallets,
         'separate_books': True,
+    }
+
+
+def _closed_row(trade):
+    return trade.get('status') in ('CLOSED', 'SETTLED') and trade.get('closed_at')
+
+
+def _copying_now(wallet, roster_wallets, pauses):
+    state = (roster_wallets.get(wallet) or {}).get('state')
+    if (pauses or {}).get('copy-' + wallet):
+        return False
+    return state in ('paper_active', 'paper_test')
+
+
+def _pause_reason(wallet, roster_wallets, pauses):
+    if _copying_now(wallet, roster_wallets, pauses):
+        return None
+    row = roster_wallets.get(wallet) or {}
+    state = row.get('state')
+    if state == 'paused':
+        return row.get('reason') or 'wstrzymany'
+    if state == 'observed':
+        return 'obserwacja, bez nowych zakupów'
+    if state in ('paper_active', 'paper_test'):
+        return row.get('reason') or 'pauza kopii'
+    return 'poza obecną listą'
+
+
+def paper_board(trades, roster, pauses, now):
+    """Closed PAPER copy book for today, 7 days and lifetime.
+
+    Later-disabled wallets stay in the period that contains their closes.
+    A missing pnl is missing, not zero. Open positions are not marked here:
+    this book has no fresh sale quote.
+    """
+    roster_wallets = (roster or {}).get('wallets') or {}
+    pauses = pauses or {}
+    closed = [trade for trade in trades if _closed_row(trade)]
+    open_rows = [trade for trade in trades if trade.get('status') in ('OPEN', 'RESOLVED')]
+    today = datetime.fromtimestamp(now, STOCKHOLM).date().isoformat()
+    week_start = now - 7 * 86400
+
+    def included(trade, period):
+        if period == 'all':
+            return True
+        if period == 'week':
+            return trade['closed_at'] >= week_start
+        return datetime.fromtimestamp(trade['closed_at'], STOCKHOLM).date().isoformat() == today
+
+    periods = {}
+    for period in ('today', 'week', 'all'):
+        rows = [trade for trade in closed if included(trade, period)]
+        missing = any(trade.get('pnl_micro') is None for trade in rows)
+        by_wallet = {}
+        for trade in rows:
+            by_wallet.setdefault(trade['wallet'], []).append(trade)
+        show = set(by_wallet)
+        for wallet in roster_wallets:
+            if _copying_now(wallet, roster_wallets, pauses):
+                show.add(wallet)
+        wallet_rows = []
+        for wallet in show:
+            items = by_wallet.get(wallet, [])
+            known = all(item.get('pnl_micro') is not None for item in items)
+            wallet_rows.append({
+                'wallet': wallet,
+                'copying': _copying_now(wallet, roster_wallets, pauses),
+                'net_micro': None if not known else sum(item['pnl_micro'] for item in items),
+                'closed': len(items),
+                'pause_reason': _pause_reason(wallet, roster_wallets, pauses),
+            })
+        wallet_rows.sort(key=lambda row: (not row['copying'], row['net_micro'] is None, row['net_micro'] or 0, row['wallet']))
+        net_micro = None if missing else sum(trade['pnl_micro'] for trade in rows)
+        periods[period] = {
+            'net_micro': net_micro,
+            'closed': None if missing else len(rows),
+            'wallets': wallet_rows,
+        }
+    journal = [{
+        'wallet': trade.get('wallet'),
+        'closed_at': trade.get('closed_at'),
+        'opened': trade.get('opened'),
+        'side': trade.get('side'),
+        'market': trade.get('market'),
+        'cost': trade.get('cost'),
+        'fee': trade.get('fee'),
+        'exit_fee': trade.get('exit_fee') or 0,
+        'pnl_micro': trade.get('pnl_micro'),
+        'status': trade.get('status'),
+    } for trade in sorted(closed, key=lambda trade: trade.get('closed_at') or 0, reverse=True)]
+    return {
+        'spec': BOARD,
+        'book': 'wallet_copy_positions',
+        'generated_at': now,
+        'timezone': 'Europe/Stockholm',
+        'today': today,
+        'week_start': week_start,
+        'periods': periods,
+        'journal': journal,
+        'open': {
+            'count': len(open_rows),
+            'mark_micro': 0 if not open_rows else None,
+            'mark_note': 'zero otwartych pozycji' if not open_rows else 'brak aktualnej wyceny',
+        },
     }
 
 

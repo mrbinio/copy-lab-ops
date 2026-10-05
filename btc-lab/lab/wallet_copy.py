@@ -14,7 +14,7 @@ from .mid_window import simulate_sale
 from .reference import classify_rule
 from .wallet_observer import get_active_wallets, wallet_label
 from .strategy_control import is_paused as copy_paused, pauses as copy_pauses
-from .copy_totals import summarize as copy_summarize, path_stats, path_record
+from .copy_totals import paper_board, summarize as copy_summarize, path_stats, path_record
 from .wallet_watch import build_watch
 from .copy_policy import POLICY, band_reason, confirmed_source_price, decide_buy, decide_sell, remember_fill
 
@@ -174,8 +174,10 @@ class WalletCopy:
         for t in trades:
             path=(t.get('entry_evidence') or {}).get('path_ms')
             if path:samples.append(path)
-        totals=copy_summarize(trades,copy_pauses(self.store),now,observed=len(get_active_wallets(self.store)),copy_wallets=list(get_active_wallets(self.store)),roster=self.store.get('wallet_roster',{}))
-        self.store.set(KEY,dict(spec='wallet-signal-copy-v1',status=status,error=error,updated_at=now,started_at=self.started,
+        roster_state=self.store.get('wallet_roster',{})
+        totals=copy_summarize(trades,copy_pauses(self.store),now,observed=len(get_active_wallets(self.store)),copy_wallets=list(get_active_wallets(self.store)),roster=roster_state)
+        board=paper_board(trades,roster_state,copy_pauses(self.store),now)
+        self.store.set(KEY,dict(spec='wallet-signal-copy-v1',status=status,error=error,updated_at=now,started_at=self.started,board=board,
             mode='PAPER + CLOB' if self.clob_client else 'PAPER ONLY',accounts=accounts,recent_trades=[public_trade(t) for t in sorted(trades,key=lambda t:t['opened'],reverse=True)[:100]],
             trades_truncated=len(trades)>100,reasons=reasons,recent_decisions=recent,
             skip_review=self.skip_summary(),recent_errors=errors,entry_policy='copy-immediate-v7',

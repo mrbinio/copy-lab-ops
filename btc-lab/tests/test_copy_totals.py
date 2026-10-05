@@ -1,5 +1,8 @@
 import unittest
-from lab.copy_totals import summarize, path_stats
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+from lab.copy_totals import paper_board, summarize, path_stats
 from lab.feed_watchdog import next_backoff
 
 class CopyTotalsTests(unittest.TestCase):
@@ -40,6 +43,54 @@ class CopyTotalsTests(unittest.TestCase):
         self.assertEqual(s['omitted_trades'],2)
         self.assertAlmostEqual(s['active_net_usd']+s['omitted_net_usd'], s['all_copies_net_usd'])
         self.assertEqual(s['all_copies_net_usd'],-1.87)
+
+    def test_board_keeps_disabled_losses_and_matches_the_journal(self):
+        now = datetime(2026, 10, 5, 15, 0, tzinfo=ZoneInfo('Europe/Stockholm')).timestamp()
+        yesterday = datetime(2026, 10, 4, 12, 0, tzinfo=ZoneInfo('Europe/Stockholm')).timestamp()
+        trades = [
+            {'wallet': 'on', 'status': 'SETTLED', 'closed_at': now - 10, 'pnl_micro': 2_000_000, 'cost': 1, 'fee': 1, 'exit_fee': 1, 'opened': now - 20, 'side': 'Up', 'market': 'm'},
+            {'wallet': 'off', 'status': 'CLOSED', 'closed_at': yesterday, 'pnl_micro': -5_000_000, 'cost': 1, 'fee': 1, 'exit_fee': 0, 'opened': yesterday - 10, 'side': 'Down', 'market': 'n'},
+            {'wallet': 'on', 'status': 'OPEN', 'cost': 100, 'fee': 1},
+        ]
+        roster = {'wallets': {
+            'on': {'state': 'paper_active'},
+            'off': {'state': 'paused', 'reason': '7d net <= -15'},
+            'idle': {'state': 'paper_test'},
+        }}
+        pauses = {'copy-off': True, 'copy-on': False, 'copy-idle': False}
+        board = paper_board(trades, roster, pauses, now)
+        whole = board['periods']['all']
+        self.assertEqual(whole['net_micro'], -3_000_000)
+        self.assertEqual(sum(row['net_micro'] for row in whole['wallets']), whole['net_micro'])
+        self.assertEqual(sum(row['pnl_micro'] for row in board['journal']), whole['net_micro'])
+        self.assertEqual(board['periods']['today']['net_micro'], 2_000_000)
+        self.assertEqual(board['periods']['today']['closed'], 1)
+        idle = next(row for row in board['periods']['today']['wallets'] if row['wallet'] == 'idle')
+        self.assertEqual(idle['net_micro'], 0)
+        self.assertEqual(idle['closed'], 0)
+        self.assertTrue(idle['copying'])
+        off = next(row for row in board['periods']['week']['wallets'] if row['wallet'] == 'off')
+        self.assertFalse(off['copying'])
+        self.assertEqual(off['pause_reason'], '7d net <= -15')
+        self.assertEqual(off['net_micro'], -5_000_000)
+        self.assertEqual(board['periods']['week']['net_micro'], -3_000_000)
+        self.assertIsNone(board['open']['mark_micro'])
+        self.assertEqual(board['open']['count'], 1)
+        self.assertEqual(board['open']['mark_note'], 'brak aktualnej wyceny')
+
+    def test_missing_pnl_is_not_a_zero(self):
+        board = paper_board([
+            {'wallet': 'a', 'status': 'SETTLED', 'closed_at': 10, 'pnl_micro': None},
+        ], {'wallets': {}}, {}, 20)
+        self.assertIsNone(board['periods']['all']['net_micro'])
+        self.assertIsNone(board['periods']['all']['wallets'][0]['net_micro'])
+
+    def test_no_open_position_is_a_confirmed_zero_mark(self):
+        board = paper_board([], {'wallets': {}}, {}, 20)
+        self.assertEqual(board['open']['count'], 0)
+        self.assertEqual(board['open']['mark_micro'], 0)
+        self.assertEqual(board['periods']['all']['net_micro'], 0)
+        self.assertEqual(board['periods']['all']['closed'], 0)
 
     def test_chain_fast_is_not_counted_as_time_from_trade(self):
         from lab.copy_totals import path_record
