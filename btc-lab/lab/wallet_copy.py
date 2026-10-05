@@ -296,7 +296,8 @@ def decide_copy_flow(now, copying, last_signal_at, copy_wallet_signals, recent_c
             detail_en='Watched wallets have no new BUY or SELL.'
     elif not copy_wallet_signals:
         code='paused'
-        detail_pl='Kopiowanie włączone dla %d portfeli, bez ich transakcji. Transakcje są na portfelach wstrzymanych albo tylko obserwowanych.'%copying
+        noun='portfela' if copying==1 else 'portfeli'
+        detail_pl='Kopiowanie włączone dla %d %s, bez ich transakcji. Transakcje są na portfelach wstrzymanych albo tylko obserwowanych.'%(copying,noun)
         detail_en='Copying is on for %d wallets, and they have no trade. The trades are on paused or observed wallets.'%copying
     else:
         code='filtered'
@@ -837,10 +838,8 @@ class WalletCopy:
             rows=await asyncio.to_thread(self._load_pending, active)
             for row in rows:
                 await self.process(row, shadow=False)
-            # One diagnostic ticket after the decisions. The rest must not
-            # push a fresh buy past the 90 second signal age.
-            if rows:
-                await self._capture_shadow(rows[-1])
+            # A hypothetical ticket stays on the direct process() path.
+            # Running it here made the next fresh buy wait out the 90 seconds.
             if rows or self.clock()-self.last_publish>=2:
                 self.publish('RUNNING');self.last_publish=self.clock()
             self.store.set('wallet_copy_error',{})

@@ -475,7 +475,7 @@ class CopyTests(unittest.TestCase):
         self.assertIsNotNone(body['pnl_micro'])
         self.assertEqual(cash,500_000_000+ledger)
 
-    def test_step_shadows_one_paused_buy_not_the_whole_batch(self):
+    def test_step_does_not_shadow_a_paused_batch(self):
         from lab.strategy_control import set_paused
         set_paused(self.store,'copy-'+WALLETS[0],True)
         observer=WalletObserver(self.store,None)
@@ -485,7 +485,7 @@ class CopyTests(unittest.TestCase):
             observer.ingest(WALLETS[0],[body],self.now)
         self.book_calls=0
         asyncio.run(self.engine.step())
-        self.assertEqual(self.book_calls,2)
+        self.assertEqual(self.book_calls,0)
         with self.store.connect() as db:
             reasons=[row[0] for row in db.execute('SELECT reason FROM wallet_copy_events ORDER BY event_key')]
         self.assertEqual(reasons,['COPY_PAUSED','COPY_PAUSED'])
