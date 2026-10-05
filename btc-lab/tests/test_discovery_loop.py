@@ -62,6 +62,22 @@ class DiscoveryLoopTests(unittest.TestCase):
             self.assertIn(NEW, get_active_wallets(store))
             self.assertTrue(is_paused(store, 'copy-' + NEW))
             self.assertEqual(store.get('wallet_selection_audit')[-1]['action'], 'discovered')
+            self.assertIsNone(cand['copyable_after_costs'])
+            self.assertFalse(cand['copyable_after_costs_known'])
+            self.assertGreaterEqual(cand['passes_copy_filters_share'], 0.25)
+
+    def test_cut_off_activity_page_is_not_a_young_wallet(self):
+        page = prints(NEW, span_days=0, count=12)
+        screened = screen_activity(page, history_complete=False)
+        self.assertFalse(screened['age_known'])
+        self.assertTrue(screened['history_span_is_lower_bound'])
+        self.assertNotIn('too_little_history', screened['reject_reasons'])
+        self.assertIsNone(screened['copyable_after_costs'])
+        self.assertGreaterEqual(screened['passes_copy_filters_share'], 0.25)
+        self.assertEqual(screened['decision'], 'ADMITTED')
+        complete = screen_activity(page, history_complete=True)
+        self.assertIn('too_little_history', complete['reject_reasons'])
+        self.assertTrue(complete['age_known'])
 
     def test_short_history_one_trade_price_and_lateness_are_rejected(self):
         cases = (

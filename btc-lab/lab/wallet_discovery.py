@@ -33,6 +33,10 @@ TAPE_PAGES = 3
 MIN_OUR_TRADES = 10
 MIN_OUR_SHARE = 0.25
 MIN_HISTORY_SECONDS = 86400
+ACTIVITY_PAGE_SIZE = 500
+# data-api rejects offset 5500 with HTTP 400. A full last page is not the
+# wallet's first trade, so the age behind that page is unknown.
+ACTIVITY_OFFSET_CAP = 5000
 # Same freshness window the copier uses before it calls a signal too old.
 COPY_LEAD_SECONDS = 90
 # Same concentration cap the roster uses for one day of copy PnL.
@@ -107,8 +111,12 @@ def parse_trades(rows):
     return out
 
 
-def screen_activity(rows):
-    """Reject thin, bursty, uncopyable, or one-trade histories. Does not invent PnL."""
+def screen_activity(rows, history_complete=True):
+    """Reject thin, bursty, or one-trade histories. Does not invent PnL.
+
+    `history_complete` is false when the activity API still had a full page
+    or refused the next offset. The span of that slice is not the wallet's age.
+    """
     stats = market_stats(rows)
     ours = [r for r in rows if isinstance(r, dict) and str(r.get('type', '')).upper() == 'TRADE' and our_slug(r.get('slug'))]
     parsed = []
@@ -134,12 +142,14 @@ def screen_activity(rows):
     reasons = []
     if ours and bad / len(ours) > 0.2:
         reasons.append('suspicious_activity')
-    if (stats['our_trades_30d'] or 0) < MIN_OUR_TRADES:
-        reasons.append('too_little_history')
     if (stats['our_share_30d'] or 0) < MIN_OUR_SHARE:
         reasons.append('wrong_markets')
-    span = (max(p['ts'] for p in parsed) - min(p['ts'] for p in parsed)) if len(parsed) >= 2 else 0
-    if span < MIN_HISTORY_SECONDS and 'too_little_history' not in reasons:
+    span = (max(p['ts'] for p in parsed) - min(p['ts'] for p in parsed)) if len(parsed) >= 2 else None
+    # A cut-off page can still prove a long history. It cannot prove a short one.
+    age_known = span is not None and (history_complete or span >= MIN_HISTORY_SECONDS)
+    if history_complete and (stats['our_trades_30d'] or 0) < MIN_OUR_TRADES:
+        reasons.append('too_little_history')
+    if age_known and span < MIN_HISTORY_SECONDS and 'too_little_history' not in reasons:
         reasons.append('too_little_history')
     if len(parsed) >= MIN_OUR_TRADES:
         burst = max(Counter(int(p['ts']) for p in parsed).values())
@@ -178,9 +188,15 @@ def screen_activity(rows):
     qualified = (stats['our_trades_30d'] or 0) >= MIN_OUR_TRADES and (stats['our_share_30d'] or 0) >= MIN_OUR_SHARE
     return {
         **stats,
+        'history_complete': bool(history_complete),
+        'age_known': age_known,
         'history_span_seconds': span,
-        'copyable_share': timely_share,
+        'history_span_is_lower_bound': not history_complete and span is not None,
+        # Same gates the copier already applies. Not a result after fees.
+        'passes_copy_filters_share': timely_share,
         'price_band_share': band_share,
+        'copyable_after_costs': None,
+        'copyable_after_costs_known': False,
         'best_trade_notional_share': one_share,
         'reject_reasons': deduped,
         'status': 'TRADES_OUR_MARKETS' if qualified else 'WRONG_MARKETS',
@@ -209,19 +225,33 @@ class WalletDiscovery:
     async def probe_activity(self, wallet, now):
         start, end = int(now - LOOKBACK), int(now)
         collected = []
+        complete = False
+        offset = 0
         try:
-            for page in range(3):
-                query = urlencode(dict(user=wallet, start=start, end=end, limit=500, offset=page * 500,
+            while offset <= ACTIVITY_OFFSET_CAP:
+                query = urlencode(dict(user=wallet, start=start, end=end, limit=ACTIVITY_PAGE_SIZE, offset=offset,
                                        sortBy='TIMESTAMP', sortDirection='DESC'))
                 rows = await asyncio.to_thread(self.fetch, 'https://data-api.polymarket.com/activity?' + query)
                 if not isinstance(rows, list):
                     break
                 collected.extend(rows)
-                if len(rows) < 500:
+                if len(rows) < ACTIVITY_PAGE_SIZE:
+                    complete = True
                     break
+                stamps = []
+                for row in collected:
+                    try:
+                        stamps.append(float(row.get('timestamp')))
+                    except (TypeError, ValueError):
+                        continue
+                if len(stamps) >= 2 and max(stamps) - min(stamps) >= MIN_HISTORY_SECONDS:
+                    break
+                offset += ACTIVITY_PAGE_SIZE
         except Exception:
-            return {'trades_30d': None, 'our_trades_30d': None, 'our_share_30d': None, 'probe': 'ERROR'}
-        stats = screen_activity(collected)
+            if not collected:
+                return {'trades_30d': None, 'our_trades_30d': None, 'our_share_30d': None, 'probe': 'ERROR'}
+            complete = False
+        stats = screen_activity(collected, history_complete=complete)
         stats['probe'] = 'OK'
         return stats
 
@@ -306,7 +336,9 @@ class WalletDiscovery:
                     'recent_7d_usd': None,
                     'fees_usd': None,
                     'fee_known': False,
-                    'copyable_share': row.get('copyable_share'),
+                    'passes_copy_filters_share': row.get('passes_copy_filters_share'),
+                    'copyable_after_costs': None,
+                    'copyable_after_costs_known': False,
                 }
                 by_wallet[wallet] = row
             candidates = list(by_wallet.values())
@@ -339,7 +371,10 @@ class WalletDiscovery:
                         audit(self.store, now, wallet, 'rejected', ','.join(row.get('reject_reasons') or ['rejected']), {
                             'status': row.get('status'),
                             'our_trades_30d': row.get('our_trades_30d'),
-                            'copyable_share': row.get('copyable_share'),
+                            'age_known': row.get('age_known'),
+                            'history_complete': row.get('history_complete'),
+                            'passes_copy_filters_share': row.get('passes_copy_filters_share'),
+                            'copyable_after_costs': None,
                             'best_trade_notional_share': row.get('best_trade_notional_share'),
                         })
                     continue
@@ -348,7 +383,10 @@ class WalletDiscovery:
                     'our_trades_30d': row.get('our_trades_30d'),
                     'our_share_30d': row.get('our_share_30d'),
                     'history_span_seconds': row.get('history_span_seconds'),
-                    'copyable_share': row.get('copyable_share'),
+                    'age_known': row.get('age_known'),
+                    'history_complete': row.get('history_complete'),
+                    'passes_copy_filters_share': row.get('passes_copy_filters_share'),
+                    'copyable_after_costs': None,
                     'best_trade_notional_share': row.get('best_trade_notional_share'),
                     'copy_sim_net_usd': None,
                 }
@@ -361,6 +399,7 @@ class WalletDiscovery:
             for row in candidates:
                 evidence = copy_evidence(self.store, row['wallet'], now)
                 if evidence['our_trades'] and isinstance(row.get('score'), dict):
+                    after_costs = evidence['copy_sim_net_usd'] if evidence['fee_known'] else None
                     row['score'].update({
                         'net_pnl_usd': evidence['copy_sim_net_usd'],
                         'net_pnl_note': 'settled hypothetical copies',
@@ -369,6 +408,8 @@ class WalletDiscovery:
                         'recent_7d_usd': evidence['net_7d'],
                         'fees_usd': evidence['fees_usd'],
                         'fee_known': evidence['fee_known'],
+                        'copyable_after_costs': after_costs,
+                        'copyable_after_costs_known': evidence['fee_known'],
                     })
             audit_log = self.store.get(AUDIT_KEY, [])
             state = {
@@ -377,14 +418,17 @@ class WalletDiscovery:
                 'scope': (
                     'CRYPTO month top 50 is a lead only. Up to 8 of those are probed, '
                     'then the busiest wallets on the live BTC/ETH 5m/15m trades tape, 12 probes max. '
-                    'Activity must span at least a day, stay inside the 20-70c copy band with 90s to spare, '
-                    'and not be one trade. PAPER_TEST uses the existing roster rules on our hypothetical copies.'
+                    'A complete activity pull must cover at least a day. A pull cut by the API limit '
+                    'does not prove the wallet is young. The 20-70c band and 90s freshness are the copier gates, '
+                    'not a result after fees. PAPER_TEST uses the existing roster rules on our hypothetical copies.'
                 ),
                 'candidates': candidates, 'copy_enabled': False,
                 'tape_wallets': len(tape_counts), 'tape_prints': len(tape),
                 'probed': len(probe), 'admitted_observed': admitted,
                 'limitation': (
-                    'Reported month PnL is not copy profit. Admitted wallets are watched with buys paused. '
+                    'Reported month PnL is not copy profit. Passing the copier price and time gates is not '
+                    'a fill after fees; that number stays empty until a hypothetical ticket settles with a fee. '
+                    'Admitted wallets are watched with buys paused. '
                     'PAPER_TEST starts only after 20 settled hypothetical copies, 5 windows, 7 days, '
                     'positive copy net and no single day above 70% of gains. Live trading is off.'
                 ),

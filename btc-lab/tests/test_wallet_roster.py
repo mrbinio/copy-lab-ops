@@ -87,6 +87,9 @@ class RosterTests(unittest.TestCase):
             state, changed = tick(store, now=now)
             self.assertIn(w, changed)
             self.assertEqual(state['wallets'][w]['state'], 'paused')
+            paused = [row for row in store.get('wallet_selection_audit') if row['wallet'] == w]
+            self.assertEqual(paused[0]['action'], 'paused')
+            self.assertEqual(paused[0]['reason'], 'paper-roster-v1 pause')
 
     def test_retest_uses_hypotheticals_not_old_losses(self):
         with tempfile.TemporaryDirectory() as d:
@@ -116,8 +119,9 @@ class RosterTests(unittest.TestCase):
             updated, changed = tick(store, now=now)
             self.assertIn(w, changed)
             self.assertEqual(updated['wallets'][w]['state'], 'paper_test')
-            actions = [row['action'] for row in store.get('wallet_selection_audit', [])]
-            self.assertIn('restored', actions)
+            restored = [row for row in store.get('wallet_selection_audit', []) if row['action'] == 'restored']
+            self.assertEqual(restored[0]['reason'], 'paper-roster-v1 retest')
+            self.assertEqual(restored[0]['wallet'], w)
 
     def test_observed_wallet_promotes_to_paper_test_not_active(self):
         with tempfile.TemporaryDirectory() as d:
@@ -133,10 +137,9 @@ class RosterTests(unittest.TestCase):
             }})
             self.assertEqual(updated['wallets'][wallet]['state'], 'paper_test')
             self.assertIn(wallet, changed)
-            self.assertEqual(
-                [row['action'] for row in store.get('wallet_selection_audit') if row['wallet'] == wallet],
-                ['promoted'],
-            )
+            promoted = [row for row in store.get('wallet_selection_audit') if row['wallet'] == wallet]
+            self.assertEqual([row['action'] for row in promoted], ['promoted'])
+            self.assertEqual(promoted[0]['reason'], 'paper-roster-v1 paper_test')
 
     def test_first_sight_stays_observed_even_with_copy_evidence(self):
         with tempfile.TemporaryDirectory() as d:
@@ -176,6 +179,8 @@ class RosterTests(unittest.TestCase):
             with store.connect() as db:
                 kept = db.execute('SELECT body FROM wallet_copy_positions').fetchone()[0]
             self.assertEqual(json.loads(kept)['pnl_micro'], -500_000)
-            actions = {row['wallet']: row['action'] for row in store.get('wallet_selection_audit')}
-            self.assertEqual(actions[weak], 'replaced')
-            self.assertEqual(actions[newbie], 'promoted')
+            actions = {row['wallet']: row for row in store.get('wallet_selection_audit')}
+            self.assertEqual(actions[weak]['action'], 'replaced')
+            self.assertEqual(actions[weak]['reason'], 'discovery-v1 replaced by stronger paper candidate')
+            self.assertEqual(actions[newbie]['action'], 'promoted')
+            self.assertEqual(actions[newbie]['reason'], 'paper-roster-v1 paper_test')
