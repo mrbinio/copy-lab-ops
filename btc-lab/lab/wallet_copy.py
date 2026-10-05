@@ -16,6 +16,7 @@ from .wallet_observer import get_active_wallets, wallet_label
 from .strategy_control import is_paused as copy_paused, pauses as copy_pauses
 from .copy_totals import summarize as copy_summarize, path_stats, path_record
 from .wallet_watch import build_watch
+from .copy_policy import POLICY, band_reason, confirmed_source_price, decide_buy, decide_sell, remember_fill
 
 log = logging.getLogger(__name__)
 
@@ -132,6 +133,8 @@ class WalletCopy:
             pass
         self.last_publish=0
         self.watch={}
+        self._consumed={}
+        self._obs_consumed={}
         self.book_clock=VenueClock()
         if not hasattr(store,"wallet_activity_ready"):store.wallet_activity_ready=asyncio.Event()
         self.publish('STARTED')
@@ -180,7 +183,7 @@ class WalletCopy:
             clock_skew={'book':round(self.book_clock.skew(),3),'samples':len(self.book_clock.offsets)},
             watch_updated_at=getattr(self,'watch_at',None),
             scope='BTC/ETH 5m and 15m only; one market minimum (not $5 all-in), source price 20-70c; 500USD separate virtual scenarios; first SELL closes full copied lot',
-            limitation='Not identical source sizing/partial exits. Public indexed activity,1s target polling,BUY<=30s age and +/-3c from source; SELL<=90s age; FOK at fresh delayed books with50% depth. No profitability guarantee.'))
+            limitation='Not identical source sizing/partial exits. Public indexed activity, 1s target polling, source price 20-70c, buy within 10 cents of the source trade, signal age 90s. SELL is allowed while new buys are paused. FOK at fresh delayed books with 50% depth. No profitability guarantee.'))
 
     def skip_summary(self):
         with self.store.connect() as db:
@@ -193,7 +196,7 @@ class WalletCopy:
         event=json.loads(row['body']);now=self.clock()
         evidence=dict(source_event=event,source_timestamp=row['source_ts'],first_seen=row['first_seen'],
             decision_at=now,detection_delay=row['first_seen']-row['source_ts'],decision_delay=now-row['source_ts'],
-            policy='source-band10c-age60s-v2',reason=reason,decision_book=None)
+            policy=POLICY,reason=reason,decision_book=None)
         evidence.update(extra or {})
         with self.store.connect() as db:
             db.execute('UPDATE wallet_copy_events SET reason=?,body=? WHERE wallet=? AND event_key=?',
@@ -298,7 +301,7 @@ class WalletCopy:
             now=self.clock()
             # COPY_PAUSED still gets a hypothetical ticket. Real buys stay blocked.
             # SOURCE_TOO_OLD does not: a reboot must not invent late copies.
-            if self.paused() or review['reason'] in ('PAUSED','ERROR','SOURCE_TOO_OLD','SOURCE_IDENTITY_MISMATCH','SOURCE_PRICE_INVALID'):raise ValueError('NOT_ELIGIBLE_FOR_SHADOW')
+            if self.paused() or review['reason'] in ('PAUSED','ERROR','SOURCE_TOO_OLD','SOURCE_IDENTITY_MISMATCH','SOURCE_PRICE_INVALID','SOURCE_PRICE_MISSING'):raise ValueError('NOT_ELIGIBLE_FOR_SHADOW')
             if not 0<=now-review['decision_at']<=5:raise ValueError('CAPTURE_TOO_LATE_NO_BACKFILL')
             raw=await asyncio.to_thread(self.fetch,'https://gamma-api.polymarket.com/markets/slug/'+quote(event['slug'],safe=''))
             m=market_spec(raw,event,self.clock())
@@ -348,31 +351,39 @@ class WalletCopy:
             if str(event.get('proxyWallet','')).lower()!=wallet or float(event.get('timestamp',0))!=row['source_ts']:
                 self.reason(row,'SOURCE_IDENTITY_MISMATCH');return
             if event.get('type')!='TRADE' or event.get('side') not in ('BUY','SELL'):self.reason(row,'NOT_BUY_OR_SELL');return
-            if self.paused():self.reason(row,'PAUSED');return
-            if copy_paused(self.store,'copy-'+wallet):self.reason(row,'COPY_PAUSED');return
+            kind=event['side']
+            # A pause stops a new buy. It does not block a SELL of an open PAPER position
+            # or the official settlement path, which never enters this function.
+            if kind=='BUY' and self.paused():self.reason(row,'PAUSED');return
+            if kind=='BUY' and copy_paused(self.store,'copy-'+wallet):self.reason(row,'COPY_PAUSED');return
             if not re.fullmatch(r'(btc|eth)-updown-(5m|15m)-\d+',str(event.get('slug',''))):self.reason(row,'UNSUPPORTED_MARKET');return
             slug=str(event['slug'])
             raw=await asyncio.to_thread(self.fetch,'https://gamma-api.polymarket.com/markets/slug/'+quote(slug,safe=''))
-            m=market_spec(raw,event,self.clock());kind=event['side']
+            m=market_spec(raw,event,self.clock())
             with self.store.connect() as db:
                 open_trade=next((t for t in self.positions(db) if t['wallet']==wallet and t['token']==m['token'] and t['status']=='OPEN'),None)
                 blocked=self.risk_reason(db,wallet,self.clock()) if kind=='BUY' else None
                 if blocked:self.reason(row,blocked);return
                 if kind=='BUY' and any(t for t in self.positions(db) if t['wallet']==wallet and t['market']==m['slug'] and t['status'] in ('OPEN','RESOLVED')):self.reason(row,'COPY_POSITION_ALREADY_OPEN');return
                 if kind=='SELL' and not open_trade:self.reason(row,'NO_COPIED_POSITION');return
+            source_price=None
             if kind=='BUY':
-                source_price=Decimal(str(event.get('price',0)))
-                if not source_price.is_finite() or not 0<source_price<1:self.reason(row,'SOURCE_PRICE_INVALID');return
-                if source_price<MIN_SOURCE_PRICE:self.reason(row,'COPY_PRICE_TOO_LOW');return
-                if source_price>MAX_SOURCE_PRICE:self.reason(row,'COPY_PRICE_TOO_HIGH');return
+                source_price,why=confirmed_source_price(event)
+                if why:self.reason(row,why);return
+                why=band_reason(source_price)
+                if why:self.reason(row,why);return
             t_book=self.clock();decision=await self.book(m['token']);at=self.clock()
+            await self.sleep(.25)
+            arrival=await self.book(m['token'])
+            arrival=dict(arrival);arrival['token']=m['token'];arrival['fee_rate']=m['fee_rate']
             if kind=='BUY':
-                if not decision['asks']:self.reason(row,'NO_ASK');return
-                ask=min(Decimal(p) for p,q in decision['asks'])
-                limit=min(Decimal('.999999'),ask+Decimal('.02'))
+                why,fill=decide_buy(source_price,arrival,self._consumed,BUDGET)
+                if why:self.reason(row,why,{'decision_book':decision,'arrival_book':arrival});return
+                limit=fill['limit']
             else:
-                if not decision['bids']:self.reason(row,'NO_BID');return
-                limit=max(Decimal(decision['tick']),max(Decimal(p) for p,q in decision['bids'])-Decimal('.02'))
+                why,fill=decide_sell(arrival,open_trade['shares'],self._consumed)
+                if why:self.reason(row,why,{'decision_book':decision,'arrival_book':arrival});return
+                limit=fill.get('floor')
             now=self.clock()
             timing=path_record(event,row,queued_at,t_book,at,now)
             # From the API timestamp only. chain_fast has no source-trade clock.
@@ -381,14 +392,12 @@ class WalletCopy:
                 detection_delay=None if timing['detect_from_trade_ms'] is None else timing['detect_from_trade_ms']/1000,
                 copy_delay=copy_delay,
                 path_ms=timing,
-                decision_book=decision,arrival_book=decision,market_metadata=raw)
+                decision_book=decision,arrival_book=arrival,market_metadata=raw)
             if kind=='BUY':
-                evidence['copy_policy']='copy-min-lot-20-70c-v1'
-                # One market minimum, not $5 every time. Cheap losers were a $5 hole.
-                notional=(Decimal(str(decision['min_shares']))*ask).quantize(Decimal('.000001'),rounding=ROUND_FLOOR)
-                fill=simulate_fill(decision['asks'],notional,limit,m['fee_rate'],decision['min_shares'],decision['tick'])
+                evidence['copy_policy']=POLICY
+                evidence['source_price']=str(source_price)
                 evidence['path_ms']['paper_ms']=round((self.clock()-now)*1000,1)
-                if not fill or fill['cost']+fill['fee']>BUDGET:self.reason(row,'BUY_NO_FULL_FILL_OR_MINIMUM',evidence);return
+                remember_fill(self._consumed,arrival,fill)
                 trade=dict(id=wallet+':'+key,wallet=wallet,strategy='copy-'+wallet,market=m['slug'],condition=m['condition'],asset=m['asset'],interval=m['interval'],
                     token=m['token'],side=m['side'],end=m['end'],status='OPEN',opened=now,shares=fill['shares'],cost=fill['cost'],fee=fill['fee'],exit_fee=0,
                     entry_evidence=evidence,entry_fill=fill)
@@ -406,8 +415,7 @@ class WalletCopy:
                         db.execute("UPDATE wallet_copy_events SET body=? WHERE wallet=? AND event_key=?",
                             (json.dumps(evidence),wallet,key))
             else:
-                fill=simulate_sale(decision,open_trade['shares'],m['fee_rate'],limit)
-                if not fill:self.reason(row,'SELL_NO_FULL_FILL',evidence);return
+                remember_fill(self._consumed,arrival,fill)
                 self.close(open_trade,fill['proceeds'],fill['fee'],now,'CLOSED',{'fill':fill,'evidence':evidence},row)
         except Exception as error:self.reason(row,'ERROR',{'error':str(error)[:400]})
 
@@ -489,6 +497,12 @@ class WalletCopy:
         """
         while True:
             await self._refresh_watch()
+            try:
+                from .wallet_observation import observe_batch
+                await observe_batch(self)
+                self.store.set('wallet_observation_error', {})
+            except Exception as error:
+                self.store.set('wallet_observation_error', {'at': self.clock(), 'error': str(error)[:200]})
             for job, key, width in ((self.settle, 'wallet_copy_settlement_error', 400),
                                     (self.review_skips, 'wallet_skip_review_error', 200)):
                 try:

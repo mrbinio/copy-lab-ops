@@ -190,14 +190,67 @@ class CopyTests(unittest.TestCase):
 
     def test_source_price_band_and_age_reject_before_buy(self):
         self.now=1120;row=self.row('moved');e=json.loads(row['body']);e['price']=.46;row['body']=json.dumps(e)
-        self.process(row);self.assertEqual(self.reason(),'COPIED_BUY')
-        self.now=1170;row=self.row('late');row['source_ts']=1105;e=json.loads(row['body']);e['timestamp']=1105;row['body']=json.dumps(e)
-        self.process(row);self.assertEqual(self.reason(),'COPY_POSITION_ALREADY_OPEN')
-        self.assertEqual(self.state()['accounts'][0]['trades'],1)
+        self.process(row);self.assertEqual(self.reason(),'SOURCE_PRICE_MOVED')
+        self.assertEqual(self.state()['accounts'][0]['trades'],0)
+        self.now=1220;row=self.row('late');row['source_ts']=1105;e=json.loads(row['body']);e['timestamp']=1105;row['body']=json.dumps(e)
+        self.process(row);self.assertEqual(self.reason(),'SOURCE_TOO_OLD')
+        self.assertEqual(self.state()['accounts'][0]['trades'],0)
     def test_arrival_source_band_rechecked(self):
         async def jump(seconds):self.now+=.5;self.ask='.45'
         self.engine.sleep=jump;self.buy()
-        self.assertEqual(self.reason(),'COPIED_BUY');self.assertEqual(self.state()['accounts'][0]['trades'],1)
+        self.assertEqual(self.reason(),'SOURCE_PRICE_MOVED');self.assertEqual(self.state()['accounts'][0]['trades'],0)
+
+    def test_pause_lets_sell_close_and_blocks_the_next_buy(self):
+        from lab.strategy_control import set_paused
+        self.buy()
+        set_paused(self.store,'copy-'+WALLETS[0],True)
+        self.now+=2;self.bid='.70';self.process(self.row('sell','SELL'))
+        trade=self.state()['recent_trades'][0]
+        self.assertEqual(trade['status'],'CLOSED')
+        self.assertGreater(trade['exit_fee'],0)
+        self.now+=2;self.process(self.row('again'))
+        self.assertEqual(self.reason(),'COPY_PAUSED')
+        self.assertEqual(self.state()['accounts'][0]['trades'],1)
+
+    def test_pause_does_not_block_official_settlement(self):
+        from lab.strategy_control import set_paused
+        self.buy()
+        set_paused(self.store,'copy-'+WALLETS[0],True)
+        self.now=2202
+        asyncio.run(self.engine.settle())
+        self.now=2502
+        asyncio.run(self.engine.settle());self.engine.publish('TEST')
+        self.assertEqual(self.state()['recent_trades'][0]['status'],'SETTLED')
+
+    def test_missing_source_price_skips_before_the_book(self):
+        self.now=1102
+        row=self.row('blank');body=json.loads(row['body']);body.pop('price');row['body']=json.dumps(body)
+        before=self.book_calls
+        self.process(row)
+        self.assertEqual(self.reason(),'SOURCE_PRICE_MISSING')
+        self.assertEqual(self.book_calls,before)
+        self.assertEqual(self.state()['accounts'][0]['trades'],0)
+
+    def test_same_stream_matches_the_shared_policy(self):
+        from decimal import Decimal
+        from lab.copy_policy import decide_buy, decide_sell, remember_fill
+        self.buy()
+        bought=self.state()['recent_trades'][0]
+        book={'asks':[['.60','100']],'bids':[['.59','100']],'min_shares':'5','tick':'.01','fee_rate':.07,'token':'1','source_ts':1102}
+        consumed={}
+        why,fill=decide_buy(Decimal('0.59'),book,consumed)
+        self.assertIsNone(why)
+        self.assertEqual(fill['shares'],bought['shares'])
+        self.assertEqual(fill['cost'],bought['cost'])
+        self.assertEqual(fill['fee'],bought['fee'])
+        remember_fill(consumed,book,fill)
+        self.now+=2;self.bid='.70';self.ask='.71';self.process(self.row('sell','SELL'))
+        closed=self.state()['recent_trades'][0]
+        sale_book=dict(book,bids=[['.70','100']],asks=[['.71','100']],fee_rate=.07)
+        why,sold=decide_sell(sale_book,fill['shares'],{})
+        self.assertIsNone(why)
+        self.assertEqual(sold['fee'],closed['exit_fee'])
+        self.assertEqual(sold['proceeds'],closed['payout'])
 
     def test_paper_extras_are_visible_before_first_trade(self):
         from lab.wallet_observer import PAPER_EXTRA

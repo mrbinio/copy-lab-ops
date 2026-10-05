@@ -262,9 +262,31 @@ def hypothetical_settled(store):
     return found
 
 
+def observation_settled(store):
+    """Closed rows from the versioned observation book. Not the independent tickets."""
+    found = {}
+    meta = store.get('wallet_observation_meta') or {}
+    started = meta.get('started_at')
+    version = meta.get('version')
+    if not version or started is None:
+        return found
+    with store.connect() as db:
+        if not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='wallet_observation_positions'").fetchone():
+            return found
+        for wallet, body in db.execute('SELECT wallet, body FROM wallet_observation_positions'):
+            trade = json.loads(body)
+            if trade.get('policy') != version or (trade.get('opened') or 0) < started:
+                continue
+            if trade.get('status') not in ('CLOSED', 'SETTLED') or trade.get('pnl_micro') is None:
+                continue
+            trade['fee_micro'] = trade.get('fee')
+            found.setdefault(wallet, []).append(trade)
+    return found
+
+
 def copy_evidence(store, wallet, now):
-    """Our settled hypothetical copies. Public month PnL is not an input."""
-    rows = hypothetical_settled(store).get(wallet, [])
+    """Versioned observation only. Independent tickets are not promotion evidence."""
+    rows = observation_settled(store).get(wallet, [])
     empty = {
         'our_trades': 0,
         'windows': 0,
@@ -371,7 +393,7 @@ def tick(store, now=None, candidate_stats=None):
                 opened = t.get('opened') or t.get('closed_at')
                 if opened:
                     first_by[t['wallet']] = min(first_by.get(t['wallet'], opened), opened)
-    hyp = hypothetical_settled(store)
+    observed_book = observation_settled(store)
     changed = []
     already = set(state['wallets'])
     for w, row in list(state['wallets'].items()):
@@ -395,8 +417,9 @@ def tick(store, now=None, candidate_stats=None):
                 'net_usd': book['net_usd'], 'trades': book['trades'], 'best_day_share': book['best_day_share'],
             })
         elif row['state'] == 'paused':
-            # Return looks at hypothetical copies after the pause, not the old losses.
-            hyp_book = evaluate_copy_book(hyp.get(w, []), now, row.get('since') or now)
+            # Return looks at the versioned observation after the pause, not old losses
+            # and not the independent hold-to-settlement tickets.
+            hyp_book = evaluate_copy_book(observed_book.get(w, []), now, row.get('since') or now)
             if hyp_book['can_retest'] and now - row.get('since', now) >= RULES['paused_to_paper_test']['min_pause_days'] * 86400:
                 row['state'] = 'paper_test'
                 row['since'] = now

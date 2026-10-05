@@ -48,7 +48,59 @@ def _intake(feed, activity_count, last_source_at, last_reason, now):
     return 'receiving'
 
 
-def summarize_wallet(db, wallet, roster_row, observer, now):
+def _policy_view(db, wallet, now, meta):
+    """Versioned observation. Missing table stays unknown, not a zero profit."""
+    meta = meta or {}
+    empty = {
+        'known': False, 'version': meta.get('version'), 'started_at': meta.get('started_at'),
+        'open': None, 'settled': None, 'net': None, 'windows': None, 'evidence_days': None,
+        'share': None, 'journal': [],
+    }
+    if not meta.get('version') or meta.get('started_at') is None or not _table(db, 'wallet_observation_positions'):
+        return empty
+    rows = []
+    for (body,) in db.execute('SELECT body FROM wallet_observation_positions WHERE wallet=?', (wallet,)):
+        trade = json.loads(body)
+        if trade.get('policy') != meta['version'] or (trade.get('opened') or 0) < meta['started_at']:
+            continue
+        rows.append(trade)
+    open_n = sum(1 for trade in rows if trade.get('status') == 'OPEN')
+    closed = [trade for trade in rows if trade.get('status') in ('CLOSED', 'SETTLED') and trade.get('pnl_micro') is not None]
+    fees = [trade.get('fee') for trade in closed if isinstance(trade.get('fee'), (int, float))]
+    net = None
+    windows = evidence = share = None
+    if closed and len(fees) == len(closed):
+        book = evaluate_copy_book(
+            [{**trade, 'fee_micro': trade.get('fee')} for trade in closed],
+            now, min(trade.get('opened') or trade.get('closed_at') or now for trade in closed),
+        )
+        net = book['net_usd']
+        windows = book['windows']
+        evidence = book['age_days']
+        share = book['best_day_share']
+    elif not closed:
+        windows = 0
+    journal = [
+        {
+            'opened': trade.get('opened'),
+            'closed_at': trade.get('closed_at'),
+            'market': trade.get('market'),
+            'side': trade.get('side') or '',
+            'cost_micro': trade.get('cost'),
+            'fee_micro': trade.get('fee'),
+            'pnl_micro': trade.get('pnl_micro'),
+            'policy': meta['version'],
+        }
+        for trade in sorted(closed, key=lambda item: item.get('closed_at') or 0, reverse=True)[:12]
+    ]
+    return {
+        'known': True, 'version': meta['version'], 'started_at': meta['started_at'],
+        'open': open_n, 'settled': len(closed), 'net': net, 'windows': windows,
+        'evidence_days': evidence, 'share': share, 'journal': journal,
+    }
+
+
+def summarize_wallet(db, wallet, roster_row, observer, now, meta=None):
     """One wallet. Counts are None until the matching table was read."""
     roster_row = roster_row or {}
     shadow_known = False
@@ -80,6 +132,9 @@ def summarize_wallet(db, wallet, roster_row, observer, now):
                     'fee_micro': row[1],
                     'closed_at': row[2] or 0,
                     'market': row[3] or wallet,
+                    'cost_micro': row[4],
+                    'side': row[5] or '',
+                    'opened': row[6] or row[2] or 0,
                 }
                 for row in db.execute(
                     """SELECT json_extract(body,'$.shadow.pnl_micro'),
@@ -87,7 +142,11 @@ def summarize_wallet(db, wallet, roster_row, observer, now):
                               COALESCE(json_extract(body,'$.official_seen_at'),
                                        json_extract(body,'$.decision_at'), 0),
                               COALESCE(json_extract(body,'$.source_event.slug'),
-                                       json_extract(body,'$.source_event.conditionId'))
+                                       json_extract(body,'$.source_event.conditionId')),
+                              json_extract(body,'$.shadow.fill.cost'),
+                              json_extract(body,'$.source_event.side'),
+                              COALESCE(json_extract(body,'$.source_event.timestamp'),
+                                       json_extract(body,'$.decision_at'), 0)
                        FROM wallet_copy_skip_reviews
                        WHERE wallet=?
                          AND json_extract(body,'$.shadow.status')='SETTLED'
@@ -152,17 +211,30 @@ def summarize_wallet(db, wallet, roster_row, observer, now):
         share = book['best_day_share']
         if fees_known:
             net = book['net_usd']
+    policy = _policy_view(db, wallet, now, meta)
+    journal = [
+        {
+            'opened': row['opened'],
+            'closed_at': row['closed_at'],
+            'market': row['market'],
+            'side': row['side'],
+            'cost_micro': row['cost_micro'] if isinstance(row['cost_micro'], (int, float)) else None,
+            'fee_micro': row['fee_micro'] if isinstance(row['fee_micro'], (int, float)) else None,
+            'pnl_micro': row['pnl_micro'],
+        }
+        for row in sorted(settled_rows, key=lambda item: item['closed_at'], reverse=True)[:12]
+    ]
     progress = {
-        'settled': settled_n,
+        'settled': policy['settled'],
         'need_settled': need['min_our_trades'],
-        'windows': windows if shadow_known else None,
+        'windows': policy['windows'],
         'need_windows': need['min_windows'],
         'observation_days': observation_days,
-        'evidence_days': evidence_days,
+        'evidence_days': policy['evidence_days'],
         'need_days': need['min_days'],
-        'net_usd': net,
+        'net_usd': policy['net'],
         'need_net_usd': need['min_copy_sim_net_usd'],
-        'best_day_share': share,
+        'best_day_share': policy['share'],
         'max_best_day_share': need['max_best_day_share'],
     }
     return {
@@ -186,6 +258,14 @@ def summarize_wallet(db, wallet, roster_row, observer, now):
         'hypothetical_fees_known': fees_known if settled_n else False,
         'other_hypothetical_settled': other_n if shadow_known else None,
         'other_net_usd': other_net,
+        'journal': journal,
+        'policy_known': policy['known'],
+        'policy_version': policy['version'],
+        'policy_started_at': policy['started_at'],
+        'policy_open': policy['open'],
+        'policy_settled': policy['settled'],
+        'policy_net_usd': policy['net'],
+        'policy_journal': policy['journal'],
         'progress': progress,
     }
 
@@ -193,6 +273,7 @@ def summarize_wallet(db, wallet, roster_row, observer, now):
 def build_watch(store, now):
     """One connection. Does not call store.get while that connection is open."""
     roster = (store.get('wallet_roster') or {}).get('wallets') or {}
+    meta = store.get('wallet_observation_meta') or {}
     names = list(dict.fromkeys([*roster.keys(), *get_active_wallets(store)]))
     out = {}
     with store.connect() as db:
@@ -204,6 +285,6 @@ def build_watch(store, now):
                 observers[row['key']] = json.loads(row['body'])
         for wallet in names:
             out[wallet] = summarize_wallet(
-                db, wallet, roster.get(wallet), observers.get('wallet_observer:' + wallet), now
+                db, wallet, roster.get(wallet), observers.get('wallet_observer:' + wallet), now, meta
             )
     return out

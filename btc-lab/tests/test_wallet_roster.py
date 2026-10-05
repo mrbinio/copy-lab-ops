@@ -91,7 +91,7 @@ class RosterTests(unittest.TestCase):
             self.assertEqual(paused[0]['action'], 'paused')
             self.assertEqual(paused[0]['reason'], 'paper-roster-v1 pause')
 
-    def test_retest_uses_hypotheticals_not_old_losses(self):
+    def test_retest_uses_versioned_observation_not_independent_tickets(self):
         with tempfile.TemporaryDirectory() as d:
             store = Store(Path(d) / 'lab.db')
             now = 5_000_000
@@ -116,6 +116,22 @@ class RosterTests(unittest.TestCase):
                         })),
                     )
             self.assertEqual(len(hypothetical_settled(store)[w]), 10)
+            stayed, changed = tick(store, now=now)
+            self.assertEqual(changed, [])
+            self.assertEqual(stayed['wallets'][w]['state'], 'paused')
+            store.set('wallet_observation_meta', {'version': 'copy-observe-v1', 'started_at': now - 30 * 86400})
+            with store.connect() as db:
+                db.execute(
+                    'CREATE TABLE wallet_observation_positions (id TEXT PRIMARY KEY, wallet TEXT, body TEXT)'
+                )
+                for i in range(10):
+                    db.execute(
+                        'INSERT INTO wallet_observation_positions VALUES (?,?,?)',
+                        (str(i), w, json.dumps({
+                            'policy': 'copy-observe-v1', 'status': 'CLOSED', 'opened': now - 20 * 86400,
+                            'closed_at': now - 86400, 'pnl_micro': 1_000_000, 'market': f'obs{i}', 'fee': 1000,
+                        })),
+                    )
             updated, changed = tick(store, now=now)
             self.assertIn(w, changed)
             self.assertEqual(updated['wallets'][w]['state'], 'paper_test')
