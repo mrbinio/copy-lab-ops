@@ -27,22 +27,40 @@ BUDGET=5_000_000  # hard cap; the ticket itself is one market minimum
 MIN_SOURCE_PRICE=Decimal('0.20')
 MAX_SOURCE_PRICE=Decimal('0.70')
 # Ended hypothetical fills first. This does not create a buy and does not
-# change the 90s or 20–70c gates. The rest of the queue stays at 5 rows.
+# change the 90s or 20–70c gates. A market that was just tried and is still
+# unresolved waits out the retry interval, so the next records get a turn.
 REVIEW_FILL_LIMIT=8
 REVIEW_OTHER_LIMIT=5
+REVIEW_RETRY_SECONDS=60
 
-def due_skip_reviews(db, now, fill_limit=REVIEW_FILL_LIMIT, other_limit=REVIEW_OTHER_LIMIT):
-    fills=[dict(r) for r in db.execute(
-        """SELECT * FROM wallet_copy_skip_reviews
-           WHERE end<=?
+def _due_fills(db, now, limit, reasons=()):
+    reason_sql=''
+    params=[now, now-REVIEW_RETRY_SECONDS]
+    if reasons:
+        reason_sql=" AND json_extract(body,'$.reason') IN (%s)" % ','.join('?' * len(reasons))
+        params.extend(reasons)
+    params.append(limit)
+    return [dict(r) for r in db.execute(
+        f"""SELECT * FROM wallet_copy_skip_reviews
+           WHERE end<=? AND checked<=?
              AND json_extract(body,'$.shadow.status')='FILLED_PENDING_SETTLEMENT'
              AND IFNULL(json_extract(body,'$.status'),'')!='RESOLVED'
-           ORDER BY end LIMIT ?""", (now, fill_limit))]
+             {reason_sql}
+           ORDER BY checked, end LIMIT ?""", params)]
+
+def due_skip_reviews(db, now, fill_limit=REVIEW_FILL_LIMIT, other_limit=REVIEW_OTHER_LIMIT):
+    fills=_due_fills(db, now, fill_limit)
+    # Observation tickets sit behind older skips. Give them their own due
+    # slots so eight ancient markets cannot keep their result unknown.
     seen={(r['wallet'], r['event_key']) for r in fills}
+    for row in _due_fills(db, now, fill_limit, ('COPY_PAUSED', 'PAUSED')):
+        if (row['wallet'], row['event_key']) in seen:continue
+        fills.append(row)
+        seen.add((row['wallet'], row['event_key']))
     rest=[]
     for r in db.execute(
             'SELECT * FROM wallet_copy_skip_reviews WHERE end<=? AND checked<=? ORDER BY checked,end LIMIT ?',
-            (now, now-60, other_limit+len(fills))):
+            (now, now-REVIEW_RETRY_SECONDS, other_limit+len(seen))):
         row=dict(r)
         if (row['wallet'], row['event_key']) in seen:continue
         rest.append(row)
@@ -194,11 +212,12 @@ class WalletCopy:
         # The select is off the event loop. Prefer ended hypothetical fills so a
         # backlog of unavailable skips cannot keep their result unknown.
         rows=await asyncio.to_thread(self._due_reviews, now)
+        self.store.set('wallet_skip_review_beat', {'at': now, 'selected': len(rows)})
         for row in rows:
             review=json.loads(row['body'])
             if review['status']=='RESOLVED':continue
-            event=review['source_event']
             try:
+                event=review['source_event']
                 raw=await asyncio.to_thread(self.fetch,'https://clob.polymarket.com/markets/'+quote(str(event['conditionId']),safe=''))
                 if raw.get('condition_id')!=event['conditionId']:raise ValueError('REVIEW_CONDITION_MISMATCH')
                 tokens=raw.get('tokens',[]);winners=[t for t in tokens if t.get('winner') is True]

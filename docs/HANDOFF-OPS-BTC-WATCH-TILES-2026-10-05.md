@@ -27,6 +27,12 @@ Observed 15. Observation fills open on 14. Observation fills settled: 0. One obs
 - `lab/app.js`, `lab/index.html`, `lab/style.css` — tile labels OBSERWOWANY / TEST PAPER / AKTYWNY PAPER / WSTRZYMANY.
 - `btc-lab/tests/test_wallet_watch.py` — net after fee, missing versus zero, feed failure, and no paper buy from the review order.
 
+## Settlement queue
+
+The fill review always took the eight oldest ended markets and ignored when they were last tried. Unresolved markets in those eight seats blocked every later record. A due row now waits 60 seconds after an attempt, and the next due fills are selected. Observation tickets (`COPY_PAUSED` / `PAUSED`) also have their own eight seats, so older skip reasons cannot keep that result unknown. This does not create a paper buy and does not replay a signal.
+
+Test: eight markets just tried and still unresolved, the ninth resolved. The ninth is settled. Its net is payout minus cost minus fee. The eight stay pending. The paper position count does not change.
+
 ## Next decision
 
-Leave the wallets observed. Do not unpause them to manufacture trades. The next useful check is whether observation fills that have already ended start landing as settled nets after this deploy, without a new `COPIED_BUY`.
+Leave the wallets observed. Do not unpause them to manufacture trades. Live orders stay off. The useful check is the first settled `COPY_PAUSED` tickets and whether the ended-fill backlog shrinks without a new `COPIED_BUY`.

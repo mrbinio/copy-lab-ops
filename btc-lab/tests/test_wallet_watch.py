@@ -1,3 +1,4 @@
+import asyncio
 import json
 import tempfile
 import unittest
@@ -165,6 +166,74 @@ class WatchTests(unittest.TestCase):
         self.assertEqual(chosen[0]['event_key'], 'fill')
         self.assertEqual(positions, 0)
         self.assertNotIn('old', [row['event_key'] for row in chosen[:1]])
+
+    def test_eight_unresolved_markets_do_not_block_the_ninth(self):
+        now = 50_000.0
+        self.engine.clock = lambda: now
+        fetched = []
+
+        def fetch(url):
+            cid = url.rstrip('/').rsplit('/', 1)[-1]
+            fetched.append(cid)
+            if cid == 'ninth':
+                return {
+                    'condition_id': 'ninth', 'closed': True,
+                    'tokens': [{'token_id': '1', 'winner': True}, {'token_id': '2', 'winner': False}],
+                }
+            return {
+                'condition_id': cid, 'closed': False,
+                'tokens': [{'token_id': '1', 'winner': False}, {'token_id': '2', 'winner': False}],
+            }
+
+        self.engine.fetch = fetch
+        shares, cost, fee = 2_000_000, 500_000, 1_000
+
+        def pending(condition, reason):
+            return json.dumps({
+                'reason': reason,
+                'status': 'PENDING',
+                'source_event': {'conditionId': condition, 'asset': '1', 'slug': 'btc-updown-5m-1'},
+                'shadow': {
+                    'status': 'FILLED_PENDING_SETTLEMENT',
+                    'pnl_micro': None,
+                    'fill': {'fee': fee, 'cost': cost, 'shares': shares},
+                },
+            })
+
+        with self.store.connect() as db:
+            for i in range(5):
+                db.execute(
+                    'INSERT INTO wallet_copy_skip_reviews VALUES (?,?,?,?,?)',
+                    (self.wallet, f'noise{i}', 100 + i, 0, review('SOURCE_TOO_OLD', 'UNAVAILABLE', pnl=None)),
+                )
+            for i in range(8):
+                db.execute(
+                    'INSERT INTO wallet_copy_skip_reviews VALUES (?,?,?,?,?)',
+                    (self.wallet, f'head{i}', 1_000 + i, now, pending(f'c{i}', 'COPY_POSITION_ALREADY_OPEN')),
+                )
+            db.execute(
+                'INSERT INTO wallet_copy_skip_reviews VALUES (?,?,?,?,?)',
+                (self.wallet, 'ninth', 2_000, 0, pending('ninth', 'COPY_PAUSED')),
+            )
+            before = db.execute('SELECT COUNT(*) FROM wallet_copy_positions').fetchone()[0]
+        asyncio.run(self.engine.review_skips())
+        with self.store.connect() as db:
+            ninth = json.loads(db.execute(
+                'SELECT body FROM wallet_copy_skip_reviews WHERE event_key=?', ('ninth',)
+            ).fetchone()[0])
+            heads = [
+                json.loads(db.execute(
+                    'SELECT body FROM wallet_copy_skip_reviews WHERE event_key=?', (f'head{i}',)
+                ).fetchone()[0])
+                for i in range(8)
+            ]
+            after = db.execute('SELECT COUNT(*) FROM wallet_copy_positions').fetchone()[0]
+        self.assertEqual(ninth['status'], 'RESOLVED')
+        self.assertEqual(ninth['shadow']['status'], 'SETTLED')
+        self.assertEqual(ninth['shadow']['pnl_micro'], shares - cost - fee)
+        self.assertTrue(all(row['shadow']['status'] == 'FILLED_PENDING_SETTLEMENT' for row in heads))
+        self.assertNotIn('c0', fetched)
+        self.assertEqual(after, before)
 
 
 if __name__ == '__main__':
