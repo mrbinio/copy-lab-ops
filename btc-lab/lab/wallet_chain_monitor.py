@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import threading
 import time
 import urllib.parse
 
@@ -186,6 +187,7 @@ class ChainBridge:
         self.off_market = 0
         self._windows = []
         self._windows_at = 0
+        self._window_lock = threading.Lock()
 
     def _current_windows(self):
         now = self.clock()
@@ -221,7 +223,15 @@ class ChainBridge:
     def _window_for(self, token):
         if not token:
             return None
-        return next((m for m in self._current_windows() if token in m['tokens']), None)
+        # One refresh at a time. The other matches use the cache they already
+        # have instead of each opening four market requests.
+        if self.clock() - self._windows_at >= 15 and self._window_lock.acquire(blocking=False):
+            try:
+                if self.clock() - self._windows_at >= 15:
+                    self._current_windows()
+            finally:
+                self._window_lock.release()
+        return next((m for m in self._windows if token in m['tokens']), None)
 
     def _insert(self, wallet, source_row, detected_at, label):
         now = self.clock()

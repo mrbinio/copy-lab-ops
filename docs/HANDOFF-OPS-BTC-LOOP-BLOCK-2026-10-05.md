@@ -12,4 +12,4 @@ Hasło, port 8769, limity i `clob_live=false` zostają. LIVE zostaje wyłączone
 
 ## Następna decyzja
 
-Po restarcie sprawdzić, czy w logu jest `chain monitor connected` i czy `/healthz` wraca do 200. Jeśli handshake dalej pada przy wolnej pętli, to już nie ten zapis.
+Po pierwszym restarcie `/healthz` wrócił do 200, a cena referencyjna jest świeża. Kolejka łańcucha dalej była pełna, bo każdy transfer sam otwierał cztery zapytania o rynek, a kopiowanie czekało na publikację stanu. Odświeżenie okien jest teraz jedno, a publikacja nie stoi przed następną dwudziestką. Poll portfela nie liczy już całej jego historii przy każdym obiegu.

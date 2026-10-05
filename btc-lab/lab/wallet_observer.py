@@ -116,17 +116,21 @@ class WalletObserver:
         start = max(0,int(previous.get('cursor',end-86400))-120)
         added = 0
         complete = False
+        newest = previous.get('last_event_at')
         for page in range(4):
             query = urlencode(dict(user=wallet,start=start,end=end,limit=500,offset=page*500,sortBy='TIMESTAMP',sortDirection='DESC'))
             rows = self.fetch('https://data-api.polymarket.com/activity?'+query)
+            for row in rows:
+                ts = row.get('timestamp') if isinstance(row, dict) else None
+                if isinstance(ts, (int, float)) and (newest is None or ts > newest):
+                    newest = ts
             added += self.ingest(wallet,rows,time.time())
             if len(rows)<500:
                 complete=True
                 break
-        with self.store.connect() as db:
-            count,last = db.execute('SELECT COUNT(*),MAX(source_ts) FROM wallet_activity WHERE wallet=?',(wallet,)).fetchone()
+        count = int(previous.get('unique_fingerprints') or 0) + added
         self.store.set(key,dict(wallet=wallet,status='POLL_OK' if complete else 'INCOMPLETE_PAGE_LIMIT',
-            checked_at=time.time(),last_event_at=last,unique_fingerprints=count,new_rows=added,
+            checked_at=time.time(),last_event_at=newest,unique_fingerprints=count,new_rows=added,
             cursor=end if complete else previous.get('cursor',start+120),
             source='DATA_API_V1_INDEXED_ONCHAIN',poll_seconds=1,history_complete=False,
             identity_limitation='No log index; identical fills may collapse. Not a PnL ledger.',error=None))

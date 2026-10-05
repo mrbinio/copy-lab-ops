@@ -448,6 +448,7 @@ class WalletCopy:
         self._clob_exposure_usd = 0.0  # running total of CLOB orders placed
         self._last_decision={}
         self._last_decision_load=0
+        self._publish_task=None
         self._market_cache={}
         with store.connect() as db:
             db.executescript('''
@@ -1045,6 +1046,9 @@ class WalletCopy:
             has=db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='wallet_activity'").fetchone()
             return self.pending_activity(db, active) if has else []
 
+    async def _publish_bg(self):
+        await asyncio.to_thread(self.publish,'RUNNING')
+
     async def step(self):
         try:
             # Observer wakes this loop immediately after persisting new activity.
@@ -1054,8 +1058,11 @@ class WalletCopy:
             await self._apply_batch(rows)
             # A hypothetical ticket stays on the direct process() path.
             # The full decision-table scan is cached inside publish.
-            if rows or self.clock()-self.last_publish>=2:
-                await asyncio.to_thread(self.publish,'RUNNING')
+            task=self._publish_task
+            if task is not None and task.done():
+                task.result()
+            if (rows or self.clock()-self.last_publish>=2) and (task is None or task.done()):
+                self._publish_task=asyncio.create_task(self._publish_bg())
                 self.last_publish=self.clock()
             self.store.set('wallet_copy_error',{})
             return len(rows)
