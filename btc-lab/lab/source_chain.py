@@ -128,6 +128,42 @@ class TokenBalanceReader:
                     logs.append(parsed)
         return {'block': block, 'ok': ok, 'logs': logs}
 
+    def transfers_after(self, wallet, token_id, start_block, end_block):
+        """Transfers of one token after the balance block, in chain order.
+
+        fromBlock is the first block not included in the balance. toBlock is
+        the head read after that balance, so a transfer mined during the read
+        is included once.
+        """
+        if int(start_block) > int(end_block):
+            return []
+        topic = '0x' + str(wallet).lower().removeprefix('0x').rjust(64, '0')
+        if len(topic) != 66:
+            raise ValueError('wallet')
+        found = {}
+        for topics in (
+            [TRANSFER_SINGLE_TOPIC, None, None, topic],
+            [TRANSFER_SINGLE_TOPIC, None, topic, None],
+        ):
+            raw = self._rpc('eth_getLogs', [{
+                'address': CTF_TOKEN,
+                'fromBlock': hex(int(start_block)),
+                'toBlock': hex(int(end_block)),
+                'topics': topics,
+            }])
+            if not isinstance(raw, list):
+                raise RuntimeError('logs missing')
+            for entry in raw:
+                parsed = _parse_transfer(entry, int(start_block))
+                if not parsed or str(parsed['token_id']) != str(int(token_id)):
+                    continue
+                tx = str(entry.get('transactionHash') or '').lower()
+                if not tx.startswith('0x'):
+                    continue
+                parsed['tx'] = tx
+                found[(tx, int(parsed['log_index']))] = parsed
+        return sorted(found.values(), key=lambda item: (int(item['block']), int(item['log_index'])))
+
 
 def _parse_transfer(log, block):
     if not isinstance(log, dict) or log.get('removed'):
@@ -363,68 +399,71 @@ def _drop_reapplied(db, wallet, token, end):
             (wallet, row['event_key']))
 
 
-def _commit_anchor(store, wallet, token, shares, block, placed, expected, since):
+def _log_side(log, wallet):
+    wallet = wallet.lower()
+    sender = str(log.get('from') or '').lower()
+    receiver = str(log.get('to') or '').lower()
+    if sender == receiver:
+        return None
+    if receiver == wallet:
+        return 'BUY'
+    if sender == wallet and sender != ZERO_ADDRESS:
+        return 'SELL'
+    return None
+
+
+def _commit_anchor(store, wallet, token, shares, block, logs):
     end = end_of_block(block)
+    placed = []
     with store.connect() as db:
         ensure_source_schema(db)
     with store.connect() as db:
         db.execute('BEGIN IMMEDIATE')
-        current, unread = _load_events(store, wallet, token, since, db=db)
-        if unread or {item['event_key'] for item in current} != expected:
-            raise _StaleSnapshot
         _drop_reapplied(db, wallet, token, end)
         anchor_source_position(db, wallet, token, shares, block)
-        for item in placed:
-            apply_source_trade(
-                db, wallet, token, item['event_key'], item['side'],
-                item['shares'], item['cursor'])
+        logs = sorted(logs, key=lambda item: (int(item['block']), int(item['log_index'])))
+        for item in logs:
+            side = _log_side(item, wallet)
+            shares_moved = _dec(item.get('shares'))
+            cursor = order_cursor(item['block'], item['log_index'])
+            if side is None or shares_moved is None or cursor is None or item['block'] <= block:
+                continue
+            key = item['tx'].lower() + ':' + str(int(item['log_index']))
+            result = apply_source_trade(
+                db, wallet, token, key, side, shares_moved, cursor)
+            placed.append(result)
+            if not result.get('known'):
+                break
     with store.connect() as db:
-        return source_position(db, wallet, token)
+        return source_position(db, wallet, token), placed
 
 
-def reconcile_token(store, reader, wallet, token, now):
-    """Read the balance at head-depth, then apply only later transfers once."""
+def reconcile_token(store, reader, wallet, token, now, head=None):
+    """Balance at one confirmed block, plus every later transfer of that token."""
     if reader is None:
         return {'ok': False, 'error': 'NO_READER'}
     try:
-        head = int(reader.block_number())
+        if head is None:
+            head = int(reader.block_number())
+        head = int(head)
         block = head - CONFIRMED_DEPTH
         if block < 0:
             return {'ok': False, 'error': 'NO_BLOCK'}
         raw = int(reader.token_balance_raw(wallet, token, block))
+        logs = reader.transfers_after(wallet, token, block + 1, head)
     except Exception as error:
         return {'ok': False, 'error': _safe_error(error)}
-    if raw < 0:
+    if raw < 0 or logs is None:
         return {'ok': False, 'error': 'BALANCE', 'block': block}
     shares = Decimal(raw) / SHARES_SCALE
-    since = now - LOOKBACK
-    position = None
-    placed = []
-    for _attempt in range(2):
-        events, unread = _load_events(store, wallet, str(token), since)
-        try:
-            placed, blocked = _place(store, reader, wallet, str(token), block, events)
-        except Exception as error:
-            return {'ok': False, 'error': _safe_error(error), 'block': block}
-        if unread or blocked:
-            return {'ok': False, 'error': 'UNORDERED', 'block': block}
-        try:
-            position = _commit_anchor(
-                store, wallet, str(token), shares, block, placed,
-                {item['event_key'] for item in events}, since)
-        except _StaleSnapshot:
-            position = None
-            continue
-        break
-    if position is None:
-        return {'ok': False, 'error': 'UNORDERED', 'block': block}
+    position, placed = _commit_anchor(store, wallet, str(token), shares, block, logs)
     if position.get('known'):
         store.set('wallet_source_anchor', {
             'at': now,
             'wallet': str(wallet)[-8:],
             'token': str(token)[-8:],
             'block': int(block),
-            'shares': format(shares, 'f'),
+            'shares': format(position['shares'], 'f') if position.get('shares') is not None else format(shares, 'f'),
             'applied': len(placed),
         })
         store.set('wallet_source_anchor_error', {})
@@ -505,6 +544,32 @@ def reconcile_recent(store, now, reader=None, environ=None):
         store.set('wallet_source_anchor_error', {
             'at': now, 'error': results[0].get('error') or 'UNORDERED'})
     return results
+
+
+def proportion_for_transaction(store, wallet, token, tx, size=None):
+    """Proportion already applied for this transaction. None does not clear the book."""
+    if not tx:
+        return {'proportion': None, 'known': True}
+    prefix = str(tx).lower() + ':'
+    wanted = _dec(size)
+    with store.connect() as db:
+        ready = db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='wallet_source_events'"
+        ).fetchone()
+        if not ready:
+            return {'proportion': None, 'known': True}
+        rows = db.execute(
+            '''SELECT side, size, proportion FROM wallet_source_events
+               WHERE wallet=? AND token=? AND event_key LIKE ?''',
+            (wallet, str(token), prefix + '%')).fetchall()
+    sells = [row for row in rows if row['side'] == 'SELL' and row['proportion']]
+    if wanted is not None:
+        sized = [row for row in sells if _dec(row['size']) == wanted]
+        if len(sized) == 1:
+            sells = sized
+    if len(sells) == 1:
+        return {'proportion': Decimal(sells[0]['proportion']), 'known': True}
+    return {'proportion': None, 'known': True}
 
 
 def resolve_event(store, event, wallet, reader=None):

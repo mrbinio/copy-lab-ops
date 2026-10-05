@@ -26,6 +26,7 @@ class FakeChain:
         self.head = head
         self.balances = {}
         self.receipts = {}
+        self.logs = []
         self.on_balance = None
         self.fail = None
 
@@ -51,8 +52,19 @@ class FakeChain:
             raise RuntimeError('missing receipt')
         return self.receipts[tx_hash]
 
+    def transfers_after(self, wallet, token_id, start_block, end_block):
+        if self.fail == 'logs':
+            raise RuntimeError('down')
+        rows = []
+        for item in self.logs:
+            if str(item.get('token_id')) != str(token_id):
+                continue
+            if int(start_block) <= int(item['block']) <= int(end_block):
+                rows.append(item)
+        return sorted(rows, key=lambda item: (int(item['block']), int(item['log_index'])))
 
-def log(index, shares, side, block):
+
+def log(index, shares, side, block, tx='0xlog'):
     sender = OTHER if side == 'BUY' else WALLET
     receiver = WALLET if side == 'BUY' else OTHER
     return {
@@ -62,6 +74,7 @@ def log(index, shares, side, block):
         'to': receiver,
         'shares': format(Decimal(shares), 'f'),
         'block': block,
+        'tx': tx,
     }
 
 
@@ -100,8 +113,7 @@ class SourceChainTests(unittest.TestCase):
 
     def test_trade_arriving_during_the_balance_read_is_applied_once(self):
         def reveal(_wallet, _token, block):
-            self.activity('later', 'BUY', 40, '0xlate')
-            self.chain.receipts['0xlate'] = receipt(block + 1, [log(1, 40, 'BUY', block + 1)])
+            self.chain.logs.append(log(1, 40, 'BUY', block + 1, '0xlate'))
         self.chain.on_balance = reveal
         first = reconcile_token(self.store, self.chain, WALLET, TOKEN, NOW)
         self.assertTrue(first['ok'])
@@ -112,27 +124,27 @@ class SourceChainTests(unittest.TestCase):
         self.assertEqual(self.book()['shares'], Decimal('140'))
 
     def test_same_second_events_follow_log_index_not_arrival(self):
-        # The sell is stored first. Its log is later, so the buy still happens first.
-        self.activity('sell', 'SELL', 50, '0xsell')
-        self.activity('buy', 'BUY', 100, '0xbuy')
-        self.chain.receipts['0xsell'] = receipt(96, [log(2, 50, 'SELL', 96)])
-        self.chain.receipts['0xbuy'] = receipt(96, [log(1, 100, 'BUY', 96)])
+        # Listed sell-first. The lower log index is still the buy.
+        self.chain.logs = [
+            log(2, 50, 'SELL', 96, '0xsell'),
+            log(1, 100, 'BUY', 96, '0xbuy'),
+        ]
         result = reconcile_token(self.store, self.chain, WALLET, TOKEN, NOW)
         self.assertTrue(result['ok'])
         self.assertEqual(self.book()['shares'], Decimal('150'))
         with self.store.connect() as db:
             proportion = db.execute(
                 'SELECT proportion FROM wallet_source_events WHERE event_key=?',
-                ('sell',)).fetchone()[0]
+                ('0xsell:2',)).fetchone()[0]
         self.assertEqual(Decimal(proportion), Decimal('0.25'))
 
     def test_duplicate_restart_does_not_apply_twice_or_open_a_copy(self):
-        self.activity('buy', 'BUY', 100, '0xbuy')
-        self.chain.receipts['0xbuy'] = receipt(96, [log(1, 100, 'BUY', 96)])
+        self.chain.logs = [log(1, 100, 'BUY', 96, '0xbuy')]
         first = reconcile_token(self.store, self.chain, WALLET, TOKEN, NOW)
         self.assertEqual(first['shares'], Decimal('200'))
         restarted = FakeChain(head=100)
         restarted.balances[(WALLET, TOKEN, 95)] = raw_shares(100)
+        restarted.logs = [log(1, 100, 'BUY', 96, '0xbuy')]
         restarted.fail = 'receipt'
         second = reconcile_token(self.store, restarted, WALLET, TOKEN, NOW)
         self.assertEqual(second['shares'], Decimal('200'))
@@ -149,7 +161,7 @@ class SourceChainTests(unittest.TestCase):
 
     def test_provider_silence_leaves_the_position_unknown(self):
         self.chain.fail = 'head'
-        self.activity('buy', 'BUY', 100, '0xbuy')
+        self.chain.logs = [log(1, 100, 'BUY', 96, '0xbuy')]
         result = reconcile_token(self.store, self.chain, WALLET, TOKEN, NOW)
         self.assertFalse(result['ok'])
         self.assertEqual(result['error'], 'RuntimeError')
@@ -157,40 +169,36 @@ class SourceChainTests(unittest.TestCase):
         self.assertIsNone(self.book()['shares'])
 
     def test_transfer_inside_the_anchor_block_is_not_added_again(self):
-        self.activity('inside', 'BUY', 100, '0xinside')
-        self.chain.receipts['0xinside'] = receipt(95, [log(4, 100, 'BUY', 95)])
+        self.chain.logs = [log(4, 100, 'BUY', 95, '0xinside')]
         result = reconcile_token(self.store, self.chain, WALLET, TOKEN, NOW)
         self.assertTrue(result['ok'])
         self.assertEqual(self.book()['shares'], Decimal('100'))
         self.assertEqual(result['applied'], 0)
 
-    def test_ambiguous_fill_waits_for_a_later_balance(self):
-        self.activity('amb', 'BUY', 10, '0xamb')
-        self.chain.receipts['0xamb'] = receipt(96, [
-            log(1, 10, 'BUY', 96), log(2, 10, 'BUY', 96)])
+    def test_two_fills_in_one_transaction_both_count(self):
         self.chain.balances[(WALLET, TOKEN, 95)] = 0
-        first = reconcile_token(self.store, self.chain, WALLET, TOKEN, NOW)
-        self.assertFalse(first['ok'])
-        self.assertEqual(first['error'], 'UNORDERED')
-        self.assertFalse(self.book()['known'])
-        self.chain.head = 110
-        self.chain.balances[(WALLET, TOKEN, 105)] = raw_shares(20)
-        second = reconcile_token(self.store, self.chain, WALLET, TOKEN, NOW)
-        self.assertTrue(second['ok'])
-        self.assertEqual(second['block'], 105)
+        self.chain.logs = [
+            log(1, 10, 'BUY', 96, '0xamb'),
+            log(2, 10, 'BUY', 96, '0xamb'),
+        ]
+        result = reconcile_token(self.store, self.chain, WALLET, TOKEN, NOW)
+        self.assertTrue(result['ok'])
         self.assertEqual(self.book()['shares'], Decimal('20'))
+        again = reconcile_token(self.store, self.chain, WALLET, TOKEN, NOW)
+        self.assertEqual(again['shares'], Decimal('20'))
 
     def test_later_trade_on_a_known_book_updates_the_sell_proportion(self):
         self.activity('open', 'BUY', 100, '0xopen')
-        self.chain.receipts['0xopen'] = receipt(96, [log(1, 100, 'BUY', 96)])
+        self.chain.logs = [log(1, 100, 'BUY', 96, '0xopen')]
         first = reconcile_token(self.store, self.chain, WALLET, TOKEN, NOW)
         self.assertEqual(first['shares'], Decimal('200'))
         self.activity('again', 'BUY', 40, '0xagain')
-        self.activity('cut', 'SELL', 60, '0xcut')
         self.chain.head = 120
         self.chain.balances[(WALLET, TOKEN, 115)] = raw_shares(200)
-        self.chain.receipts['0xagain'] = receipt(116, [log(1, 40, 'BUY', 116)])
-        self.chain.receipts['0xcut'] = receipt(116, [log(2, 60, 'SELL', 116)])
+        self.chain.logs = [
+            log(1, 40, 'BUY', 116, '0xagain'),
+            log(2, 60, 'SELL', 116, '0xcut'),
+        ]
         refreshed = reconcile_recent(self.store, NOW, reader=self.chain)
         self.assertTrue(refreshed[0]['ok'])
         self.assertEqual(self.book()['block'], 115)
@@ -198,7 +206,7 @@ class SourceChainTests(unittest.TestCase):
         with self.store.connect() as db:
             proportion = db.execute(
                 'SELECT proportion FROM wallet_source_events WHERE event_key=?',
-                ('cut',)).fetchone()[0]
+                ('0xcut:2',)).fetchone()[0]
             copies = db.execute(
                 "SELECT 1 FROM sqlite_master WHERE type='table' AND name='wallet_copy_events'"
             ).fetchone()
@@ -272,20 +280,19 @@ class SourceChainTests(unittest.TestCase):
             'proxyWallet': WALLET, 'type': 'TRADE', 'side': 'SELL', 'asset': TOKEN,
             'size': '25', 'timestamp': NOW, 'transactionHash': '0xnext',
         }
-        self.chain.receipts['0xnext'] = receipt(96, [log(1, 25, 'SELL', 96)])
-        found = resolve_event(self.store, event, WALLET, reader=self.chain)
-        self.assertEqual(found['blockNumber'], 96)
-        self.assertEqual(found['logIndex'], 1)
-        event.update(found)
-        self.chain.fail = 'receipt'
-        cached = resolve_event(self.store, event, WALLET, reader=self.chain)
-        self.assertEqual(cached['blockNumber'], 96)
-        with self.store.connect() as db:
-            noted = note_source_event(db, WALLET, 'next', event, 0, NOW, NOW)
-            book = source_position(db, WALLET, TOKEN)
+        self.chain.head = 100
+        self.chain.balances[(WALLET, TOKEN, 95)] = raw_shares(100)
+        self.chain.logs = [log(1, 25, 'SELL', 96, '0xnext')]
+        result = reconcile_token(self.store, self.chain, WALLET, TOKEN, NOW)
+        self.assertTrue(result['ok'])
+        from lab.source_chain import proportion_for_transaction
+        noted = proportion_for_transaction(self.store, WALLET, TOKEN, '0xnext', '25')
+        book = self.book()
         self.assertEqual(noted['proportion'], Decimal('0.25'))
         self.assertEqual(book['shares'], Decimal('75'))
         self.assertEqual(book['block'], 95)
+        again = reconcile_token(self.store, self.chain, WALLET, TOKEN, NOW)
+        self.assertEqual(again['shares'], Decimal('75'))
         with self.store.connect() as db:
             copies = db.execute(
                 "SELECT 1 FROM sqlite_master WHERE type='table' AND name='wallet_copy_events'"

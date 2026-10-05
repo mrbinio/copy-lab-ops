@@ -253,10 +253,15 @@ def note_source_event(db, wallet, event_key, event, started, source_ts, first_se
     size=_dec(event.get('_chain_shares')) or _event_size(event)
     order=event_order(event)
     # A second timestamp is not an order. Without a block and a log index the
-    # proportion stays unknown until a balance read places the trade.
-    if not token or size is None or order is None:
+    # proportion stays unknown. A confirmed balance stays in place: one
+    # unordered signal does not erase it.
+    if not token or size is None:
         return mark_source_unknown(db, wallet, token, event_key, side, size, order or _dec(source_ts))
-    return apply_source_trade(db, wallet, token, event_key, side, size, order)
+    if order is None:
+        if source_is_confirmed(db, wallet, token):
+            return _source_result(None, True, None, None)
+        return mark_source_unknown(db, wallet, token, event_key, side, size, _dec(source_ts))
+    return apply_source_trade(db, wallet, token, event.get('_chain_key') or event_key, side, size, order)
 
 
 def source_position(db, wallet, token):
@@ -695,24 +700,25 @@ class WalletCopy:
         try:
             identity_ok=str(event.get('proxyWallet','')).lower()==wallet and float(event.get('timestamp',0))==row['source_ts']
             source_note=None
-            if identity_ok and event.get('type')=='TRADE' and event.get('side') in ('BUY','SELL'):
-                # One receipt, and only after a confirmed balance. An unknown book
-                # waits for upkeep so a burst of signals is not a burst of RPC calls.
-                if event_order(event) is None:
-                    token=str(event.get('asset') or '')
-                    confirmed=False
-                    if token:
-                        with self.store.connect() as db:
-                            confirmed=source_is_confirmed(db, wallet, token)
-                    if confirmed:
-                        from .source_chain import resolve_event
+            handled=False
+            if identity_ok and event.get('type')=='TRADE' and event.get('side')=='SELL' and event_order(event) is None:
+                token=str(event.get('asset') or '')
+                confirmed=False
+                if token:
+                    with self.store.connect() as db:
+                        confirmed=source_is_confirmed(db, wallet, token)
+                if confirmed:
+                    from .source_chain import proportion_for_transaction, reader_from_env, reconcile_token
+                    reader=reader_from_env()
+                    if reader is not None:
                         try:
-                            found=await asyncio.to_thread(resolve_event, self.store, event, wallet)
+                            await asyncio.to_thread(reconcile_token, self.store, reader, wallet, token, self.clock())
                         except Exception:
-                            found=None
-                        if found:
-                            event=dict(event)
-                            event.update(found)
+                            pass
+                        source_note=proportion_for_transaction(
+                            self.store, wallet, token, event.get('transactionHash'), event.get('size'))
+                        handled=True
+            if not handled and identity_ok and event.get('type')=='TRADE' and event.get('side') in ('BUY','SELL'):
                 with self.store.connect() as db:
                     db.execute('BEGIN IMMEDIATE')
                     source_note=note_source_event(db,wallet,key,event,self.started,row['source_ts'],row['first_seen'])
