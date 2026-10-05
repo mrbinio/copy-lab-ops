@@ -58,6 +58,10 @@ Replacement: at most 3 `paper_test` wallets. A new one that clears the promotion
 
 Checked on 2026-10-05 against `0x3048d65321be3497164cdfc2996f94f98a2e7537`. The first 1,500 activity rows cover about an hour. Offset 5,000 still returns a full page. Offset 5,500 returns HTTP 400. The oldest readable trade in that pull was about 5.7 hours old, and that page was still full, so the wallet's real age is not in the response. A full page is not "too young". Only a complete pull shorter than one day is rejected for age. Passing the 20–70¢ and 90s gates is recorded separately from a result after fees. The after-fees number stays empty until a hypothetical fill includes a fee.
 
+## Signal age is not time left in the market
+
+The copier still rejects a signal older than 90 seconds at the moment we see it. Discovery no longer treats that 90 seconds as a requirement that the market have 90 seconds left. A trade 12 seconds before the window end, detected 0.2 seconds later, stays inside the discovery time check. Wallet decisions are inserted into `wallet_selection_audit` and are not deleted. The state blob still shows the latest 200. Existing rows were copied into the table on the first write.
+
 ## Next decision
 
 Leave the new wallet in `observed` until its own hypothetical book meets the promotion rule. That takes days of settled tickets, not another threshold change. Live trading stays a separate decision.

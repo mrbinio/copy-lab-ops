@@ -11,7 +11,8 @@ from lab.wallet_observer import SEED_WALLETS, get_active_wallets
 NEW = '0x' + 'ab' * 20
 
 
-def prints(wallet, *, price=0.4, size=10.0, span_days=2, late=False, count=12, burst=False):
+def prints(wallet, *, price=0.4, size=10.0, span_days=2, late=False, count=12, burst=False,
+           seconds_before_end=None, detected_after=None, after_close=False):
     start = 1_700_000_000 // 300 * 300
     rows = []
     for i in range(count):
@@ -21,8 +22,13 @@ def prints(wallet, *, price=0.4, size=10.0, span_days=2, late=False, count=12, b
         else:
             day = 0 if i < count / 2 else span_days
             slot = start + int(day * 86400) + (i % 6) * 300
-            ts = slot + (290 if late else 30)
-        rows.append({
+            if after_close:
+                ts = slot + 301
+            elif seconds_before_end is not None:
+                ts = slot + 300 - seconds_before_end
+            else:
+                ts = slot + (290 if late else 30)
+        row = {
             'proxyWallet': wallet,
             'type': 'TRADE',
             'side': 'BUY',
@@ -30,7 +36,10 @@ def prints(wallet, *, price=0.4, size=10.0, span_days=2, late=False, count=12, b
             'price': price,
             'size': size if i < count - 1 else size,
             'timestamp': ts,
-        })
+        }
+        if detected_after is not None:
+            row['detected_after'] = detected_after
+        rows.append(row)
     return rows
 
 
@@ -79,12 +88,19 @@ class DiscoveryLoopTests(unittest.TestCase):
         self.assertIn('too_little_history', complete['reject_reasons'])
         self.assertTrue(complete['age_known'])
 
+    def test_fast_detect_near_the_close_is_not_a_discovery_time_reject(self):
+        rows = prints(NEW, seconds_before_end=12, detected_after=0.2)
+        screened = screen_activity(rows)
+        self.assertNotIn('cannot_copy_in_time', screened['reject_reasons'])
+        self.assertEqual(screened['decision'], 'ADMITTED')
+        self.assertEqual(screened['passes_copy_filters_share'], 1.0)
+
     def test_short_history_one_trade_price_and_lateness_are_rejected(self):
         cases = (
             ('too_little_history', prints(NEW, span_days=0)),
             ('one_trade_dominates', [dict(row, size=(1000 if i == 0 else 1)) for i, row in enumerate(prints(NEW))]),
             ('poor_liquidity_or_price_band', prints(NEW, price=0.95)),
-            ('cannot_copy_in_time', prints(NEW, late=True)),
+            ('cannot_copy_in_time', prints(NEW, after_close=True)),
             ('suspicious_activity', prints(NEW, burst=True)),
         )
         for reason, rows in cases:

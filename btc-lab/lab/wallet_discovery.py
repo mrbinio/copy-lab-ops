@@ -37,8 +37,6 @@ ACTIVITY_PAGE_SIZE = 500
 # data-api rejects offset 5500 with HTTP 400. A full last page is not the
 # wallet's first trade, so the age behind that page is unknown.
 ACTIVITY_OFFSET_CAP = 5000
-# Same freshness window the copier uses before it calls a signal too old.
-COPY_LEAD_SECONDS = 90
 # Same concentration cap the roster uses for one day of copy PnL.
 MAX_ONE_TRADE_SHARE = 0.70
 WALLET_RE = re.compile(r'0x[0-9a-f]{40}')
@@ -53,6 +51,28 @@ def window_end(slug):
     if not match:
         return None
     return int(match.group(3)) + (300 if match.group(2) == '5m' else 900)
+
+
+def seen_while_market_open(item):
+    """The market was still open when the trade happened and, if we know it, when we saw it.
+
+    The copier's 90s limit is how old a signal may be at detection. It is not
+    a requirement that 90s remain until the window ends. This function does
+    not apply that limit.
+    """
+    end = window_end(item.get('slug'))
+    ts = item.get('ts')
+    if end is None or ts is None or ts >= end:
+        return False
+    detected = item.get('detected_at')
+    if detected is None and item.get('detected_after') is not None:
+        try:
+            detected = ts + float(item['detected_after'])
+        except (TypeError, ValueError):
+            detected = None
+    if detected is not None and not (ts <= detected < end):
+        return False
+    return True
 
 
 def score_candidate(candidate):
@@ -138,6 +158,8 @@ def screen_activity(rows, history_complete=True):
             'size': size,
             'slug': str(row.get('slug')),
             'side': str(row.get('side') or '').upper(),
+            'detected_at': row.get('detected_at'),
+            'detected_after': row.get('detected_after'),
         })
     reasons = []
     if ours and bad / len(ours) > 0.2:
@@ -164,8 +186,7 @@ def screen_activity(rows, history_complete=True):
         if price < MIN_SOURCE_PRICE or price > MAX_SOURCE_PRICE:
             continue
         in_band.append(item)
-        end = window_end(item['slug'])
-        if end is not None and item['ts'] <= end - COPY_LEAD_SECONDS:
+        if seen_while_market_open(item):
             timely.append(item)
     our_n = stats['our_trades_30d'] or 0
     buys = [item for item in parsed if item['side'] == 'BUY']
@@ -419,8 +440,9 @@ class WalletDiscovery:
                     'CRYPTO month top 50 is a lead only. Up to 8 of those are probed, '
                     'then the busiest wallets on the live BTC/ETH 5m/15m trades tape, 12 probes max. '
                     'A complete activity pull must cover at least a day. A pull cut by the API limit '
-                    'does not prove the wallet is young. The 20-70c band and 90s freshness are the copier gates, '
-                    'not a result after fees. PAPER_TEST uses the existing roster rules on our hypothetical copies.'
+                    'does not prove the wallet is young. The 20-70c band is the copier price gate. '
+                    'The copier 90s limit is signal age at detection, not time left in the market. '
+                    'Neither number is a result after fees. PAPER_TEST uses the existing roster rules on our hypothetical copies.'
                 ),
                 'candidates': candidates, 'copy_enabled': False,
                 'tape_wallets': len(tape_counts), 'tape_prints': len(tape),

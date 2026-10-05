@@ -19,6 +19,10 @@ from .strategy_control import set_paused
 SPEC = 'paper-roster-v1'
 KEY = 'wallet_roster'
 AUDIT_KEY = 'wallet_selection_audit'
+AUDIT_TABLE = 'wallet_selection_audit'
+AUDIT_MIGRATED = 'wallet_selection_audit_migrated'
+# The state blob is only what the dashboard shows. The table keeps every row.
+AUDIT_DISPLAY_LIMIT = 200
 STATES = ('observed', 'paper_test', 'paper_active', 'paused')
 # How many isolated PAPER tests run at once. Not fit to a PnL curve.
 PAPER_TEST_SLOTS = 3
@@ -63,21 +67,65 @@ def _row(wallet, state, now, **extra):
     return {'wallet': wallet, 'state': state, 'since': now, 'confidence': extra.pop('confidence', 'unknown'), **extra}
 
 
+def _audit_row(ts, wallet, action, reason, evidence):
+    return {'ts': ts, 'wallet': wallet, 'action': action, 'reason': reason, 'evidence': evidence or {}}
+
+
 def audit(store, now, wallet, action, reason, evidence=None):
-    """Append-only reason for discover, reject, promote, pause, restore, replace."""
-    log = store.get(AUDIT_KEY, [])
-    if not isinstance(log, list):
-        log = []
-    log.append({
-        'ts': now,
-        'wallet': wallet,
-        'action': action,
-        'reason': reason,
-        'evidence': evidence or {},
-    })
-    del log[:-200]
-    store.set(AUDIT_KEY, log)
-    return log
+    """Append-only reason for discover, reject, promote, pause, restore, replace.
+
+    Every row stays in wallet_selection_audit. The state key keeps the latest
+    200 for display and is not the archive.
+    """
+    evidence = evidence or {}
+    body = json.dumps(evidence, allow_nan=False)
+    with store.connect() as db:
+        db.execute(
+            f'''CREATE TABLE IF NOT EXISTS {AUDIT_TABLE} (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts REAL NOT NULL,
+                wallet TEXT NOT NULL,
+                action TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                evidence TEXT NOT NULL
+            )'''
+        )
+        migrated = db.execute('SELECT body FROM state WHERE key=?', (AUDIT_MIGRATED,)).fetchone()
+        if not migrated:
+            raw = db.execute('SELECT body FROM state WHERE key=?', (AUDIT_KEY,)).fetchone()
+            existing = json.loads(raw[0]) if raw else []
+            if isinstance(existing, list):
+                for row in existing:
+                    if not isinstance(row, dict):
+                        continue
+                    db.execute(
+                        f'INSERT INTO {AUDIT_TABLE} (ts, wallet, action, reason, evidence) VALUES (?,?,?,?,?)',
+                        (
+                            row.get('ts') or 0,
+                            row.get('wallet') or '',
+                            row.get('action') or '',
+                            row.get('reason') or '',
+                            json.dumps(row.get('evidence') or {}, allow_nan=False),
+                        ),
+                    )
+            db.execute(
+                'INSERT OR REPLACE INTO state VALUES (?,?)',
+                (AUDIT_MIGRATED, json.dumps(True)),
+            )
+        db.execute(
+            f'INSERT INTO {AUDIT_TABLE} (ts, wallet, action, reason, evidence) VALUES (?,?,?,?,?)',
+            (now, wallet, action, reason, body),
+        )
+        stored = db.execute(
+            f'SELECT ts, wallet, action, reason, evidence FROM {AUDIT_TABLE} ORDER BY id DESC LIMIT ?',
+            (AUDIT_DISPLAY_LIMIT,),
+        ).fetchall()
+    display = [
+        _audit_row(row['ts'], row['wallet'], row['action'], row['reason'], json.loads(row['evidence']))
+        for row in reversed(stored)
+    ]
+    store.set(AUDIT_KEY, display)
+    return display
 
 
 def bootstrap(store, now=None):

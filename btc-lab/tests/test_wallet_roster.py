@@ -5,7 +5,7 @@ from pathlib import Path
 from lab.core import Store
 from lab.wallet_roster import (
     RULES, can_observe_to_test, evaluate_copy_book, tick, bootstrap, SPEC,
-    hypothetical_settled,
+    hypothetical_settled, audit, AUDIT_TABLE, AUDIT_DISPLAY_LIMIT,
 )
 
 class RosterTests(unittest.TestCase):
@@ -184,3 +184,35 @@ class RosterTests(unittest.TestCase):
             self.assertEqual(actions[weak]['reason'], 'discovery-v1 replaced by stronger paper candidate')
             self.assertEqual(actions[newbie]['action'], 'promoted')
             self.assertEqual(actions[newbie]['reason'], 'paper-roster-v1 paper_test')
+
+    def test_audit_table_keeps_history_and_display_stops_at_200(self):
+        with tempfile.TemporaryDirectory() as d:
+            store = Store(Path(d) / 'lab.db')
+            kept = '0x' + '11' * 20
+            store.set('wallet_selection_audit', [{
+                'ts': 1, 'wallet': kept, 'action': 'discovered',
+                'reason': 'kept-from-before', 'evidence': {'note': 'existing'},
+            }])
+            audit(store, 2, '0x' + '22' * 20, 'rejected', 'wrong_markets', {})
+            with store.connect() as db:
+                self.assertEqual(db.execute(f'SELECT COUNT(*) FROM {AUDIT_TABLE}').fetchone()[0], 2)
+                self.assertEqual(
+                    db.execute(
+                        f"SELECT COUNT(*) FROM {AUDIT_TABLE} WHERE reason='kept-from-before'"
+                    ).fetchone()[0],
+                    1,
+                )
+            for i in range(AUDIT_DISPLAY_LIMIT + 5):
+                audit(store, 10 + i, '0x' + '33' * 20, 'rejected', f'row-{i}', {})
+            self.assertEqual(len(store.get('wallet_selection_audit')), AUDIT_DISPLAY_LIMIT)
+            with store.connect() as db:
+                self.assertEqual(
+                    db.execute(f'SELECT COUNT(*) FROM {AUDIT_TABLE}').fetchone()[0],
+                    2 + AUDIT_DISPLAY_LIMIT + 5,
+                )
+                self.assertEqual(
+                    db.execute(
+                        f"SELECT evidence FROM {AUDIT_TABLE} WHERE reason='kept-from-before'"
+                    ).fetchone()[0],
+                    '{"note": "existing"}',
+                )
