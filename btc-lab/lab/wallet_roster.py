@@ -36,7 +36,7 @@ AUDIT_MIGRATED = 'wallet_selection_audit_migrated'
 AUDIT_DISPLAY_LIMIT = 200
 STATES = ('observed', 'paper_test', 'paper_active', 'paused')
 # How many isolated PAPER tests run at once. Not fit to a PnL curve.
-PAPER_TEST_SLOTS = 3
+# Every wallet with a positive settled result is copied. A negative book is paused.
 
 # Frozen previous definition. Do not use these numbers for new decisions.
 RULES_V1 = {
@@ -473,14 +473,6 @@ def copy_evidence(store, wallet, now):
     }
 
 
-def _book_net(closed):
-    return sum(
-        (t.get('pnl_micro') or 0) / 1e6
-        for t in closed
-        if t.get('status') in ('CLOSED', 'SETTLED')
-    )
-
-
 def admit_observed(store, wallet, now, evidence, reason):
     """Start watching. Does not open a PAPER test."""
     state = bootstrap(store, now)
@@ -496,42 +488,9 @@ def admit_observed(store, wallet, now, evidence, reason):
     return state, True
 
 
-def _shown_net(state, wallet, closed_by):
-    """Copy-book net when every close has a pnl. Otherwise the stored sim, then zero."""
-    settled = [
-        t for t in closed_by.get(wallet, [])
-        if t.get('status') in ('CLOSED', 'SETTLED')
-    ]
-    if settled:
-        net = _known_net(settled)
-        if net is not None:
-            return net
-    stats = (state['wallets'].get(wallet) or {}).get('stats') or {}
-    sim = stats.get('copy_sim_net_usd')
-    return sim if isinstance(sim, (int, float)) else 0
-
-
 def _promote_paper_test(store, state, wallet, stats, now, closed_by):
-    """Move observed → paper_test. A full slate drops the weakest test, not its history."""
-    tests = [w for w, row in state['wallets'].items() if row['state'] == 'paper_test']
-    if len(tests) >= PAPER_TEST_SLOTS:
-        weakest = min(tests, key=lambda w: (_shown_net(state, w, closed_by), w))
-        weak_net = _shown_net(state, weakest, closed_by)
-        if (stats.get('copy_sim_net_usd') or 0) <= weak_net:
-            audit(store, now, wallet, 'rejected', 'weaker_than_current_paper_test', {
-                'copy_sim_net_usd': stats.get('copy_sim_net_usd'),
-                'weakest': weakest,
-                'weakest_net_usd': weak_net,
-            })
-            return False
-        state['wallets'][weakest]['state'] = 'observed'
-        state['wallets'][weakest]['since'] = now
-        state['wallets'][weakest]['reason'] = 'discovery-v1 replaced by stronger paper candidate'
-        state['wallets'][weakest]['replaced_by'] = wallet
-        audit(store, now, weakest, 'replaced', state['wallets'][weakest]['reason'], {
-            'replaced_by': wallet,
-            'net_usd': weak_net,
-        })
+    """Move observed → paper_test. A plus wallet is added. It does not take someone's slot."""
+    del closed_by
     row = state['wallets'][wallet]
     row['state'] = 'paper_test'
     row['since'] = now

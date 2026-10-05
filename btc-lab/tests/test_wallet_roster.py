@@ -229,15 +229,51 @@ class RosterTests(unittest.TestCase):
                 'copy_sim_net_usd': 12, 'best_day_share': 0.2,
             }})
             self.assertEqual(updated['wallets'][newbie]['state'], 'paper_test')
-            self.assertEqual(updated['wallets'][weak]['state'], 'observed')
+            self.assertEqual(updated['wallets'][weak]['state'], 'paused')
             with store.connect() as db:
                 kept = db.execute('SELECT body FROM wallet_copy_positions').fetchone()[0]
             self.assertEqual(json.loads(kept)['pnl_micro'], -500_000)
             actions = {row['wallet']: row for row in store.get('wallet_selection_audit')}
-            self.assertEqual(actions[weak]['action'], 'replaced')
-            self.assertEqual(actions[weak]['reason'], 'discovery-v1 replaced by stronger paper candidate')
+            self.assertEqual(actions[weak]['action'], 'paused')
             self.assertEqual(actions[newbie]['action'], 'promoted')
             self.assertEqual(actions[newbie]['reason'], PROMOTE_REASON)
+
+    def test_every_plus_wallet_is_copied(self):
+        with tempfile.TemporaryDirectory() as d:
+            store = Store(Path(d) / 'lab.db')
+            now = 9_000_000
+            state = bootstrap(store, now=now)
+            extras = ['0x' + hex(i + 1)[2:].rjust(40, 'a') for i in range(4)]
+            for wallet in extras:
+                state['wallets'][wallet] = {
+                    'wallet': wallet, 'state': 'observed', 'since': now - 5,
+                }
+            store.set('wallet_roster', state)
+            store.set('wallet_observation_meta', {
+                'version': 'copy-observe-v2', 'started_at': now - 10,
+            })
+            with store.connect() as db:
+                db.execute(
+                    'CREATE TABLE wallet_observation_positions (id TEXT PRIMARY KEY, wallet TEXT, body TEXT)'
+                )
+                for i, wallet in enumerate(extras):
+                    db.execute(
+                        'INSERT INTO wallet_observation_positions VALUES (?,?,?)',
+                        (str(i), wallet, json.dumps({
+                            'policy': 'copy-observe-v2', 'status': 'SETTLED',
+                            'opened': now - 20, 'closed_at': now - 10,
+                            'pnl_micro': 1_000_000, 'market': f'm{i}', 'fee': 1000,
+                        })),
+                    )
+            updated, changed = tick(store, now=now)
+            for wallet in extras:
+                self.assertEqual(updated['wallets'][wallet]['state'], 'paper_test')
+                self.assertIn(wallet, changed)
+            copying = [
+                row['state'] for row in updated['wallets'].values()
+                if row['state'] in ('paper_test', 'paper_active')
+            ]
+            self.assertGreater(len(copying), 3)
 
     def test_audit_table_keeps_history_and_display_stops_at_200(self):
         with tempfile.TemporaryDirectory() as d:
