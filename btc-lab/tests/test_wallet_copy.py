@@ -7,7 +7,7 @@ from datetime import datetime,timezone
 from pathlib import Path
 from lab.core import Store
 from lab.reference import TWAP_RULE
-from lab.wallet_copy import WalletCopy,CopyLedgerError,market_spec,KEY
+from lab.wallet_copy import WalletCopy,CopyLedgerError,market_spec,KEY,decide_copy_flow
 from lab.wallet_observer import WALLETS,WalletObserver
 
 class CopyTests(unittest.TestCase):
@@ -438,3 +438,54 @@ class CopyTests(unittest.TestCase):
         self.assertEqual(closed[0]['shares'],int((Decimal(whole)*Decimal('0.25')).to_integral_value(rounding=ROUND_FLOOR)))
         self.assertEqual(cash,500_000_000+ledger)
         self.assertEqual(cash,500_000_000-(opened[0]['cost']+opened[0]['fee'])+closed[0]['pnl_micro'])
+
+    def test_copy_flow_names_the_real_block(self):
+        now=1_000
+        self.assertEqual(decide_copy_flow(now,1,now-10,0,1,False)['code'],'copying')
+        self.assertEqual(decide_copy_flow(now,1,None,0,0,False)['code'],'no_signals')
+        self.assertEqual(decide_copy_flow(now,1,None,0,0,True)['code'],'feed')
+        paused=decide_copy_flow(now,1,now-5,0,0,False)
+        self.assertEqual(paused['code'],'paused')
+        self.assertIn('1',paused['detail_pl'])
+        self.assertEqual(decide_copy_flow(now,1,now-5,3,0,False)['code'],'filtered')
+
+    def test_observation_settles_after_the_market_without_a_source_sell(self):
+        from lab.wallet_observation import settle_batch, ensure_schema
+        trade={'id':'obs1','wallet':WALLETS[0],'policy':'copy-observe-v1','market':self.slug,'token':'1',
+            'status':'OPEN','opened':1000,'end':1050,'shares':5_000_000,'cost':3_000_000,'fee':80_000,'exit_fee':0}
+        with self.store.connect() as db:
+            ensure_schema(db)
+            db.execute('INSERT INTO wallet_observation_accounts VALUES (?,?)',(WALLETS[0],500_000_000))
+            db.execute('UPDATE wallet_observation_accounts SET cash=? WHERE wallet=?',(500_000_000-3_080_000,WALLETS[0]))
+            db.execute('INSERT INTO wallet_observation_ledger VALUES (?,?,?)',('buy:obs1',WALLETS[0],-3_080_000))
+            db.execute('INSERT INTO wallet_observation_positions VALUES (?,?,?)',('obs1',WALLETS[0],json.dumps(trade)))
+        self.now=1102
+        asyncio.run(settle_batch(self.engine))
+        with self.store.connect() as db:
+            body=json.loads(db.execute("SELECT body FROM wallet_observation_positions WHERE id='obs1'").fetchone()[0])
+        self.assertEqual(body['status'],'RESOLVED')
+        self.now=1500
+        asyncio.run(settle_batch(self.engine))
+        with self.store.connect() as db:
+            body=json.loads(db.execute("SELECT body FROM wallet_observation_positions WHERE id='obs1'").fetchone()[0])
+            cash=db.execute('SELECT cash FROM wallet_observation_accounts WHERE wallet=?',(WALLETS[0],)).fetchone()[0]
+            ledger=db.execute('SELECT COALESCE(SUM(amount),0) FROM wallet_observation_ledger WHERE wallet=?',(WALLETS[0],)).fetchone()[0]
+        self.assertEqual(body['status'],'SETTLED')
+        self.assertEqual(body['pnl_micro'],-3_080_000)
+        self.assertIsNotNone(body['pnl_micro'])
+        self.assertEqual(cash,500_000_000+ledger)
+
+    def test_step_shadows_one_paused_buy_not_the_whole_batch(self):
+        from lab.strategy_control import set_paused
+        set_paused(self.store,'copy-'+WALLETS[0],True)
+        observer=WalletObserver(self.store,None)
+        self.now=1102
+        for key in ('a','b'):
+            body=json.loads(self.row(key)['body'])
+            observer.ingest(WALLETS[0],[body],self.now)
+        self.book_calls=0
+        asyncio.run(self.engine.step())
+        self.assertEqual(self.book_calls,2)
+        with self.store.connect() as db:
+            reasons=[row[0] for row in db.execute('SELECT reason FROM wallet_copy_events ORDER BY event_key')]
+        self.assertEqual(reasons,['COPY_PAUSED','COPY_PAUSED'])

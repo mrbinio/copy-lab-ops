@@ -58,7 +58,7 @@ def due_rows(store, meta, now, limit=4):
                   ON a.wallet=e.wallet AND a.event_key=e.event_key
                 WHERE e.event_key IS NULL AND a.wallet IN ({marks})
                   AND a.source_ts>=? AND a.first_seen>=?
-                ORDER BY a.first_seen ASC LIMIT ?''',
+                ORDER BY a.first_seen DESC LIMIT ?''',
             (*wallets, fresh, started, limit),
         )]
 
@@ -100,10 +100,20 @@ async def apply_row(copier, row, meta):
     if event.get('type') != 'TRADE' or event.get('side') not in ('BUY', 'SELL'):
         note('NOT_BUY_OR_SELL')
         return
+    kind = event['side']
+    source = None
+    if kind == 'BUY':
+        source, why = confirmed_source_price(event)
+        if why:
+            note(why)
+            return
+        why = band_reason(source)
+        if why:
+            note(why)
+            return
     raw = await asyncio.to_thread(
         copier.fetch, 'https://gamma-api.polymarket.com/markets/slug/' + quote(str(event.get('slug', '')), safe=''))
     market = market_spec(raw, event, copier.clock())
-    kind = event['side']
     with copier.store.connect() as db:
         ensure_schema(db)
         db.execute('INSERT OR IGNORE INTO wallet_observation_accounts VALUES (?,?)', (wallet, INITIAL))
@@ -118,14 +128,6 @@ async def apply_row(copier, row, meta):
     arrival['fee_rate'] = market['fee_rate']
     consumed = copier._obs_consumed
     if kind == 'BUY':
-        source, why = confirmed_source_price(event)
-        if why:
-            note(why)
-            return
-        why = band_reason(source)
-        if why:
-            note(why)
-            return
         if not adding and any(item.get('market') == market['slug'] and item.get('status') in ('OPEN', 'RESOLVED') for item in positions):
             note('COPY_POSITION_ALREADY_OPEN')
             return
@@ -158,7 +160,8 @@ async def apply_row(copier, row, meta):
             else:
                 current = {
                     'id': wallet + ':' + key, 'wallet': wallet, 'policy': OBSERVE_VERSION, 'paper_policy': POLICY,
-                    'market': market['slug'], 'token': market['token'], 'side': market['side'], 'end': market['end'],
+                    'market': market['slug'], 'condition': market['condition'], 'token': market['token'],
+                    'side': market['side'], 'end': market['end'],
                     'status': 'OPEN', 'opened': copier.clock(), 'shares': fill['shares'], 'cost': fill['cost'],
                     'fee': fill['fee'], 'exit_fee': 0, 'entry_fill': fill,
                 }
@@ -227,12 +230,101 @@ async def apply_row(copier, row, meta):
         })
 
 
+def _needs_book(row, meta, now):
+    """A price or age reject does not need a book. Those stay off the slow slots."""
+    event = json.loads(row['body'])
+    if row['source_ts'] < meta['started_at'] or now - row['source_ts'] > 90 or now - row['first_seen'] > 90:
+        return False
+    if event.get('type') != 'TRADE' or event.get('side') not in ('BUY', 'SELL'):
+        return False
+    if event.get('side') == 'BUY':
+        price, why = confirmed_source_price(event)
+        if why or band_reason(price):
+            return False
+    return True
+
+
+async def settle_batch(copier, limit=8):
+    """Official settlement for observation positions. A missing result stays open.
+
+    The same 300 second wait the PAPER book uses. This does not invent a sell.
+    """
+    now = copier.clock()
+    with copier.store.connect() as db:
+        ensure_schema(db)
+        rows = [json.loads(body) for (body,) in db.execute('SELECT body FROM wallet_observation_positions')]
+    closed = 0
+    for trade in rows:
+        if trade.get('status') == 'RESOLVED' and now >= float(trade.get('official_seen_at') or 0) + 300:
+            _settle_close(copier.store, trade, now)
+            closed += 1
+    fetched = 0
+    for trade in rows:
+        if fetched >= limit:
+            break
+        if trade.get('status') != 'OPEN' or now < float(trade.get('end') or now + 1):
+            continue
+        fetched += 1
+        try:
+            condition = trade.get('condition')
+            if not condition:
+                raw = await asyncio.to_thread(
+                    copier.fetch, 'https://gamma-api.polymarket.com/markets/slug/' + quote(str(trade.get('market') or ''), safe=''))
+                condition = raw.get('conditionId')
+                trade['condition'] = condition
+            if not condition:
+                continue
+            raw = await asyncio.to_thread(copier.fetch, 'https://clob.polymarket.com/markets/' + quote(str(condition), safe=''))
+            if raw.get('condition_id') != condition:
+                continue
+            winners = [item for item in raw.get('tokens', []) if item.get('winner') is True]
+            if raw.get('closed') is not True or len(winners) != 1:
+                continue
+            tokens = {str(item.get('token_id')) for item in raw.get('tokens', [])}
+            if str(trade.get('token')) not in tokens:
+                continue
+            trade.update(status='RESOLVED', official_seen_at=copier.clock(), condition=condition,
+                         official_payout=trade['shares'] if str(winners[0]['token_id']) == str(trade.get('token')) else 0)
+            with copier.store.connect() as db:
+                ensure_schema(db)
+                current = db.execute('SELECT body FROM wallet_observation_positions WHERE id=?', (trade['id'],)).fetchone()
+                if not current or json.loads(current[0]).get('status') != 'OPEN':
+                    continue
+                db.execute('UPDATE wallet_observation_positions SET body=? WHERE id=?', (json.dumps(trade), trade['id']))
+        except Exception:
+            continue
+    return closed
+
+
+def _settle_close(store, trade, now):
+    payout = int(trade.get('official_payout') or 0)
+    pnl = payout - int(trade.get('cost') or 0) - int(trade.get('fee') or 0)
+    trade = dict(trade)
+    trade.update(status='SETTLED', payout=payout, exit_fee=0, closed_at=now, resolved=now, pnl_micro=pnl)
+    with store.connect() as db:
+        ensure_schema(db)
+        db.execute('BEGIN IMMEDIATE')
+        current = db.execute('SELECT body FROM wallet_observation_positions WHERE id=?', (trade['id'],)).fetchone()
+        if not current or json.loads(current[0]).get('status') != 'RESOLVED':
+            return
+        db.execute('INSERT OR IGNORE INTO wallet_observation_accounts VALUES (?,?)', (trade['wallet'], INITIAL))
+        db.execute('UPDATE wallet_observation_positions SET body=? WHERE id=?', (json.dumps(trade), trade['id']))
+        db.execute('UPDATE wallet_observation_accounts SET cash=cash+? WHERE wallet=?', (payout, trade['wallet']))
+        db.execute('INSERT OR IGNORE INTO wallet_observation_ledger VALUES (?,?,?)', ('close:' + trade['id'], trade['wallet'], payout))
+
+
 async def observe_batch(copier):
     meta = ensure_meta(copier.store, copier.clock())
     if not hasattr(copier, '_obs_consumed'):
         copier._obs_consumed = {}
-    rows = await asyncio.to_thread(due_rows, copier.store, meta, copier.clock())
+    rows = await asyncio.to_thread(due_rows, copier.store, meta, copier.clock(), 40)
+    slow = 0
+    now = copier.clock()
     for row in rows:
+        if _needs_book(row, meta, now):
+            if slow >= 6:
+                continue
+            slow += 1
         try:
             await apply_row(copier, row, meta)
         except Exception as error:
@@ -240,4 +332,5 @@ async def observe_batch(copier):
                 ensure_schema(db)
                 _record(db, row['wallet'], row['event_key'], copier.clock(), 'ERROR',
                         {'policy': OBSERVE_VERSION, 'error': str(error)[:200]})
+    await settle_batch(copier)
     return len(rows)

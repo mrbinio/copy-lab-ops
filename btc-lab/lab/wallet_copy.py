@@ -277,6 +277,41 @@ def public_trade(t):
         entry_fill=t.get('entry_fill'),exit_fill=t.get('exit_evidence',{}).get('fill'))
     return result
 
+FLOW_WINDOW=900
+
+def decide_copy_flow(now, copying, last_signal_at, copy_wallet_signals, recent_copied_buys, observer_down):
+    """One status. A live server is not evidence that a buy was copied."""
+    if recent_copied_buys:
+        code='copying'
+        detail_pl='W tym oknie jest skopiowany zakup.'
+        detail_en='A buy was copied in this window.'
+    elif not last_signal_at or now-last_signal_at>FLOW_WINDOW:
+        if observer_down:
+            code='feed'
+            detail_pl='Odbiór portfela kopiowanego nie odpowiada.'
+            detail_en='The copied wallet feed is not answering.'
+        else:
+            code='no_signals'
+            detail_pl='Śledzone portfele nie mają nowego BUY ani SELL.'
+            detail_en='Watched wallets have no new BUY or SELL.'
+    elif not copy_wallet_signals:
+        code='paused'
+        detail_pl='Kopiowanie włączone dla %d portfeli, bez ich transakcji. Transakcje są na portfelach wstrzymanych albo tylko obserwowanych.'%copying
+        detail_en='Copying is on for %d wallets, and they have no trade. The trades are on paused or observed wallets.'%copying
+    else:
+        code='filtered'
+        detail_pl='Portfel z włączonym kopiowaniem dostał sygnał, a zakup nie powstał.'
+        detail_en='A wallet with copying on received a signal and no buy was opened.'
+    return {
+        'code':code,
+        'last_signal_at':last_signal_at,
+        'copying':copying,
+        'detail_pl':detail_pl,
+        'detail_en':detail_en,
+        'generated_at':now,
+    }
+
+
 class WalletCopy:
     # Max total CLOB exposure across all open orders (safety cap)
     CLOB_MAX_EXPOSURE_USD = 10.0
@@ -357,6 +392,7 @@ class WalletCopy:
             clock_skew={'book':round(self.book_clock.skew(),3),'samples':len(self.book_clock.offsets)},
             watch_updated_at=getattr(self,'watch_at',None),
             execution=EXECUTION,
+            flow=self.store.get('wallet_copy_flow') or {},
             scope='BTC/ETH 5m and 15m only; one market minimum per buy (not the source size), source price band 20-70c is a limit of this PAPER version; 500USD separate virtual scenarios; an added buy increases the open lot only inside the 5USD position cap; a source SELL closes the fraction of the source position immediately before that sell',
             limitation='The 20-70c band is our version limit, not a claim that a price outside it is automatically a losing trade. Changing it belongs in a separate PAPER. The sell fraction uses detected source buys and sells, including ones we did not copy. An unknown opening position or a gap is not a faithful copy and does not invent a fraction. Settlement still runs. FOK at fresh delayed books with 50% depth. A slice below the market minimum is not filled. SELL is allowed while new buys are paused. Signal age 90s. One position including add-ons and fees stays within 5USD. Five positions cap the wallet at 25USD. No profitability guarantee.'))
 
@@ -460,8 +496,12 @@ class WalletCopy:
         if len(rows)<20:rows.extend(self._pending_query(db,lo,now,20-len(rows)))
         return rows
 
-    async def process(self,row):
+    async def process(self,row,shadow=True):
         await self._process(row)
+        if shadow:
+            await self._capture_shadow(row)
+
+    async def _capture_shadow(self,row):
         # Independent diagnostic; never changes cash, risk or the actual copy decision.
         with self.store.connect() as db:
             saved=db.execute('SELECT body FROM wallet_copy_skip_reviews WHERE wallet=? AND event_key=?',
@@ -767,6 +807,7 @@ class WalletCopy:
         The watch summary is a read on another thread. It does not scan from step().
         """
         while True:
+            await asyncio.to_thread(self._write_flow)
             await self._refresh_watch()
             try:
                 from .wallet_observation import observe_batch
@@ -795,7 +836,11 @@ class WalletCopy:
             active=list(get_active_wallets(self.store))
             rows=await asyncio.to_thread(self._load_pending, active)
             for row in rows:
-                await self.process(row)
+                await self.process(row, shadow=False)
+            # One diagnostic ticket after the decisions. The rest must not
+            # push a fresh buy past the 90 second signal age.
+            if rows:
+                await self._capture_shadow(rows[-1])
             if rows or self.clock()-self.last_publish>=2:
                 self.publish('RUNNING');self.last_publish=self.clock()
             self.store.set('wallet_copy_error',{})
@@ -804,7 +849,47 @@ class WalletCopy:
             self.store.set('wallet_copy_error',{'at':self.clock(),'error':str(error)[:400]})
             raise
 
+    def _write_flow(self):
+        now=self.clock()
+        roster=(self.store.get('wallet_roster') or {}).get('wallets') or {}
+        copying=[wallet for wallet,row in roster.items() if row.get('state') in ('paper_test','paper_active')]
+        last_signal_at=None
+        copy_wallet_signals=0
+        recent_copied_buys=0
+        with self.store.connect() as db:
+            if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='wallet_activity'").fetchone():
+                since=now-FLOW_WINDOW
+                row=db.execute(
+                    """SELECT MAX(source_ts) FROM wallet_activity
+                       WHERE first_seen>=? AND json_extract(body,'$.side') IN ('BUY','SELL')""",
+                    (since,)).fetchone()
+                last_signal_at=row[0] if row else None
+                if copying:
+                    marks=','.join('?'*len(copying))
+                    copy_wallet_signals=db.execute(
+                        f"""SELECT COUNT(*) FROM wallet_activity
+                            WHERE first_seen>=? AND wallet IN ({marks})
+                              AND json_extract(body,'$.side') IN ('BUY','SELL')""",
+                        (since,*copying)).fetchone()[0]
+            if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='wallet_copy_events'").fetchone():
+                recent_copied_buys=db.execute(
+                    "SELECT COUNT(*) FROM wallet_copy_events WHERE reason='COPIED_BUY' AND ts>=?",
+                    (now-FLOW_WINDOW,)).fetchone()[0]
+        down=False
+        if copying:
+            down=True
+            for wallet in copying:
+                obs=self.store.get('wallet_observer:'+wallet) or {}
+                checked=obs.get('checked_at') or 0
+                if obs.get('status')!='ERROR' and now-checked<=120:
+                    down=False
+                    break
+        flow=decide_copy_flow(now,len(copying),last_signal_at,copy_wallet_signals,recent_copied_buys,down)
+        self.store.set('wallet_copy_flow',flow)
+        return flow
+
     async def run(self):
+        await asyncio.to_thread(self._write_flow)
         upkeep=asyncio.create_task(self.upkeep())
         try:
             while True:

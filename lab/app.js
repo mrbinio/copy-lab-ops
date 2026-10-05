@@ -334,6 +334,27 @@ function fillPriceBand(s){
   text('price-band-note',t('The 20–70¢ band is a limit of this PAPER version. A 75¢ source buy is rejected by that limit. That is not a claim that 75¢ is automatically a losing trade. Changing the band belongs in a separate PAPER. This copy is not Mitch’s system.','Pasmo 20–70¢ jest limitem tej wersji PAPER. Zakup źródła za 75¢ odpada przez ten limit. To nie jest teza, że 75¢ jest z góry stratnym zakupem. Zmiana pasma należy do osobnego PAPER. To kopiowanie nie jest systemem Mitcha.'));
   text('copy-rules',t('Copy rules, paper-roster-v3. Observation becomes a test after 20 settled copies, 5 windows and a positive net. No calendar wait. A day above 70% of the gains is uncertainty, not a block. A known negative net of closed copies opened in the current stint blocks new buys. A missing result is not zero. Open positions stay separate. A sell and settlement still run. Return needs a positive observation opened after the pause. Fewer than 10 such closes is an uncertain sample, and the old losses stay. An added buy stays inside the 5 USD position cap, fees included. A source sell closes our shares by that sell divided by the source position just before it. A missing source size or an incomplete source history leaves the position open.','Reguły kopiowania, paper-roster-v3. Obserwacja staje się testem po 20 rozliczonych kopiach, 5 oknach i dodatnim wyniku. Nie ma blokady kalendarzowej. Dzień powyżej 70% zysków to niepewność, nie blokada. Ujemny, znany wynik zamkniętych kopii otwartych w bieżącym okresie blokuje nowe zakupy. Brak wyniku nie jest zerem. Otwarte pozycje są osobno. Sprzedaż i rozliczenie zostają. Powrót wymaga dodatniej obserwacji otwartej po pauzie. Poniżej 10 takich zamknięć to niepewna próba, a stare straty zostają w księdze. Dokupienie mieści się w limicie 5 USD na pozycję, razem z opłatami. Sprzedaż źródła zamyka taką część naszych udziałów, ile ta sprzedaż stanowi pozycji źródła tuż przed nią. Brak rozmiaru albo niepełna historia źródła zostawia pozycję otwartą.'));
 }
+function renderCopyFlow(s){
+  const flow=(s.wallet_copy_execution||{}).flow||{};
+  const el=$('copy-flow');
+  const titles={
+    copying:['Copying is working','Kopiowanie działa'],
+    no_signals:['No new signals','Brak nowych sygnałów'],
+    paused:['All buys are paused','Wszystkie zakupy wstrzymane'],
+    filtered:['Signals rejected by filters','Sygnały odrzucone przez filtry'],
+    feed:['Data reception problem','Problem z odbiorem danych']
+  };
+  const pair=titles[flow.code];
+  if(!pair){
+    text('copy-flow',t('Copy status: no data','Stan kopiowania: brak danych'));
+    if(el)el.className='data-status stale';
+    return;
+  }
+  const when=flow.last_signal_at?formatTime(flow.last_signal_at):t('none','brak');
+  const detail=lang==='en'?flow.detail_en:flow.detail_pl;
+  text('copy-flow',t(pair[0],pair[1])+' · '+t('Last signal ','Ostatni sygnał ')+when+(detail?' · '+detail:''));
+  if(el)el.className='data-status '+(flow.code==='copying'?'fresh':'stale');
+}
 function renderPaperBoard(s){
   const board=paperBoardOf(s);
   const outdated=preview||location.hostname.endsWith('github.io')||(connected&&s.view&&s.view!=='live');
@@ -344,6 +365,7 @@ function renderPaperBoard(s){
   const bookAge=board?Date.now()/1000-Number(board.generated_at||0):null;
   const fresh=connected&&!outdated&&age>=0&&age<30&&(worker.status==='RECORDING'||worker.status==='PAUSED')&&bookAge!=null&&bookAge>=0&&bookAge<90;
   const stamp=board&&board.generated_at?formatTime(board.generated_at):'';
+  renderCopyFlow(s);
   text('data-status',fresh?t('Data current — updated ','Dane aktualne — aktualizacja ')+stamp:t('Data is stale','Dane nieaktualne'));
   const statusEl=$('data-status');if(statusEl)statusEl.className='data-status '+(fresh?'fresh':'stale');
   text('revision-line',s.revision&&/^[0-9a-f]{40}$/.test(s.revision)?'Rewizja '+s.revision:t('Revision: no data','Rewizja: brak danych'));
