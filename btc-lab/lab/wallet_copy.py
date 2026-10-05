@@ -626,8 +626,8 @@ class WalletCopy:
             f"SELECT a.* FROM wallet_activity a INDEXED BY wallet_activity_seen "
             f"LEFT JOIN wallet_copy_events e "
             f"ON a.wallet=e.wallet AND a.event_key=e.event_key "
-            f"WHERE e.event_key IS NULL AND a.first_seen>=? AND a.wallet IN ({marks}) "
-            f"ORDER BY a.first_seen ASC LIMIT ?",(now-90,*wallets, limit))]
+            f"WHERE e.event_key IS NULL AND a.first_seen>=? AND a.source_ts>=? AND a.wallet IN ({marks}) "
+            f"ORDER BY a.first_seen ASC LIMIT ?",(now-90, now-90, *wallets, limit))]
 
     def pending_activity(self,db,active=None):
         """Only fresh rows. A full-table INSERT every second blocked the event loop

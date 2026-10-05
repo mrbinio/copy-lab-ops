@@ -236,6 +236,23 @@ class CopyTests(unittest.TestCase):
         self.assertEqual(len(pending), 1)
         self.assertEqual(pending[0]['first_seen'], self.now)
 
+    def test_stale_source_does_not_take_the_live_slot(self):
+        self.now = 5000
+        observer = WalletObserver(self.store, None)
+        late = json.loads(self.row('late')['body'])
+        late['timestamp'] = 100
+        with self.store.connect() as db:
+            db.execute(
+                'INSERT INTO wallet_activity VALUES (?,?,?,?,?)',
+                (WALLETS[0], 'late', self.now, 100, json.dumps(late)))
+        fresh = json.loads(self.row('live')['body'])
+        observer.ingest(WALLETS[0], [fresh], self.now)
+        with self.store.connect() as db:
+            pending = self.engine.pending_activity(db)
+        self.assertEqual(len(pending), 1)
+        self.assertNotEqual(pending[0]['event_key'], 'late')
+        self.assertGreaterEqual(pending[0]['source_ts'], self.now - 90)
+
     def test_source_identity_and_daily_loss_cap(self):
         self.now=1102;row=self.row('wrong-identity');body=json.loads(row['body']);body['proxyWallet']=WALLETS[1];row['body']=json.dumps(body)
         self.process(row);self.assertEqual(self.reason(),'SOURCE_IDENTITY_MISMATCH')
