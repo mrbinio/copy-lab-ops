@@ -18,7 +18,8 @@ from .wallet_copy import (
 
 CONFIRMED_DEPTH = 5
 LOOKBACK = 900
-TOKEN_LIMIT = 6
+TOKEN_LIMIT = 4
+REFRESH_LIMIT = 4
 MAX_NEW_RECEIPTS = 8
 SHARES_SCALE = Decimal(10) ** 6
 BALANCE_OF = '00fdd58e'
@@ -436,7 +437,12 @@ def reconcile_token(store, reader, wallet, token, now):
     }
 
 
-def _recent_unknown(store, now):
+def _recent_tokens(store, now):
+    """Unknown books first, then confirmed books that still have fresh trades.
+
+    The copy queue can be behind. A later trade still has to move the source
+    book, and this read does not open a copy.
+    """
     with store.connect() as db:
         ready = db.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='wallet_activity'"
@@ -457,7 +463,8 @@ def _recent_unknown(store, now):
                     'SELECT wallet, token, known, anchor_at FROM wallet_source_positions'):
                 if row['known'] and row['anchor_at']:
                     known.add((row['wallet'], row['token']))
-    chosen = []
+    unknown = []
+    refresh = []
     seen = set()
     for row in rows:
         try:
@@ -468,24 +475,26 @@ def _recent_unknown(store, now):
         if not token or event.get('type') != 'TRADE' or event.get('side') not in ('BUY', 'SELL'):
             continue
         key = (row['wallet'], token)
-        if key in seen or key in known:
+        if key in seen:
             continue
         seen.add(key)
-        chosen.append(key)
-        if len(chosen) >= TOKEN_LIMIT:
-            break
-    return chosen
+        if key in known:
+            if len(refresh) < REFRESH_LIMIT:
+                refresh.append(key)
+        elif len(unknown) < TOKEN_LIMIT:
+            unknown.append(key)
+    return unknown + refresh
 
 
 def reconcile_recent(store, now, reader=None, environ=None):
-    """A few recent unknown tokens. Does not scan the historical book."""
+    """Recent unknown tokens, then a refresh of confirmed tokens that just traded."""
     if reader is None:
         reader = reader_from_env(environ)
     if reader is None:
         store.set('wallet_source_anchor_error', {'at': now, 'error': 'ALCHEMY_WSS missing'})
         return []
     results = []
-    for wallet, token in _recent_unknown(store, now):
+    for wallet, token in _recent_tokens(store, now):
         try:
             results.append(reconcile_token(store, reader, wallet, token, now))
         except Exception as error:

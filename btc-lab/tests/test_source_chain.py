@@ -180,6 +180,31 @@ class SourceChainTests(unittest.TestCase):
         self.assertEqual(second['block'], 105)
         self.assertEqual(self.book()['shares'], Decimal('20'))
 
+    def test_later_trade_on_a_known_book_updates_the_sell_proportion(self):
+        self.activity('open', 'BUY', 100, '0xopen')
+        self.chain.receipts['0xopen'] = receipt(96, [log(1, 100, 'BUY', 96)])
+        first = reconcile_token(self.store, self.chain, WALLET, TOKEN, NOW)
+        self.assertEqual(first['shares'], Decimal('200'))
+        self.activity('again', 'BUY', 40, '0xagain')
+        self.activity('cut', 'SELL', 60, '0xcut')
+        self.chain.head = 120
+        self.chain.balances[(WALLET, TOKEN, 115)] = raw_shares(200)
+        self.chain.receipts['0xagain'] = receipt(116, [log(1, 40, 'BUY', 116)])
+        self.chain.receipts['0xcut'] = receipt(116, [log(2, 60, 'SELL', 116)])
+        refreshed = reconcile_recent(self.store, NOW, reader=self.chain)
+        self.assertTrue(refreshed[0]['ok'])
+        self.assertEqual(self.book()['block'], 115)
+        self.assertEqual(self.book()['shares'], Decimal('180'))
+        with self.store.connect() as db:
+            proportion = db.execute(
+                'SELECT proportion FROM wallet_source_events WHERE event_key=?',
+                ('cut',)).fetchone()[0]
+            copies = db.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='wallet_copy_events'"
+            ).fetchone()
+        self.assertEqual(Decimal(proportion), Decimal('0.25'))
+        self.assertIsNone(copies)
+
     def test_missing_reader_does_not_invent_a_book(self):
         self.activity('buy', 'BUY', 1, '0xbuy')
         result = reconcile_recent(self.store, NOW, reader=None, environ={})
