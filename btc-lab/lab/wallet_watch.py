@@ -61,7 +61,10 @@ def _policy_view(db, wallet, now, meta):
     rows = []
     for (body,) in db.execute('SELECT body FROM wallet_observation_positions WHERE wallet=?', (wallet,)):
         trade = json.loads(body)
-        if trade.get('policy') != meta['version'] or (trade.get('opened') or 0) < meta['started_at']:
+        accepted = {meta.get('version'), 'copy-observe-v1', 'copy-observe-v2'}
+        if meta.get('previous_version'):
+            accepted.add(meta.get('previous_version'))
+        if trade.get('policy') not in accepted or (trade.get('opened') or 0) < meta['started_at']:
             continue
         rows.append(trade)
     open_n = sum(1 for trade in rows if trade.get('status') == 'OPEN')
@@ -235,7 +238,7 @@ def summarize_wallet(db, wallet, roster_row, observer, now, meta=None):
         'net_usd': policy['net'],
         'need_net_usd': need['min_copy_sim_net_usd'],
         'best_day_share': policy['share'],
-        'max_best_day_share': need['max_best_day_share'],
+        'max_best_day_share': need.get('concentration_uncertain_above', need.get('max_best_day_share')),
     }
     return {
         'wallet': wallet,

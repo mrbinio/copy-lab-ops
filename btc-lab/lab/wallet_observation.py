@@ -9,9 +9,12 @@ import json
 from urllib.parse import quote
 
 from .copy_policy import POLICY, band_reason, confirmed_source_price, decide_buy, decide_sell, remember_fill
-from .wallet_copy import INITIAL, market_spec
+from .wallet_copy import (
+    INITIAL, _event_size, exposure_block, market_spec, note_source_event, sell_cut,
+)
 
-OBSERVE_VERSION = 'copy-observe-v1'
+OBSERVE_VERSION = 'copy-observe-v2'
+PREVIOUS_OBSERVE_VERSION = 'copy-observe-v1'
 META_KEY = 'wallet_observation_meta'
 
 
@@ -28,8 +31,11 @@ def ensure_meta(store, now):
     """Set the start once. A later process must not move it backward."""
     meta = store.get(META_KEY) or {}
     if meta.get('started_at'):
-        meta.setdefault('version', OBSERVE_VERSION)
         meta.setdefault('paper_policy', POLICY)
+        if meta.get('version') != OBSERVE_VERSION:
+            meta['previous_version'] = meta.get('version') or PREVIOUS_OBSERVE_VERSION
+            meta['version'] = OBSERVE_VERSION
+            store.set(META_KEY, meta)
         return meta
     meta = {'version': OBSERVE_VERSION, 'paper_policy': POLICY, 'started_at': now}
     store.set(META_KEY, meta)
@@ -84,6 +90,10 @@ async def apply_row(copier, row, meta):
             ensure_schema(db)
             _record(db, wallet, key, now, reason, body)
 
+    with copier.store.connect() as db:
+        ensure_schema(db)
+        source_note = note_source_event(
+            db, wallet, key, event, float(meta['started_at']), row['source_ts'], row['first_seen'])
     if row['source_ts'] < meta['started_at'] or now - row['source_ts'] > 90 or now - row['first_seen'] > 90:
         note('SOURCE_TOO_OLD')
         return
@@ -100,6 +110,7 @@ async def apply_row(copier, row, meta):
         cash = db.execute('SELECT cash FROM wallet_observation_accounts WHERE wallet=?', (wallet,)).fetchone()[0]
         positions = _positions(db, wallet)
     open_trade = next((item for item in positions if item.get('token') == market['token'] and item.get('status') == 'OPEN'), None)
+    adding = kind == 'BUY' and open_trade is not None
     decision = await copier.book(market['token'])
     await copier.sleep(0.25)
     arrival = dict(await copier.book(market['token']))
@@ -115,10 +126,10 @@ async def apply_row(copier, row, meta):
         if why:
             note(why)
             return
-        if any(item.get('market') == market['slug'] and item.get('status') in ('OPEN', 'RESOLVED') for item in positions):
+        if not adding and any(item.get('market') == market['slug'] and item.get('status') in ('OPEN', 'RESOLVED') for item in positions):
             note('COPY_POSITION_ALREADY_OPEN')
             return
-        if cash < 5_000_000:
+        if not adding and cash < 5_000_000:
             note('COPY_CASH_LIMIT')
             return
         why, fill = decide_buy(source, arrival, consumed)
@@ -126,39 +137,94 @@ async def apply_row(copier, row, meta):
             note(why)
             return
         remember_fill(consumed, arrival, fill)
-        trade = {
-            'id': wallet + ':' + key, 'wallet': wallet, 'policy': OBSERVE_VERSION, 'paper_policy': POLICY,
-            'market': market['slug'], 'token': market['token'], 'side': market['side'], 'end': market['end'],
-            'status': 'OPEN', 'opened': copier.clock(), 'shares': fill['shares'], 'cost': fill['cost'],
-            'fee': fill['fee'], 'exit_fee': 0, 'entry_fill': fill,
-        }
-        debit = -(fill['cost'] + fill['fee'])
+        debit = int(fill['cost']) + int(fill['fee'])
         with copier.store.connect() as db:
             ensure_schema(db)
             db.execute('BEGIN IMMEDIATE')
-            db.execute('INSERT INTO wallet_observation_positions VALUES (?,?,?)', (trade['id'], wallet, json.dumps(trade)))
-            db.execute('UPDATE wallet_observation_accounts SET cash=cash+? WHERE wallet=?', (debit, wallet))
-            db.execute('INSERT INTO wallet_observation_ledger VALUES (?,?,?)', ('buy:' + trade['id'], wallet, debit))
+            fresh = _positions(db, wallet)
+            cash = db.execute('SELECT cash FROM wallet_observation_accounts WHERE wallet=?', (wallet,)).fetchone()[0]
+            current = next((item for item in fresh if item.get('id') == (open_trade or {}).get('id')), None) if adding else None
+            blocked = exposure_block(fresh, market['slug'], debit, not adding, cash)
+            if blocked or (adding and (not current or current.get('status') != 'OPEN')):
+                _record(db, wallet, key, copier.clock(), blocked or 'COPY_EXPOSURE_LIMIT',
+                        {'policy': OBSERVE_VERSION, 'source_copy': 'skipped'})
+                return
+            if adding:
+                current['shares'] = int(current['shares']) + int(fill['shares'])
+                current['cost'] = int(current['cost']) + int(fill['cost'])
+                current['fee'] = int(current['fee']) + int(fill['fee'])
+                db.execute('UPDATE wallet_observation_positions SET body=? WHERE id=?', (json.dumps(current), current['id']))
+                ledger_id = 'buy:' + current['id'] + ':' + key
+            else:
+                current = {
+                    'id': wallet + ':' + key, 'wallet': wallet, 'policy': OBSERVE_VERSION, 'paper_policy': POLICY,
+                    'market': market['slug'], 'token': market['token'], 'side': market['side'], 'end': market['end'],
+                    'status': 'OPEN', 'opened': copier.clock(), 'shares': fill['shares'], 'cost': fill['cost'],
+                    'fee': fill['fee'], 'exit_fee': 0, 'entry_fill': fill,
+                }
+                db.execute('INSERT INTO wallet_observation_positions VALUES (?,?,?)', (current['id'], wallet, json.dumps(current)))
+                ledger_id = 'buy:' + current['id']
+            db.execute('UPDATE wallet_observation_accounts SET cash=cash+? WHERE wallet=?', (-debit, wallet))
+            db.execute('INSERT INTO wallet_observation_ledger VALUES (?,?,?)', (ledger_id, wallet, -debit))
             _record(db, wallet, key, copier.clock(), 'OBSERVED_BUY', {'policy': OBSERVE_VERSION, 'fill': fill})
         return
     if not open_trade:
         note('NO_COPIED_POSITION')
         return
-    why, fill = decide_sell(arrival, open_trade['shares'], consumed)
+    if _event_size(event) is None:
+        note('SOURCE_SIZE_MISSING', {'source_copy': 'unknown'})
+        return
+    proportion = None if not source_note else source_note.get('proportion')
+    if proportion is None:
+        note('SOURCE_PROPORTION_UNKNOWN', {'source_copy': 'unknown'})
+        return
+    sold, why = sell_cut(open_trade['shares'], proportion)
+    if why:
+        note(why, {'source_copy': 'unknown'})
+        return
+    why, fill = decide_sell(arrival, sold, consumed)
     if why:
         note(why)
         return
     remember_fill(consumed, arrival, fill)
-    pnl = fill['proceeds'] - fill['fee'] - open_trade['cost'] - open_trade['fee']
-    open_trade.update(status='CLOSED', payout=fill['proceeds'], exit_fee=fill['fee'], closed_at=copier.clock(), pnl_micro=pnl)
+    whole = int(open_trade['shares'])
+    if int(sold) >= whole:
+        pnl = fill['proceeds'] - fill['fee'] - open_trade['cost'] - open_trade['fee']
+        open_trade.update(status='CLOSED', payout=fill['proceeds'], exit_fee=fill['fee'], closed_at=copier.clock(), pnl_micro=pnl)
+        credit = fill['proceeds'] - fill['fee']
+        with copier.store.connect() as db:
+            ensure_schema(db)
+            db.execute('BEGIN IMMEDIATE')
+            db.execute('UPDATE wallet_observation_positions SET body=? WHERE id=?', (json.dumps(open_trade), open_trade['id']))
+            db.execute('UPDATE wallet_observation_accounts SET cash=cash+? WHERE wallet=?', (credit, wallet))
+            db.execute('INSERT INTO wallet_observation_ledger VALUES (?,?,?)', ('close:' + open_trade['id'], wallet, credit))
+            _record(db, wallet, key, copier.clock(), 'OBSERVED_SELL', {
+                'policy': OBSERVE_VERSION, 'fill': fill, 'pnl_micro': pnl, 'source_copy': 'matched',
+                'source_proportion': format(proportion, 'f'),
+            })
+        return
+    alloc_cost = int(open_trade['cost']) * int(sold) // whole
+    alloc_fee = int(open_trade['fee']) * int(sold) // whole
+    pnl = fill['proceeds'] - fill['fee'] - alloc_cost - alloc_fee
+    slice_id = open_trade['id'] + ':sell:' + key
+    closed = dict(open_trade)
+    closed.update(id=slice_id, status='CLOSED', shares=int(sold), cost=alloc_cost, fee=alloc_fee,
+                  payout=fill['proceeds'], exit_fee=fill['fee'], closed_at=copier.clock(), pnl_micro=pnl)
+    open_trade['shares'] = whole - int(sold)
+    open_trade['cost'] = int(open_trade['cost']) - alloc_cost
+    open_trade['fee'] = int(open_trade['fee']) - alloc_fee
     credit = fill['proceeds'] - fill['fee']
     with copier.store.connect() as db:
         ensure_schema(db)
         db.execute('BEGIN IMMEDIATE')
+        db.execute('INSERT INTO wallet_observation_positions VALUES (?,?,?)', (slice_id, wallet, json.dumps(closed)))
         db.execute('UPDATE wallet_observation_positions SET body=? WHERE id=?', (json.dumps(open_trade), open_trade['id']))
         db.execute('UPDATE wallet_observation_accounts SET cash=cash+? WHERE wallet=?', (credit, wallet))
-        db.execute('INSERT INTO wallet_observation_ledger VALUES (?,?,?)', ('close:' + open_trade['id'], wallet, credit))
-        _record(db, wallet, key, copier.clock(), 'OBSERVED_SELL', {'policy': OBSERVE_VERSION, 'fill': fill, 'pnl_micro': pnl})
+        db.execute('INSERT INTO wallet_observation_ledger VALUES (?,?,?)', ('close:' + slice_id, wallet, credit))
+        _record(db, wallet, key, copier.clock(), 'OBSERVED_SELL', {
+            'policy': OBSERVE_VERSION, 'fill': fill, 'pnl_micro': pnl, 'partial': True,
+            'source_copy': 'matched', 'source_proportion': format(proportion, 'f'),
+        })
 
 
 async def observe_batch(copier):

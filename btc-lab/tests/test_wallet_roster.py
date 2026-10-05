@@ -4,8 +4,8 @@ import unittest
 from pathlib import Path
 from lab.core import Store
 from lab.wallet_roster import (
-    RULES, RULES_V1, can_observe_to_test, evaluate_copy_book, tick, bootstrap, SPEC,
-    PREVIOUS_SPEC, hypothetical_settled, audit, AUDIT_TABLE, AUDIT_DISPLAY_LIMIT,
+    RULES, RULES_V1, RULES_V2, can_observe_to_test, evaluate_copy_book, tick, bootstrap, SPEC,
+    SPEC_V2, PREVIOUS_SPEC, hypothetical_settled, audit, AUDIT_TABLE, AUDIT_DISPLAY_LIMIT,
     PAUSE_REASON, RETEST_REASON, PROMOTE_REASON,
 )
 
@@ -17,10 +17,19 @@ class RosterTests(unittest.TestCase):
         self.assertNotIn('hyp_7d_net_usd', RULES['paused_to_paper_test'])
         self.assertNotIn('min_hyp_trades', RULES['paused_to_paper_test'])
         self.assertTrue(RULES['paper_active_to_paused']['period_net_negative_blocks_buys'])
+        self.assertNotIn('max_best_day_share', RULES['observed_to_paper_test'])
+        self.assertNotIn('max_best_day_share', RULES['paper_test_to_paper_active'])
+        self.assertEqual(RULES['concentration_uncertain_above'], 0.70)
+        self.assertEqual(RULES_V2['observed_to_paper_test']['max_best_day_share'], 0.70)
+        self.assertEqual(RULES_V2['paper_test_to_paper_active']['max_best_day_share'], 0.70)
         self.assertEqual(RULES_V1['spec'], PREVIOUS_SPEC)
         self.assertEqual(RULES_V1['observed_to_paper_test']['min_days'], 7)
         self.assertEqual(RULES_V1['paper_active_to_paused']['rolling_7d_net_usd'], -15.0)
         self.assertEqual(RULES_V1['paused_to_paper_test']['hyp_7d_net_usd'], 8.0)
+        self.assertTrue(can_observe_to_test({
+            'our_trades': 20, 'windows': 5, 'age_days': 0,
+            'copy_sim_net_usd': 1, 'best_day_share': 1,
+        }))
 
     def test_leaderboard_alone_does_not_qualify(self):
         self.assertFalse(can_observe_to_test({
@@ -32,12 +41,13 @@ class RosterTests(unittest.TestCase):
             'copy_sim_net_usd': 12, 'best_day_share': 0.2,
         }))
 
-    def test_one_lucky_day_blocks_activation(self):
+    def test_one_day_concentration_does_not_block(self):
         now=1_000_000
-        closed=[{'status':'CLOSED','closed_at':now-86400,'pnl_micro':20_000_000,'market':'a'}]
-        closed+=[{'status':'CLOSED','closed_at':now-2*86400,'pnl_micro':100_000,'market':f'm{i}'} for i in range(29)]
-        book=evaluate_copy_book(closed,now,now-20*86400)
-        self.assertFalse(book['can_activate'])
+        closed=[{'status':'CLOSED','opened':now-3600,'closed_at':now-3600,'pnl_micro':1_000_000,'market':f'm{i}'} for i in range(30)]
+        book=evaluate_copy_book(closed,now,now-86400)
+        self.assertEqual(book['best_day_share'], 1)
+        self.assertTrue(book['concentration_uncertain'])
+        self.assertTrue(book['can_activate'])
 
     def test_pause_and_retest_are_not_the_same_threshold(self):
         now=2_000_000
@@ -277,3 +287,23 @@ class RosterTests(unittest.TestCase):
             self.assertEqual(state['previous_rules']['paper_active_to_paused']['rolling_7d_net_usd'], -15.0)
             self.assertEqual(state['wallets'][wallet]['since'], 4)
             self.assertEqual(state['wallets'][wallet]['state'], 'paused')
+
+    def test_v2_roster_upgrades_without_resetting_wallets(self):
+        with tempfile.TemporaryDirectory() as d:
+            store = Store(Path(d) / 'lab.db')
+            wallet = '0x' + 'cd' * 20
+            store.set('wallet_roster', {
+                'spec': SPEC_V2,
+                'rules': RULES_V2,
+                'previous_spec': PREVIOUS_SPEC,
+                'previous_rules': RULES_V1,
+                'updated_at': 10,
+                'wallets': {wallet: {'wallet': wallet, 'state': 'paper_test', 'since': 4, 'reason': 'old'}},
+            })
+            state = bootstrap(store, now=50)
+            self.assertEqual(state['spec'], SPEC)
+            self.assertEqual(state['previous_spec'], SPEC_V2)
+            self.assertEqual(state['previous_rules']['observed_to_paper_test']['max_best_day_share'], 0.70)
+            self.assertEqual(state['rule_history'][0]['spec'], PREVIOUS_SPEC)
+            self.assertEqual(state['wallets'][wallet]['since'], 4)
+            self.assertEqual(state['wallets'][wallet]['state'], 'paper_test')

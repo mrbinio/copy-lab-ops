@@ -13,7 +13,7 @@ from lab.wallet_observer import WALLETS,WalletObserver
 class CopyTests(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.store=Store(Path(self.temp.name)/'lab.db')
-        self.now=1100.;self.pause=False;self.ask='.60';self.bid='.59';self.depth='100';self.stale=False;self.delay=.5;self.book_calls=0;self.market_calls=0
+        self.now=1100.;self.pause=False;self.ask='.60';self.bid='.59';self.depth='100';self.min_shares='5';self.stale=False;self.delay=.5;self.book_calls=0;self.market_calls=0
         self.slug='btc-updown-15m-1000'
         self.raw=dict(slug=self.slug,conditionId='condition',eventStartTime=datetime.fromtimestamp(1000,timezone.utc).isoformat(),
             endDate=datetime.fromtimestamp(1900,timezone.utc).isoformat(),active=True,closed=False,acceptingOrders=True,
@@ -28,7 +28,7 @@ class CopyTests(unittest.TestCase):
             self.book_calls+=1
             return {'asset_id':url.rsplit('=',1)[1],'timestamp':int((1102 if self.stale else self.now)*1000),
                 'asks':[{'price':self.ask,'size':self.depth}],'bids':[{'price':self.bid,'size':self.depth}],
-                'min_order_size':'5','tick_size':'.01'}
+                'min_order_size':self.min_shares,'tick_size':'.01'}
         if '/markets/' in url:
             self.market_calls+=1
             return copy.deepcopy(self.official)
@@ -64,11 +64,11 @@ class CopyTests(unittest.TestCase):
     def test_stale_arrival_and_latency_rejected(self):
         self.stale=True;self.buy();self.assertEqual(self.reason(),'COPIED_BUY')
         self.stale=False;self.delay=6;self.now=1110;self.process(self.row('slow'))
-        self.assertEqual(self.reason(),'COPIED_BUY')
+        self.assertEqual(self.reason(),'COPY_EXPOSURE_LIMIT')
         with self.store.connect() as db:
             open_rows=[t for t in self.engine.positions(db) if t['status']=='OPEN']
         self.assertEqual(len(open_rows),1)
-        self.assertGreater(open_rows[0]['shares'],5_000_000)
+        self.assertLessEqual(open_rows[0]['cost']+open_rows[0]['fee'],5_000_000)
     def test_minimum_and_failed_sale_do_not_invent_fills(self):
         self.depth='1';self.buy();self.assertEqual(self.reason(),'BUY_NO_FULL_FILL_OR_MINIMUM')
         self.depth='100';self.now=1110;self.process(self.row('new'))
@@ -99,7 +99,10 @@ class CopyTests(unittest.TestCase):
     def test_separate_wallets_and_no_additional_position(self):
         from lab.strategy_control import set_paused
         set_paused(self.store,'copy-'+WALLETS[1],False)
-        self.buy();self.now+=2;self.process(self.row('two'));self.assertEqual(self.reason(),'COPIED_BUY')
+        self.buy();self.now+=2;self.process(self.row('two'))
+        with self.store.connect() as db:
+            second=db.execute('SELECT reason FROM wallet_copy_events WHERE event_key=?',('two',)).fetchone()[0]
+        self.assertEqual(second,'COPY_EXPOSURE_LIMIT')
         self.process(self.row('other',wallet=WALLETS[1]));self.assertEqual([a['trades'] for a in self.state()['accounts']][:4],[1,1,0,0])
     def test_settlement_runs_beside_copy_not_inside_it(self):
         """A fresh copy must not wait for ended windows to settle."""
@@ -266,17 +269,19 @@ class CopyTests(unittest.TestCase):
         self.assertEqual([a['trades'] for a in extras],[0,0])
 
     def test_partial_sell_keeps_remainder_and_balances_the_ledger(self):
+        from decimal import Decimal, ROUND_FLOOR
         self.buy()
         self.now+=2
-        self.process(self.row('add','BUY'))
-        self.assertEqual(self.reason(),'COPIED_BUY')
+        skipped=self.row('skip','BUY')
+        body=json.loads(skipped['body']);body['price']=0.90;body['size']=100;skipped['body']=json.dumps(body)
+        self.process(skipped)
+        self.assertEqual(self.reason(),'COPY_PRICE_TOO_HIGH')
         self.now+=2
         self.bid='.70'
         self.ask='.71'
+        self.min_shares='1'
         sell=self.row('part','SELL')
-        body=json.loads(sell['body'])
-        body['size']=100
-        sell['body']=json.dumps(body)
+        body=json.loads(sell['body']);body['size']=50;sell['body']=json.dumps(body)
         self.process(sell)
         self.assertEqual(self.reason(),'COPIED_SELL')
         with self.store.connect() as db:
@@ -290,6 +295,14 @@ class CopyTests(unittest.TestCase):
         self.assertLess(opened[0]['shares'],closed[0]['shares']+opened[0]['shares'])
         self.assertEqual(closed[0]['shares']+opened[0]['shares'],closed[0]['shares']+opened[0]['shares'])
         whole_shares=closed[0]['shares']+opened[0]['shares']
+        expected=int((Decimal(whole_shares)*Decimal('0.25')).to_integral_value(rounding=ROUND_FLOOR))
+        self.assertEqual(closed[0]['shares'],expected)
+        self.assertNotEqual(closed[0]['shares'],int((Decimal(whole_shares)*Decimal('0.5')).to_integral_value(rounding=ROUND_FLOOR)))
+        from lab.wallet_copy import source_position
+        with self.store.connect() as db:
+            book=source_position(db,WALLETS[0],'1')
+        self.assertEqual(book['shares'],Decimal('150'))
+        self.assertTrue(book['known'])
         self.assertEqual(closed[0]['cost']+opened[0]['cost']+closed[0]['fee']+opened[0]['fee']>0,True)
         self.assertEqual(closed[0]['pnl_micro'],closed[0]['payout']-closed[0]['exit_fee']-closed[0]['cost']-closed[0]['fee'])
         self.assertGreater(opened[0]['shares'],0)
@@ -312,3 +325,116 @@ class CopyTests(unittest.TestCase):
         with self.store.connect() as db:
             rows=self.engine.positions(db)
         self.assertEqual([t['status'] for t in rows],['OPEN'])
+
+    def test_failed_sell_copy_still_updates_the_source_position(self):
+        from decimal import Decimal
+        from lab.wallet_copy import source_position
+        self.buy()
+        self.now+=2
+        self.depth='1'
+        sell=self.row('miss','SELL')
+        body=json.loads(sell['body']);body['size']=40;sell['body']=json.dumps(body)
+        self.process(sell)
+        self.assertEqual(self.reason(),'SELL_NO_FULL_FILL')
+        with self.store.connect() as db:
+            rows=self.engine.positions(db)
+            book=source_position(db,WALLETS[0],'1')
+        self.assertEqual([t['status'] for t in rows],['OPEN'])
+        self.assertEqual(book['shares'],Decimal('60'))
+        self.assertTrue(book['known'])
+
+    def test_incomplete_source_history_does_not_invent_a_fraction(self):
+        from lab.wallet_copy import source_position
+        self.buy()
+        self.now+=2
+        self.bid='.70'
+        over=self.row('over','SELL')
+        body=json.loads(over['body']);body['size']=250;over['body']=json.dumps(body)
+        self.process(over)
+        self.assertEqual(self.reason(),'SOURCE_PROPORTION_UNKNOWN')
+        with self.store.connect() as db:
+            rows=self.engine.positions(db)
+            book=source_position(db,WALLETS[0],'1')
+            body=db.execute('SELECT body FROM wallet_copy_events WHERE event_key=?',('over',)).fetchone()[0]
+        self.assertEqual([t['status'] for t in rows],['OPEN'])
+        self.assertFalse(book['known'])
+        self.assertIsNone(book['shares'])
+        self.assertEqual(json.loads(body)['source_copy'],'unknown')
+
+    def test_added_buys_stay_inside_the_position_budget(self):
+        self.buy()
+        with self.store.connect() as db:
+            first=next(t for t in self.engine.positions(db) if t['status']=='OPEN')
+            spent=first['cost']+first['fee']
+        self.assertLessEqual(spent,5_000_000)
+        for i in range(3):
+            self.now+=2
+            self.process(self.row('add'+str(i)))
+            self.assertEqual(self.reason(),'COPY_EXPOSURE_LIMIT')
+        with self.store.connect() as db:
+            rows=[t for t in self.engine.positions(db) if t['wallet']==WALLETS[0]]
+            cash=db.execute('SELECT cash FROM wallet_copy_accounts WHERE wallet=?',(WALLETS[0],)).fetchone()[0]
+            ledger=db.execute('SELECT COALESCE(SUM(amount),0) FROM wallet_copy_ledger WHERE wallet=?',(WALLETS[0],)).fetchone()[0]
+        self.assertEqual(len(rows),1)
+        self.assertEqual(rows[0]['cost']+rows[0]['fee'],spent)
+        self.assertLessEqual(rows[0]['cost']+rows[0]['fee'],5_000_000)
+        self.assertEqual(cash,500_000_000+ledger)
+        self.assertEqual(cash,500_000_000-spent)
+
+    def test_duplicate_restart_and_partial_sell_keep_the_ledger(self):
+        from decimal import Decimal, ROUND_FLOOR
+        self.buy()
+        self.now+=2
+        self.bid='.70'
+        self.min_shares='1'
+        sell=self.row('half','SELL')
+        body=json.loads(sell['body']);body['size']=50;sell['body']=json.dumps(body)
+        self.process(sell)
+        with self.store.connect() as db:
+            before=self.engine.positions(db)
+            cash=db.execute('SELECT cash FROM wallet_copy_accounts WHERE wallet=?',(WALLETS[0],)).fetchone()[0]
+        self.engine=WalletCopy(self.store,self.fetch,lambda:False,lambda:self.now,self.sleep)
+        self.process(self.row())
+        self.process(sell)
+        with self.store.connect() as db:
+            after=self.engine.positions(db)
+            cash2=db.execute('SELECT cash FROM wallet_copy_accounts WHERE wallet=?',(WALLETS[0],)).fetchone()[0]
+            ledger=db.execute('SELECT COALESCE(SUM(amount),0) FROM wallet_copy_ledger WHERE wallet=?',(WALLETS[0],)).fetchone()[0]
+        self.assertEqual(cash2,cash)
+        self.assertEqual(len(after),len(before))
+        self.assertEqual(cash2,500_000_000+ledger)
+        closed=next(t for t in after if t['status']=='CLOSED')
+        opened=next(t for t in after if t['status']=='OPEN')
+        whole=closed['shares']+opened['shares']
+        self.assertEqual(closed['shares'],int((Decimal(whole)*Decimal('0.5')).to_integral_value(rounding=ROUND_FLOOR)))
+
+    def test_observation_sell_uses_skipped_source_buy(self):
+        from decimal import Decimal, ROUND_FLOOR
+        from lab.wallet_observation import apply_row, ensure_meta
+        meta=ensure_meta(self.store,1000)
+        self.now=1102
+        asyncio.run(apply_row(self.engine,self.row('obuy'),meta))
+        self.now+=2
+        skipped=self.row('oskip')
+        body=json.loads(skipped['body']);body['price']=0.90;body['size']=100;skipped['body']=json.dumps(body)
+        asyncio.run(apply_row(self.engine,skipped,meta))
+        self.now+=2
+        self.bid='.70';self.ask='.71'
+        self.min_shares='1'
+        sell=self.row('osell','SELL')
+        body=json.loads(sell['body']);body['size']=50;sell['body']=json.dumps(body)
+        asyncio.run(apply_row(self.engine,sell,meta))
+        with self.store.connect() as db:
+            rows=[json.loads(r[0]) for r in db.execute('SELECT body FROM wallet_observation_positions')]
+            reason=db.execute('SELECT reason FROM wallet_observation_events WHERE event_key=?',('osell',)).fetchone()[0]
+            cash=db.execute('SELECT cash FROM wallet_observation_accounts WHERE wallet=?',(WALLETS[0],)).fetchone()[0]
+            ledger=db.execute('SELECT COALESCE(SUM(amount),0) FROM wallet_observation_ledger WHERE wallet=?',(WALLETS[0],)).fetchone()[0]
+        self.assertEqual(reason,'OBSERVED_SELL')
+        closed=[t for t in rows if t['status']=='CLOSED']
+        opened=[t for t in rows if t['status']=='OPEN']
+        self.assertEqual(len(closed),1)
+        self.assertEqual(len(opened),1)
+        whole=closed[0]['shares']+opened[0]['shares']
+        self.assertEqual(closed[0]['shares'],int((Decimal(whole)*Decimal('0.25')).to_integral_value(rounding=ROUND_FLOOR)))
+        self.assertEqual(cash,500_000_000+ledger)
+        self.assertEqual(cash,500_000_000-(opened[0]['cost']+opened[0]['fee'])+closed[0]['pnl_micro'])

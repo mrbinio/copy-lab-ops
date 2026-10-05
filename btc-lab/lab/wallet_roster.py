@@ -1,6 +1,6 @@
 """Versioned PAPER roster. History is never rewritten. Not live money.
 
-paper-roster-v2 states:
+paper-roster-v3 states:
   observed    — watched, no new copy buys
   paper_test  — isolated PAPER copy, low confidence if under 30 days
   paper_active— isolated PAPER copy after a longer paper_test
@@ -14,7 +14,9 @@ Return uses only observations opened after the pause. A positive net
 after costs is enough. Fewer than 10 such closes is an uncertain sample:
 the wallet can return, and the old losses stay in the book.
 There is no calendar wait on observation, activation, or return.
-paper-roster-v1 is kept below. Its results are not rewritten.
+A day that holds more than 70% of the gains is recorded as uncertainty.
+It does not block entry or promotion.
+paper-roster-v1 and paper-roster-v2 are kept below. Their results are not rewritten.
 This is a PAPER experiment. It does not prove an edge and it does not raise risk limits.
 """
 import json
@@ -22,8 +24,10 @@ import time
 from .wallet_observer import SEED_WALLETS, PAPER_EXTRA
 from .strategy_control import set_paused
 
-SPEC = 'paper-roster-v2'
+SPEC = 'paper-roster-v3'
 PREVIOUS_SPEC = 'paper-roster-v1'
+SPEC_V2 = 'paper-roster-v2'
+ACCEPTED_SPECS = (SPEC, SPEC_V2, PREVIOUS_SPEC)
 KEY = 'wallet_roster'
 AUDIT_KEY = 'wallet_selection_audit'
 AUDIT_TABLE = 'wallet_selection_audit'
@@ -61,8 +65,8 @@ RULES_V1 = {
     },
 }
 
-RULES = {
-    'spec': SPEC,
+RULES_V2 = {
+    'spec': SPEC_V2,
     'observed_to_paper_test': {
         'min_our_trades': 20,
         'min_windows': 5,
@@ -84,9 +88,33 @@ RULES = {
         'uncertain_below_trades': 10,
     },
 }
-PAUSE_REASON = 'paper-roster-v2 pause: current period closed net is negative'
-RETEST_REASON = 'paper-roster-v2 retest'
-PROMOTE_REASON = 'paper-roster-v2 paper_test'
+# 0.70 remains a concentration note. It is not an entry or promotion gate.
+RULES = {
+    'spec': SPEC,
+    'observed_to_paper_test': {
+        'min_our_trades': 20,
+        'min_windows': 5,
+        'min_days': 0,
+        'min_copy_sim_net_usd': 0.01,
+    },
+    'paper_test_to_paper_active': {
+        'min_copy_trades': 30,
+        'min_days': 0,
+        'min_net_usd': 0.01,
+    },
+    'paper_active_to_paused': {
+        'period_net_negative_blocks_buys': True,
+    },
+    'paused_to_paper_test': {
+        'min_pause_days': 0,
+        'uncertain_below_trades': 10,
+    },
+    'concentration_uncertain_above': 0.70,
+}
+_RULES_FOR = {PREVIOUS_SPEC: RULES_V1, SPEC_V2: RULES_V2}
+PAUSE_REASON = 'paper-roster-v3 pause: current period closed net is negative'
+RETEST_REASON = 'paper-roster-v3 retest'
+PROMOTE_REASON = 'paper-roster-v3 paper_test'
 
 SEED_STATE = {
     '0x16217458b59b3458149918058754cd234096b159': 'paper_active',
@@ -166,11 +194,20 @@ def audit(store, now, wallet, action, reason, evidence=None):
 def bootstrap(store, now=None):
     now = now if now is not None else time.time()
     current = store.get(KEY, {})
-    if current.get('wallets') and current.get('spec') in (SPEC, PREVIOUS_SPEC):
+    if current.get('wallets') and current.get('spec') in ACCEPTED_SPECS:
         if current.get('spec') != SPEC:
             current = dict(current)
-            current['previous_spec'] = current.get('spec')
-            current['previous_rules'] = current.get('rules') or RULES_V1
+            history = list(current.get('rule_history') or [])
+            if current.get('previous_spec'):
+                history.append({
+                    'spec': current.get('previous_spec'),
+                    'rules': current.get('previous_rules') or _RULES_FOR.get(current.get('previous_spec')),
+                })
+            old_spec = current.get('spec')
+            history.append({'spec': old_spec, 'rules': current.get('rules') or _RULES_FOR.get(old_spec)})
+            current['rule_history'] = history
+            current['previous_spec'] = old_spec
+            current['previous_rules'] = current.get('rules') or _RULES_FOR.get(old_spec)
             current['spec'] = SPEC
             current['rules'] = RULES
             current['updated_at'] = now
@@ -258,6 +295,8 @@ def evaluate_copy_book(closed, now, first_open, opened_after=None):
     age_days = (now - first_open) / 86400 if first_open else 0
     share = concentration(settled) if net is not None else None
     small = rules['paused_to_paper_test']['uncertain_below_trades']
+    note = rules['concentration_uncertain_above']
+    concentrated = share is not None and share > note
     return {
         'net_usd': net,
         'trades': len(settled),
@@ -267,12 +306,12 @@ def evaluate_copy_book(closed, now, first_open, opened_after=None):
         'loss_streak': loss_streak(settled),
         'net_7d': rolling_net(settled, now, 7) if net is not None else None,
         'uncertain': len(settled) < small,
+        'concentration_uncertain': concentrated,
         'can_activate': (
             net is not None
             and len(settled) >= rules['paper_test_to_paper_active']['min_copy_trades']
             and age_days >= rules['paper_test_to_paper_active']['min_days']
             and net >= rules['paper_test_to_paper_active']['min_net_usd']
-            and (share is None or share <= rules['paper_test_to_paper_active']['max_best_day_share'])
         ),
         'should_pause': net is not None and net < 0,
         'can_retest': net is not None and net > 0,
@@ -291,13 +330,11 @@ def period_closes(closed, since):
 
 def can_observe_to_test(stats):
     r = RULES['observed_to_paper_test']
-    share = stats.get('best_day_share')
     return (
         (stats.get('our_trades') or 0) >= r['min_our_trades']
         and (stats.get('windows') or 0) >= r['min_windows']
         and (stats.get('age_days') or 0) >= r['min_days']
         and (stats.get('copy_sim_net_usd') or 0) >= r['min_copy_sim_net_usd']
-        and (share is None or share <= r['max_best_day_share'])
     )
 
 
@@ -342,7 +379,10 @@ def observation_settled(store):
             return found
         for wallet, body in db.execute('SELECT wallet, body FROM wallet_observation_positions'):
             trade = json.loads(body)
-            if trade.get('policy') != version or (trade.get('opened') or 0) < started:
+            accepted = {version, 'copy-observe-v1', 'copy-observe-v2'}
+            if meta.get('previous_version'):
+                accepted.add(meta.get('previous_version'))
+            if trade.get('policy') not in accepted or (trade.get('opened') or 0) < started:
                 continue
             if trade.get('status') not in ('CLOSED', 'SETTLED') or trade.get('pnl_micro') is None:
                 continue
@@ -441,6 +481,10 @@ def _promote_paper_test(store, state, wallet, stats, now, closed_by):
     row['since'] = now
     row['confidence'] = 'low' if (stats.get('age_days') or 0) < 30 else 'medium'
     row['reason'] = PROMOTE_REASON
+    share = stats.get('best_day_share')
+    if share is not None and share > RULES['concentration_uncertain_above']:
+        row['confidence'] = 'low'
+        row['concentration'] = 'uncertain'
     row['stats'] = stats
     audit(store, now, wallet, 'promoted', row['reason'], stats)
     return True
@@ -479,7 +523,10 @@ def tick(store, now=None, candidate_stats=None):
         elif row['state'] == 'paper_test' and book and book['can_activate']:
             row['state'] = 'paper_active'
             row['since'] = now
-            row['reason'] = 'paper-roster-v2 activate'
+            row['reason'] = 'paper-roster-v3 activate'
+            if book.get('concentration_uncertain'):
+                row['confidence'] = 'low'
+                row['concentration'] = 'uncertain'
             changed.append(w)
             audit(store, now, w, 'promoted', row['reason'], {
                 'net_usd': book['net_usd'], 'trades': book['trades'], 'best_day_share': book['best_day_share'],

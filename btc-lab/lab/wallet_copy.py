@@ -25,7 +25,12 @@ class CopyLedgerError(ValueError):pass
 KEY='wallet_copy_execution'
 INITIAL=500_000_000
 BUDGET=5_000_000  # hard cap; the ticket itself is one market minimum
-EXECUTION='copy-exec-v3'
+# The whole open position, including later buys and fees, stays inside that budget.
+POSITION_LIMIT=BUDGET
+MAX_OPEN_POSITIONS=5
+# Existing count cap times the existing position budget. Not a higher risk limit.
+WALLET_LIMIT=MAX_OPEN_POSITIONS*POSITION_LIMIT
+EXECUTION='copy-exec-v4'
 
 
 def _event_size(event):
@@ -41,24 +46,157 @@ def _event_size(event):
     return size
 
 
-def planned_sell_shares(position, event):
-    """Share count to sell. A missing source size does not close the whole lot."""
-    sold=_event_size(event)
-    tracked=(position or {}).get('source_shares')
-    if sold is None or tracked in (None,''):
-        return None,'SOURCE_SIZE_MISSING'
+def ensure_source_schema(db):
+    db.executescript('''
+      CREATE TABLE IF NOT EXISTS wallet_source_positions(
+        wallet TEXT, token TEXT, shares TEXT, known INTEGER NOT NULL,
+        PRIMARY KEY(wallet, token));
+      CREATE TABLE IF NOT EXISTS wallet_source_events(
+        wallet TEXT, event_key TEXT, token TEXT, side TEXT, size TEXT,
+        proportion TEXT, known INTEGER NOT NULL,
+        PRIMARY KEY(wallet, event_key));
+    ''')
+
+
+def _source_result(proportion, known, shares_before, shares_after, duplicate=False):
+    return {
+        'proportion': proportion,
+        'known': bool(known),
+        'shares_before': shares_before,
+        'shares_after': shares_after,
+        'duplicate': duplicate,
+    }
+
+
+def _stored_source(row):
+    raw=row['proportion']
+    proportion=Decimal(raw) if raw else None
+    return _source_result(proportion, row['known'], None, None, duplicate=True)
+
+
+def mark_source_unknown(db, wallet, token, event_key, side, size):
+    """A gap or an unknown opening inventory. Later sells are not a faithful copy."""
+    ensure_source_schema(db)
+    prior=db.execute(
+        'SELECT proportion, known FROM wallet_source_events WHERE wallet=? AND event_key=?',
+        (wallet, event_key)).fetchone()
+    if prior:
+        return _stored_source(prior)
+    db.execute(
+        'INSERT INTO wallet_source_events VALUES (?,?,?,?,?,?,?)',
+        (wallet, event_key, token or '', side or '', '' if size is None else format(size, 'f'), '', 0))
+    db.execute(
+        '''INSERT INTO wallet_source_positions(wallet,token,shares,known) VALUES (?,?,?,0)
+           ON CONFLICT(wallet,token) DO UPDATE SET shares='', known=0''',
+        (wallet, token or '', ''))
+    return _source_result(None, False, None, None)
+
+
+def apply_source_trade(db, wallet, token, event_key, side, size):
+    """Apply one detected source trade once.
+
+    The tracked size starts at zero only for a first sized BUY. A first SELL,
+    a missing size, or a sell larger than the tracked size marks the token
+    unknown. An unknown book stays unknown. The proportion is the sell size
+    divided by the source position immediately before that sell.
+    """
+    ensure_source_schema(db)
+    prior=db.execute(
+        'SELECT proportion, known FROM wallet_source_events WHERE wallet=? AND event_key=?',
+        (wallet, event_key)).fetchone()
+    if prior:
+        return _stored_source(prior)
+    if size is None or side not in ('BUY', 'SELL') or not token:
+        return mark_source_unknown(db, wallet, token, event_key, side, size)
+    row=db.execute(
+        'SELECT shares, known FROM wallet_source_positions WHERE wallet=? AND token=?',
+        (wallet, token)).fetchone()
+    if row is None:
+        if side!='BUY':
+            return mark_source_unknown(db, wallet, token, event_key, side, size)
+        shares_before=Decimal(0)
+        shares_after=size
+        proportion=None
+    elif not row['known'] or not row['shares']:
+        return mark_source_unknown(db, wallet, token, event_key, side, size)
+    else:
+        shares_before=Decimal(row['shares'])
+        if side=='BUY':
+            shares_after=shares_before+size
+            proportion=None
+        elif size>shares_before:
+            return mark_source_unknown(db, wallet, token, event_key, side, size)
+        else:
+            proportion=size/shares_before
+            shares_after=shares_before-size
+    db.execute(
+        'INSERT INTO wallet_source_events VALUES (?,?,?,?,?,?,?)',
+        (wallet, event_key, token, side, format(size, 'f'),
+         '' if proportion is None else format(proportion, 'f'), 1))
+    db.execute(
+        '''INSERT INTO wallet_source_positions(wallet,token,shares,known) VALUES (?,?,?,1)
+           ON CONFLICT(wallet,token) DO UPDATE SET shares=excluded.shares, known=1''',
+        (wallet, token, format(shares_after, 'f')))
+    return _source_result(proportion, True, shares_before, shares_after)
+
+
+def note_source_event(db, wallet, event_key, event, started, source_ts, first_seen):
+    """Record a detected trade even when our copy does not run.
+
+    A trade from before this process started does not invent an opening size.
+    """
+    if not isinstance(event, dict) or event.get('type')!='TRADE' or event.get('side') not in ('BUY', 'SELL'):
+        return None
+    side=event.get('side')
+    token=str(event.get('asset') or '')
+    size=_event_size(event)
+    if source_ts<started or first_seen<started or not token or size is None:
+        return mark_source_unknown(db, wallet, token, event_key, side, size)
+    return apply_source_trade(db, wallet, token, event_key, side, size)
+
+
+def source_position(db, wallet, token):
+    ensure_source_schema(db)
+    row=db.execute(
+        'SELECT shares, known FROM wallet_source_positions WHERE wallet=? AND token=?',
+        (wallet, token)).fetchone()
+    if not row:
+        return {'shares': None, 'known': False}
+    return {'shares': Decimal(row['shares']) if row['known'] and row['shares'] else None, 'known': bool(row['known'])}
+
+
+def sell_cut(our_shares, proportion):
+    """Our share count for a known source fraction. Unknown is not a full close."""
+    if proportion is None:
+        return None, 'SOURCE_PROPORTION_UNKNOWN'
     try:
-        tracked=Decimal(str(tracked))
+        proportion=Decimal(str(proportion))
     except Exception:
-        return None,'SOURCE_SIZE_MISSING'
-    if tracked<=0:
-        return None,'SOURCE_SIZE_MISSING'
-    fraction=min(Decimal(1), sold/tracked)
-    whole=int(position['shares'])
-    cut=int((Decimal(whole)*fraction).to_integral_value(rounding=ROUND_FLOOR))
+        return None, 'SOURCE_PROPORTION_UNKNOWN'
+    if not proportion.is_finite() or proportion<=0 or proportion>1:
+        return None, 'SOURCE_PROPORTION_UNKNOWN'
+    whole=int(our_shares)
+    cut=int((Decimal(whole)*proportion).to_integral_value(rounding=ROUND_FLOOR))
     if cut<=0:
-        return None,'SELL_BELOW_MINIMUM'
+        return None, 'SELL_BELOW_MINIMUM'
     return min(cut, whole), None
+
+
+def exposure_block(open_rows, market, debit, opening_new, cash):
+    """Position and wallet caps, including add-ons, fees and capital already reserved."""
+    debit=int(debit)
+    rows=[t for t in open_rows if t.get('status') in ('OPEN', 'RESOLVED')]
+    if opening_new and len(rows)>=MAX_OPEN_POSITIONS:
+        return 'COPY_POSITION_ALREADY_OPEN'
+    market_tied=sum(int(t['cost'])+int(t['fee']) for t in rows if t.get('market')==market and t.get('status')=='OPEN')
+    if market_tied+debit>POSITION_LIMIT:
+        return 'COPY_EXPOSURE_LIMIT'
+    wallet_tied=sum(int(t['cost'])+int(t['fee']) for t in rows)
+    if wallet_tied+debit>WALLET_LIMIT:
+        return 'COPY_EXPOSURE_LIMIT'
+    if int(cash)<debit:
+        return 'COPY_CASH_LIMIT'
+    return None
 MIN_SOURCE_PRICE=Decimal('0.20')
 MAX_SOURCE_PRICE=Decimal('0.70')
 # Ended hypothetical fills first. This does not create a buy and does not
@@ -219,8 +357,8 @@ class WalletCopy:
             clock_skew={'book':round(self.book_clock.skew(),3),'samples':len(self.book_clock.offsets)},
             watch_updated_at=getattr(self,'watch_at',None),
             execution=EXECUTION,
-            scope='BTC/ETH 5m and 15m only; one market minimum per buy (not the source size), source price band 20-70c is a limit of this PAPER version; 500USD separate virtual scenarios; an added buy increases the open lot; a source SELL closes the same fraction of our shares',
-            limitation='The 20-70c band is our version limit, not a claim that a price outside it is automatically a losing trade. Changing it belongs in a separate PAPER. Source size is public activity size, not the source wallet balance. A sell without a source size leaves the position open. FOK at fresh delayed books with 50% depth. A slice below the market minimum is not filled. SELL is allowed while new buys are paused. Signal age 90s. No profitability guarantee.'))
+            scope='BTC/ETH 5m and 15m only; one market minimum per buy (not the source size), source price band 20-70c is a limit of this PAPER version; 500USD separate virtual scenarios; an added buy increases the open lot only inside the 5USD position cap; a source SELL closes the fraction of the source position immediately before that sell',
+            limitation='The 20-70c band is our version limit, not a claim that a price outside it is automatically a losing trade. Changing it belongs in a separate PAPER. The sell fraction uses detected source buys and sells, including ones we did not copy. An unknown opening position or a gap is not a faithful copy and does not invent a fraction. Settlement still runs. FOK at fresh delayed books with 50% depth. A slice below the market minimum is not filled. SELL is allowed while new buys are paused. Signal age 90s. One position including add-ons and fees stays within 5USD. Five positions cap the wallet at 25USD. No profitability guarantee.'))
 
     def skip_summary(self):
         with self.store.connect() as db:
@@ -278,7 +416,7 @@ class WalletCopy:
 
     def risk_reason(self,db,wallet,now,extra_position=True):
         rows=[t for t in self.positions(db) if t['wallet']==wallet]
-        if extra_position and sum(1 for t in rows if t['status'] in ('OPEN','RESOLVED'))>=5:return 'COPY_POSITION_ALREADY_OPEN'
+        if extra_position and sum(1 for t in rows if t['status'] in ('OPEN','RESOLVED'))>=MAX_OPEN_POSITIONS:return 'COPY_POSITION_ALREADY_OPEN'
         if db.execute('SELECT cash FROM wallet_copy_accounts WHERE wallet=?',(wallet,)).fetchone()[0]<BUDGET:return 'COPY_CASH_LIMIT'
         return None
 
@@ -383,9 +521,15 @@ class WalletCopy:
             inserted=db.execute('INSERT OR IGNORE INTO wallet_copy_events VALUES (?,?,?,?,?)',(wallet,key,now,'PROCESSING','{}')).rowcount
         if not inserted:return
         try:
+            identity_ok=str(event.get('proxyWallet','')).lower()==wallet and float(event.get('timestamp',0))==row['source_ts']
+            source_note=None
+            if identity_ok and event.get('type')=='TRADE' and event.get('side') in ('BUY','SELL'):
+                with self.store.connect() as db:
+                    db.execute('BEGIN IMMEDIATE')
+                    source_note=note_source_event(db,wallet,key,event,self.started,row['source_ts'],row['first_seen'])
             if row['first_seen']<self.started or row['source_ts']<self.started:self.reason(row,'PRE_ACTIVATION');return
             if not 0<=now-row['source_ts']<=90 or not 0<=now-row['first_seen']<=90:self.reason(row,'SOURCE_TOO_OLD');return
-            if str(event.get('proxyWallet','')).lower()!=wallet or float(event.get('timestamp',0))!=row['source_ts']:
+            if not identity_ok:
                 self.reason(row,'SOURCE_IDENTITY_MISMATCH');return
             if event.get('type')!='TRADE' or event.get('side') not in ('BUY','SELL'):self.reason(row,'NOT_BUY_OR_SELL');return
             kind=event['side']
@@ -407,9 +551,14 @@ class WalletCopy:
                 if kind=='BUY' and not adding and same_market:self.reason(row,'COPY_POSITION_ALREADY_OPEN');return
                 if kind=='SELL' and not open_trade:self.reason(row,'NO_COPIED_POSITION');return
             sell_shares=None
+            proportion=None if not source_note else source_note.get('proportion')
             if kind=='SELL':
-                sell_shares,why=planned_sell_shares(open_trade,event)
-                if why:self.reason(row,why);return
+                if _event_size(event) is None:
+                    self.reason(row,'SOURCE_SIZE_MISSING',{'source_copy':'unknown'});return
+                if proportion is None:
+                    self.reason(row,'SOURCE_PROPORTION_UNKNOWN',{'source_copy':'unknown'});return
+                sell_shares,why=sell_cut(open_trade['shares'],proportion)
+                if why:self.reason(row,why,{'source_copy':'unknown' if why=='SOURCE_PROPORTION_UNKNOWN' else 'matched'});return
             source_price=None
             if kind=='BUY':
                 source_price,why=confirmed_source_price(event)
@@ -444,27 +593,20 @@ class WalletCopy:
                 evidence['path_ms']['paper_ms']=round((self.clock()-now)*1000,1)
                 remember_fill(self._consumed,arrival,fill)
                 if adding:
-                    self._add_lot(open_trade,fill,event,evidence,wallet,key,now)
+                    if not self._add_lot(open_trade,fill,evidence,wallet,key,now):return
                 else:
-                    size=_event_size(event)
                     trade=dict(id=wallet+':'+key,wallet=wallet,strategy='copy-'+wallet,market=m['slug'],condition=m['condition'],asset=m['asset'],interval=m['interval'],
                         token=m['token'],side=m['side'],end=m['end'],status='OPEN',opened=now,shares=fill['shares'],cost=fill['cost'],fee=fill['fee'],exit_fee=0,
-                        source_shares=None if size is None else str(size),
                         entry_evidence=evidence,entry_fill=fill)
-                    with self.store.connect() as db:
-                        db.execute('BEGIN IMMEDIATE')
-                        if not self.risk(db,wallet,now):raise ValueError('RISK_CHANGED')
-                        db.execute('INSERT INTO wallet_copy_positions VALUES (?,?,?)',(trade['id'],wallet,json.dumps(trade)))
-                        debit=-(trade['cost']+trade['fee'])
-                        db.execute('UPDATE wallet_copy_accounts SET cash=cash+? WHERE wallet=?',(debit,wallet))
-                        db.execute('INSERT INTO wallet_copy_ledger VALUES (?,?,?)',('buy:'+trade['id'],wallet,debit))
-                        db.execute("UPDATE wallet_copy_events SET reason='COPIED_BUY',body=? WHERE wallet=? AND event_key=?",(json.dumps(evidence),wallet,key))
+                    if not self._open_lot(trade,evidence,wallet,key):return
                 if self.clob_client:
                     evidence['clob_order']=await self.place_clob_buy(wallet,m['token'],limit,fill)
                     with self.store.connect() as db:
                         db.execute("UPDATE wallet_copy_events SET body=? WHERE wallet=? AND event_key=?",
                             (json.dumps(evidence),wallet,key))
             else:
+                evidence['source_proportion']=format(Decimal(str(proportion)),'f')
+                evidence['source_copy']='matched'
                 remember_fill(self._consumed,arrival,fill)
                 if int(sell_shares)>=int(open_trade['shares']):
                     self.close(open_trade,fill['proceeds'],fill['fee'],now,'CLOSED',{'fill':fill,'evidence':evidence},row)
@@ -499,27 +641,53 @@ class WalletCopy:
             log.error('CLOB order error: %s',error)
             return {'ok':False,'error':str(error)[:400]}
 
-    def _add_lot(self,trade,fill,event,evidence,wallet,key,now):
-        size=_event_size(event)
+    def _set_copy_reason(self,db,wallet,key,reason,evidence):
+        db.execute('UPDATE wallet_copy_events SET reason=?,body=? WHERE wallet=? AND event_key=?',
+            (reason,json.dumps(evidence),wallet,key))
+
+    def _open_lot(self,trade,evidence,wallet,key):
+        debit=int(trade['cost'])+int(trade['fee'])
         with self.store.connect() as db:
             db.execute('BEGIN IMMEDIATE')
-            if not self.risk(db,wallet,now,extra_position=False):raise ValueError('RISK_CHANGED')
+            held=[t for t in self.positions(db) if t['wallet']==wallet]
+            cash=db.execute('SELECT cash FROM wallet_copy_accounts WHERE wallet=?',(wallet,)).fetchone()[0]
+            blocked=exposure_block(held,trade['market'],debit,True,cash)
+            if not blocked and any(t.get('market')==trade['market'] and t.get('status') in ('OPEN','RESOLVED') for t in held):
+                blocked='COPY_POSITION_ALREADY_OPEN'
+            if blocked:
+                self._set_copy_reason(db,wallet,key,blocked,evidence)
+                return False
+            db.execute('INSERT INTO wallet_copy_positions VALUES (?,?,?)',(trade['id'],wallet,json.dumps(trade)))
+            db.execute('UPDATE wallet_copy_accounts SET cash=cash+? WHERE wallet=?',(-debit,wallet))
+            db.execute('INSERT INTO wallet_copy_ledger VALUES (?,?,?)',('buy:'+trade['id'],wallet,-debit))
+            self._set_copy_reason(db,wallet,key,'COPIED_BUY',evidence)
+        return True
+
+    def _add_lot(self,trade,fill,evidence,wallet,key,now):
+        debit=int(fill['cost'])+int(fill['fee'])
+        with self.store.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
             current=json.loads(db.execute('SELECT body FROM wallet_copy_positions WHERE id=?',(trade['id'],)).fetchone()[0])
-            if current['status']!='OPEN':raise ValueError('POSITION_NOT_OPEN')
+            if current['status']!='OPEN':
+                self._set_copy_reason(db,wallet,key,'COPY_EXPOSURE_LIMIT',evidence)
+                return False
+            held=[t for t in self.positions(db) if t['wallet']==wallet and t['id']!=trade['id']]
+            held.append(current)
+            cash=db.execute('SELECT cash FROM wallet_copy_accounts WHERE wallet=?',(wallet,)).fetchone()[0]
+            blocked=exposure_block(held,current['market'],debit,False,cash)
+            if blocked:
+                self._set_copy_reason(db,wallet,key,blocked,evidence)
+                return False
             current['shares']=int(current['shares'])+int(fill['shares'])
             current['cost']=int(current['cost'])+int(fill['cost'])
             current['fee']=int(current['fee'])+int(fill['fee'])
-            if size is None or not current.get('source_shares'):
-                current['source_shares']=None
-            else:
-                current['source_shares']=str(Decimal(str(current['source_shares']))+size)
-            current.setdefault('lots',[]).append({'event_key':key,'shares':fill['shares'],'cost':fill['cost'],'fee':fill['fee'],'source_shares':None if size is None else str(size),'at':now})
+            current.setdefault('lots',[]).append({'event_key':key,'shares':fill['shares'],'cost':fill['cost'],'fee':fill['fee'],'at':now})
             evidence=dict(evidence,added_to=trade['id'])
             db.execute('UPDATE wallet_copy_positions SET body=? WHERE id=?',(json.dumps(current),trade['id']))
-            debit=-(int(fill['cost'])+int(fill['fee']))
-            db.execute('UPDATE wallet_copy_accounts SET cash=cash+? WHERE wallet=?',(debit,wallet))
-            db.execute('INSERT INTO wallet_copy_ledger VALUES (?,?,?)',('buy:'+trade['id']+':'+key,wallet,debit))
-            db.execute("UPDATE wallet_copy_events SET reason='COPIED_BUY',body=? WHERE wallet=? AND event_key=?",(json.dumps(evidence),wallet,key))
+            db.execute('UPDATE wallet_copy_accounts SET cash=cash+? WHERE wallet=?',(-debit,wallet))
+            db.execute('INSERT INTO wallet_copy_ledger VALUES (?,?,?)',('buy:'+trade['id']+':'+key,wallet,-debit))
+            self._set_copy_reason(db,wallet,key,'COPIED_BUY',evidence)
+        return True
 
     def _partial_close(self,trade,sold_shares,fill,now,evidence,row):
         with self.store.connect() as db:
@@ -539,14 +707,9 @@ class WalletCopy:
             closed.update(id=slice_id,status='CLOSED',shares=sold,cost=alloc_cost,fee=alloc_fee,payout=payout,exit_fee=exit_fee,
                 closed_at=now,resolved=now,pnl_micro=payout-exit_fee-alloc_cost-alloc_fee,
                 exit_evidence={'fill':fill,'evidence':evidence,'partial':True})
-            tracked=current.get('source_shares')
-            remain_source=None
-            if tracked not in (None,''):
-                remain_source=format((Decimal(str(tracked))*Decimal(whole-sold)/Decimal(whole)).quantize(Decimal('0.00000001'),rounding=ROUND_FLOOR),'f')
             current['shares']=whole-sold
             current['cost']=int(current['cost'])-alloc_cost
             current['fee']=int(current['fee'])-alloc_fee
-            current['source_shares']=remain_source
             db.execute('INSERT INTO wallet_copy_positions VALUES (?,?,?)',(slice_id,trade['wallet'],json.dumps(closed)))
             db.execute('UPDATE wallet_copy_positions SET body=? WHERE id=?',(json.dumps(current),trade['id']))
             credit=payout-exit_fee
