@@ -340,6 +340,8 @@ class WalletCopy:
         except Exception:
             pass
         self.last_publish=0
+        self._scan_at=0
+        self._scan={}
         self.watch={}
         self._consumed={}
         self._obs_consumed={}
@@ -373,11 +375,18 @@ class WalletCopy:
                     trades=len(rows),settled=len(closed),wins=sum(t['pnl_micro']>0 for t in closed),curve=curve[-300:],
                     max_drawdown_usd=dd/1e6,independent_windows=len({t['market'] for t in closed}),
                     current_block=self.risk_reason(db,wallet,now),last_reason=last['reason'] if last else 'NO_NEW_SOURCE_TRADE',last_decision_at=last['ts'] if last else None))
-            reasons=[dict(r) for r in db.execute('SELECT wallet,reason,COUNT(*) AS count FROM wallet_copy_events GROUP BY wallet,reason')]
-            recent=[]
-            for r in db.execute('SELECT wallet,event_key,ts,reason,body FROM wallet_copy_events ORDER BY ts DESC,rowid DESC LIMIT 30'):
-                e=json.loads(r['body']);recent.append({k:r[k] for k in ('wallet','event_key','ts','reason')}|{'error':e.get('error'),'copy_delay':e.get('copy_delay')})
-            errors=[dict(r)|{'detail':json.loads(r['body']).get('error')} for r in db.execute("SELECT wallet,event_key,ts,body FROM wallet_copy_events WHERE reason='ERROR' ORDER BY ts DESC LIMIT 30")]
+            if now-self._scan_at>=30 or not self._scan:
+                reasons=[dict(r) for r in db.execute('SELECT wallet,reason,COUNT(*) AS count FROM wallet_copy_events GROUP BY wallet,reason')]
+                recent=[]
+                for r in db.execute('SELECT wallet,event_key,ts,reason,body FROM wallet_copy_events ORDER BY ts DESC,rowid DESC LIMIT 30'):
+                    e=json.loads(r['body']);recent.append({k:r[k] for k in ('wallet','event_key','ts','reason')}|{'error':e.get('error'),'copy_delay':e.get('copy_delay')})
+                errors=[dict(r)|{'detail':json.loads(r['body']).get('error')} for r in db.execute("SELECT wallet,event_key,ts,body FROM wallet_copy_events WHERE reason='ERROR' ORDER BY ts DESC LIMIT 30")]
+                self._scan={'reasons':reasons,'recent':recent,'errors':errors}
+                self._scan_at=now
+        if 'skip' not in self._scan or now-self._scan.get('skip_at',0)>=30:
+            self._scan['skip']=self.skip_summary()
+            self._scan['skip_at']=now
+        reasons,recent,errors=self._scan['reasons'],self._scan['recent'],self._scan['errors']
         samples=[]
         for t in trades:
             path=(t.get('entry_evidence') or {}).get('path_ms')
@@ -388,7 +397,7 @@ class WalletCopy:
         self.store.set(KEY,dict(spec='wallet-signal-copy-v1',status=status,error=error,updated_at=now,started_at=self.started,board=board,
             mode='PAPER + CLOB' if self.clob_client else 'PAPER ONLY',accounts=accounts,recent_trades=[public_trade(t) for t in sorted(trades,key=lambda t:t['opened'],reverse=True)[:100]],
             trades_truncated=len(trades)>100,reasons=reasons,recent_decisions=recent,
-            skip_review=self.skip_summary(),recent_errors=errors,entry_policy='copy-immediate-v7',
+            skip_review=self._scan['skip'],recent_errors=errors,entry_policy='copy-immediate-v7',
             totals=totals,path_ms=path_stats(samples[-200:]),
             clock_skew={'book':round(self.book_clock.skew(),3),'samples':len(self.book_clock.offsets)},
             watch_updated_at=getattr(self,'watch_at',None),
@@ -839,7 +848,7 @@ class WalletCopy:
             for row in rows:
                 await self.process(row, shadow=False)
             # A hypothetical ticket stays on the direct process() path.
-            # Running it here made the next fresh buy wait out the 90 seconds.
+            # The full decision-table scan is cached inside publish.
             if rows or self.clock()-self.last_publish>=2:
                 self.publish('RUNNING');self.last_publish=self.clock()
             self.store.set('wallet_copy_error',{})
