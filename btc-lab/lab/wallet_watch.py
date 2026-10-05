@@ -1,0 +1,209 @@
+"""Per-wallet observation summary for the dashboard.
+
+Read-only. Called off the copier thread. It does not place buys, change
+roster rules, or replay old signals. A missing measurement stays None so
+the screen can say "brak danych" instead of a confirmed zero.
+"""
+import json
+
+from .wallet_observer import get_active_wallets
+from .wallet_roster import RULES, evaluate_copy_book
+
+FEED_OK = ('POLL_OK', 'INCOMPLETE_PAGE_LIMIT', 'SCAN_OK')
+FRESH_SOURCE_SECONDS = 120
+# A check older than this is a dead poll, not "no trades".
+FEED_STALE_SECONDS = 180
+
+
+def _table(db, name):
+    return db.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)
+    ).fetchone()
+
+
+def _feed(observer, now):
+    if not observer or observer.get('checked_at') is None:
+        return 'unknown'
+    status = observer.get('status') or ''
+    age = now - observer['checked_at']
+    if status == 'ERROR' or age > FEED_STALE_SECONDS:
+        return 'down'
+    if status in FEED_OK:
+        return 'ok'
+    return 'unknown'
+
+
+def _intake(feed, activity_count, last_source_at, last_reason, now):
+    if feed == 'down':
+        return 'feed_down'
+    if feed != 'ok':
+        return 'unknown'
+    fresh = last_source_at is not None and 0 <= now - last_source_at <= FRESH_SOURCE_SECONDS
+    if activity_count == 0:
+        return 'no_source_trades'
+    if not fresh:
+        return 'no_fresh_source_trades'
+    if last_reason is None:
+        return 'unprocessed'
+    return 'receiving'
+
+
+def summarize_wallet(db, wallet, roster_row, observer, now):
+    """One wallet. Counts are None until the matching table was read."""
+    roster_row = roster_row or {}
+    shadow_known = False
+    open_n = settled_n = other_n = None
+    settled_rows = []
+    if _table(db, 'wallet_copy_skip_reviews'):
+        shadow_known = True
+        counts = db.execute(
+            """SELECT
+                 SUM(json_extract(body,'$.shadow.status')='FILLED_PENDING_SETTLEMENT'
+                     AND json_extract(body,'$.reason') IN ('COPY_PAUSED','PAUSED')),
+                 SUM(json_extract(body,'$.shadow.status')='SETTLED'
+                     AND json_extract(body,'$.reason') IN ('COPY_PAUSED','PAUSED')
+                     AND json_extract(body,'$.shadow.pnl_micro') IS NOT NULL),
+                 SUM(json_extract(body,'$.shadow.status')='SETTLED'
+                     AND IFNULL(json_extract(body,'$.reason'),'') NOT IN ('COPY_PAUSED','PAUSED')
+                     AND json_extract(body,'$.shadow.pnl_micro') IS NOT NULL)
+               FROM wallet_copy_skip_reviews WHERE wallet=?""",
+            (wallet,),
+        ).fetchone()
+        open_n = int(counts[0] or 0)
+        settled_n = int(counts[1] or 0)
+        other_n = int(counts[2] or 0)
+        if settled_n:
+            settled_rows = [
+                {
+                    'status': 'SETTLED',
+                    'pnl_micro': row[0],
+                    'fee_micro': row[1],
+                    'closed_at': row[2] or 0,
+                    'market': row[3] or wallet,
+                }
+                for row in db.execute(
+                    """SELECT json_extract(body,'$.shadow.pnl_micro'),
+                              json_extract(body,'$.shadow.fill.fee'),
+                              COALESCE(json_extract(body,'$.official_seen_at'),
+                                       json_extract(body,'$.decision_at'), 0),
+                              COALESCE(json_extract(body,'$.source_event.slug'),
+                                       json_extract(body,'$.source_event.conditionId'))
+                       FROM wallet_copy_skip_reviews
+                       WHERE wallet=?
+                         AND json_extract(body,'$.shadow.status')='SETTLED'
+                         AND json_extract(body,'$.reason') IN ('COPY_PAUSED','PAUSED')
+                         AND json_extract(body,'$.shadow.pnl_micro') IS NOT NULL""",
+                    (wallet,),
+                )
+            ]
+    activity_count = last_source_at = last_buy_at = None
+    if _table(db, 'wallet_activity'):
+        activity = db.execute(
+            'SELECT COUNT(*), MAX(source_ts) FROM wallet_activity WHERE wallet=?',
+            (wallet,),
+        ).fetchone()
+        activity_count = int(activity[0] or 0)
+        last_source_at = activity[1]
+        last_buy_at = db.execute(
+            """SELECT MAX(source_ts) FROM wallet_activity
+               WHERE wallet=? AND json_extract(body,'$.side')='BUY'""",
+            (wallet,),
+        ).fetchone()[0]
+    last_reason = last_decision_at = None
+    if _table(db, 'wallet_copy_events'):
+        last = db.execute(
+            'SELECT ts, reason FROM wallet_copy_events WHERE wallet=? ORDER BY ts DESC, rowid DESC LIMIT 1',
+            (wallet,),
+        ).fetchone()
+        if last:
+            last_decision_at, last_reason = last['ts'], last['reason']
+    feed = _feed(observer, now)
+    since = roster_row.get('since')
+    observation_days = None if since is None else (now - since) / 86400
+    need = RULES['observed_to_paper_test']
+    evidence_days = net = share = None
+    windows = 0 if shadow_known else None
+    fees_known = False
+    other_net = None
+    if other_n:
+        other_rows = [
+            {'status': 'SETTLED', 'pnl_micro': row[0], 'fee_micro': row[1], 'closed_at': row[2] or 0, 'market': wallet}
+            for row in db.execute(
+                """SELECT json_extract(body,'$.shadow.pnl_micro'),
+                          json_extract(body,'$.shadow.fill.fee'),
+                          COALESCE(json_extract(body,'$.official_seen_at'), 0)
+                   FROM wallet_copy_skip_reviews
+                   WHERE wallet=?
+                     AND json_extract(body,'$.shadow.status')='SETTLED'
+                     AND IFNULL(json_extract(body,'$.reason'),'') NOT IN ('COPY_PAUSED','PAUSED')
+                     AND json_extract(body,'$.shadow.pnl_micro') IS NOT NULL""",
+                (wallet,),
+            )
+        ]
+        other_fees = [row['fee_micro'] for row in other_rows if isinstance(row['fee_micro'], (int, float))]
+        if other_rows and len(other_fees) == len(other_rows):
+            other_net = sum(row['pnl_micro'] for row in other_rows) / 1e6
+    if settled_rows:
+        fees = [row['fee_micro'] for row in settled_rows if isinstance(row['fee_micro'], (int, float))]
+        fees_known = len(fees) == len(settled_rows)
+        book = evaluate_copy_book(settled_rows, now, min(row['closed_at'] for row in settled_rows))
+        windows = book['windows']
+        evidence_days = book['age_days']
+        share = book['best_day_share']
+        if fees_known:
+            net = book['net_usd']
+    progress = {
+        'settled': settled_n,
+        'need_settled': need['min_our_trades'],
+        'windows': windows if shadow_known else None,
+        'need_windows': need['min_windows'],
+        'observation_days': observation_days,
+        'evidence_days': evidence_days,
+        'need_days': need['min_days'],
+        'net_usd': net,
+        'need_net_usd': need['min_copy_sim_net_usd'],
+        'best_day_share': share,
+        'max_best_day_share': need['max_best_day_share'],
+    }
+    return {
+        'wallet': wallet,
+        'state': roster_row.get('state'),
+        'feed': feed,
+        'intake': _intake(feed, activity_count, last_source_at, last_reason, now),
+        'observer_status': (observer or {}).get('status'),
+        'observer_error': (observer or {}).get('error'),
+        'history_page_capped': (observer or {}).get('status') == 'INCOMPLETE_PAGE_LIMIT',
+        'checked_at': (observer or {}).get('checked_at'),
+        'last_source_at': last_source_at,
+        'last_buy_at': last_buy_at,
+        'activity_count': activity_count,
+        'last_reason': last_reason,
+        'last_decision_at': last_decision_at,
+        'shadow_known': shadow_known,
+        'hypothetical_open': open_n,
+        'hypothetical_settled': settled_n,
+        'hypothetical_net_usd': net,
+        'hypothetical_fees_known': fees_known if settled_n else False,
+        'other_hypothetical_settled': other_n if shadow_known else None,
+        'other_net_usd': other_net,
+        'progress': progress,
+    }
+
+
+def build_watch(store, now):
+    """One connection. Does not call store.get while that connection is open."""
+    roster = (store.get('wallet_roster') or {}).get('wallets') or {}
+    names = list(dict.fromkeys([*roster.keys(), *get_active_wallets(store)]))
+    out = {}
+    with store.connect() as db:
+        observers = {}
+        if names:
+            keys = ['wallet_observer:' + wallet for wallet in names]
+            marks = ','.join('?' * len(keys))
+            for row in db.execute(f'SELECT key, body FROM state WHERE key IN ({marks})', keys):
+                observers[row['key']] = json.loads(row['body'])
+        for wallet in names:
+            out[wallet] = summarize_wallet(
+                db, wallet, roster.get(wallet), observers.get('wallet_observer:' + wallet), now
+            )
+    return out

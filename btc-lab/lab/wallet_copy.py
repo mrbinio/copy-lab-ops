@@ -15,6 +15,7 @@ from .reference import classify_rule
 from .wallet_observer import get_active_wallets, wallet_label
 from .strategy_control import is_paused as copy_paused, pauses as copy_pauses
 from .copy_totals import summarize as copy_summarize, path_stats, path_record
+from .wallet_watch import build_watch
 
 log = logging.getLogger(__name__)
 
@@ -25,6 +26,28 @@ INITIAL=500_000_000
 BUDGET=5_000_000  # hard cap; the ticket itself is one market minimum
 MIN_SOURCE_PRICE=Decimal('0.20')
 MAX_SOURCE_PRICE=Decimal('0.70')
+# Ended hypothetical fills first. This does not create a buy and does not
+# change the 90s or 20–70c gates. The rest of the queue stays at 5 rows.
+REVIEW_FILL_LIMIT=8
+REVIEW_OTHER_LIMIT=5
+
+def due_skip_reviews(db, now, fill_limit=REVIEW_FILL_LIMIT, other_limit=REVIEW_OTHER_LIMIT):
+    fills=[dict(r) for r in db.execute(
+        """SELECT * FROM wallet_copy_skip_reviews
+           WHERE end<=?
+             AND json_extract(body,'$.shadow.status')='FILLED_PENDING_SETTLEMENT'
+             AND IFNULL(json_extract(body,'$.status'),'')!='RESOLVED'
+           ORDER BY end LIMIT ?""", (now, fill_limit))]
+    seen={(r['wallet'], r['event_key']) for r in fills}
+    rest=[]
+    for r in db.execute(
+            'SELECT * FROM wallet_copy_skip_reviews WHERE end<=? AND checked<=? ORDER BY checked,end LIMIT ?',
+            (now, now-60, other_limit+len(fills))):
+        row=dict(r)
+        if (row['wallet'], row['event_key']) in seen:continue
+        rest.append(row)
+        if len(rest)>=other_limit:break
+    return fills+rest
 
 def market_spec(raw, event, now):
     slug=str(event.get('slug',''))
@@ -90,6 +113,7 @@ class WalletCopy:
         except Exception:
             pass
         self.last_publish=0
+        self.watch={}
         self.book_clock=VenueClock()
         if not hasattr(store,"wallet_activity_ready"):store.wallet_activity_ready=asyncio.Event()
         self.publish('STARTED')
@@ -98,6 +122,7 @@ class WalletCopy:
 
     def publish(self,status,error=None):
         now=self.clock()
+        roster=(self.store.get('wallet_roster') or {}).get('wallets') or {}
         with self.store.connect() as db:
             trades=self.positions(db);accounts=[]
             for wallet in get_active_wallets(self.store):
@@ -112,7 +137,9 @@ class WalletCopy:
                 for t in closed:
                     total+=t['pnl_micro'];peak=max(peak,total);dd=max(dd,peak-total);curve.append({'ts':t['closed_at'],'pnl':total/1e6})
                 last=db.execute('SELECT ts,reason FROM wallet_copy_events WHERE wallet=? ORDER BY ts DESC,rowid DESC LIMIT 1',(wallet,)).fetchone()
+                roster_row=roster.get(wallet) or {}
                 accounts.append(dict(id='copy-'+wallet,wallet=wallet,name='Copy '+wallet_label(wallet)+' · PAPER',initial=500,cash=cash/1e6,pnl=pnl/1e6,
+                    roster_state=roster_row.get('state'),watch=self.watch.get(wallet),
                     fees=sum(t['fee']+t.get('exit_fee',0) for t in rows)/1e6,open_cost=exposure/1e6,pending=0,
                     trades=len(rows),settled=len(closed),wins=sum(t['pnl_micro']>0 for t in closed),curve=curve[-300:],
                     max_drawdown_usd=dd/1e6,independent_windows=len({t['market'] for t in closed}),
@@ -133,6 +160,7 @@ class WalletCopy:
             skip_review=self.skip_summary(),recent_errors=errors,entry_policy='copy-immediate-v7',
             totals=totals,path_ms=path_stats(samples[-200:]),
             clock_skew={'book':round(self.book_clock.skew(),3),'samples':len(self.book_clock.offsets)},
+            watch_updated_at=getattr(self,'watch_at',None),
             scope='BTC/ETH 5m and 15m only; one market minimum (not $5 all-in), source price 20-70c; 500USD separate virtual scenarios; first SELL closes full copied lot',
             limitation='Not identical source sizing/partial exits. Public indexed activity,1s target polling,BUY<=30s age and +/-3c from source; SELL<=90s age; FOK at fresh delayed books with50% depth. No profitability guarantee.'))
 
@@ -163,8 +191,9 @@ class WalletCopy:
 
     async def review_skips(self):
         now=self.clock()
-        with self.store.connect() as db:
-            rows=[dict(r) for r in db.execute('SELECT * FROM wallet_copy_skip_reviews WHERE end<=? AND checked<=? ORDER BY checked,end LIMIT 5',(now,now-60))]
+        # The select is off the event loop. Prefer ended hypothetical fills so a
+        # backlog of unavailable skips cannot keep their result unknown.
+        rows=await asyncio.to_thread(self._due_reviews, now)
         for row in rows:
             review=json.loads(row['body'])
             if review['status']=='RESOLVED':continue
@@ -420,13 +449,27 @@ class WalletCopy:
                 official_payout=trade['shares'] if str(winners[0]['token_id'])==trade['token'] else 0)
             with self.store.connect() as db:db.execute('UPDATE wallet_copy_positions SET body=? WHERE id=?',(json.dumps(trade),trade['id']))
 
+    def _due_reviews(self, now):
+        with self.store.connect() as db:
+            return due_skip_reviews(db, now)
+
+    async def _refresh_watch(self):
+        try:
+            self.watch=await asyncio.to_thread(build_watch, self.store, self.clock())
+            self.watch_at=self.clock()
+            self.store.set('wallet_watch_error', {})
+        except Exception as error:
+            self.store.set('wallet_watch_error', {'at': self.clock(), 'error': str(error)[:200]})
+
     async def upkeep(self):
         """Settlement and skip review, beside the copy path instead of inside it.
 
         Settling an ended window costs one request per position. Running that
         before new activity delayed a fresh copy by up to three seconds.
+        The watch summary is a read on another thread. It does not scan from step().
         """
         while True:
+            await self._refresh_watch()
             for job, key, width in ((self.settle, 'wallet_copy_settlement_error', 400),
                                     (self.review_skips, 'wallet_skip_review_error', 200)):
                 try:
