@@ -13,8 +13,23 @@ SEED_WALLETS = (
  '0xeebde7a0e019a63e6b476eb425505b7b3e6eba30',
 )
 
+# Paper picks from the 30-day 5m/15m screen. Not live. Not auto-promoted.
+PAPER_EXTRA = (
+ '0x84389cfc4a652ea14d8d8be969769b1f69de3680',
+ '0xce50c96b976203b53342a0a801067d2cdcfcf46e',
+)
+
+WALLET_LABELS = {
+    '0x84389cfc4a652ea14d8d8be969769b1f69de3680': 'Atomforge',
+    '0xce50c96b976203b53342a0a801067d2cdcfcf46e': 'honey-spot',
+}
+
 # Backward compatibility — existing imports of WALLETS keep working.
 WALLETS = SEED_WALLETS
+
+
+def wallet_label(wallet):
+    return WALLET_LABELS.get(wallet) or wallet[-8:]
 
 
 def ensure_active_wallets_table(store):
@@ -30,14 +45,25 @@ def ensure_active_wallets_table(store):
         for w in SEED_WALLETS:
             db.execute('INSERT OR IGNORE INTO active_wallets VALUES (?,?,?,?,?)',
                        (w, 'seed', time.time(), 0, 0))
+            db.execute("UPDATE active_wallets SET source='seed' WHERE wallet=?", (w,))
 
 
 def get_active_wallets(store):
-    """Return SEED_WALLETS only. Discovery wallets are excluded to reduce
-    polling load (30 → 3 wallets). Discovery is already disabled in worker.py.
-    """
+    """Seeds plus explicit paper picks. Discovery leftovers stay off this list."""
     ensure_active_wallets_table(store)
-    return SEED_WALLETS
+    with store.connect() as db:
+        for w in PAPER_EXTRA:
+            db.execute('INSERT OR IGNORE INTO active_wallets VALUES (?,?,?,?,?)',
+                       (w, 'paper_pick', time.time(), 0, 1))
+            db.execute("UPDATE active_wallets SET source='paper_pick', copy_enabled=1 WHERE wallet=?", (w,))
+    seen=[]
+    for w in SEED_WALLETS + PAPER_EXTRA:
+        if w not in seen: seen.append(w)
+    roster = store.get('wallet_roster', {})
+    for w, row in (roster.get('wallets') or {}).items():
+        if row.get('state') in ('paper_test', 'paper_active', 'paused') and w not in seen:
+            seen.append(w)
+    return tuple(seen)
 
 
 class WalletObserver:
@@ -46,6 +72,7 @@ class WalletObserver:
         if not hasattr(store,"wallet_activity_ready"):store.wallet_activity_ready=asyncio.Event()
         with store.connect() as db:
             db.execute('CREATE TABLE IF NOT EXISTS wallet_activity (wallet TEXT, event_key TEXT, first_seen REAL, source_ts REAL, body TEXT, PRIMARY KEY(wallet,event_key))')
+            db.execute('CREATE INDEX IF NOT EXISTS wallet_activity_seen ON wallet_activity(first_seen)')
         ensure_active_wallets_table(store)
 
     def ingest(self, wallet, rows, now):
@@ -58,10 +85,10 @@ class WalletObserver:
                 ts = float(row['timestamp'])
                 if not math.isfinite(ts) or not 0 < ts <= now+5: raise ValueError('invalid source timestamp')
                 # API v1 has no log index. This fingerprint is NOT an execution ID.
-                fields = {k:row.get(k) for k in ('transactionHash','type','asset','side','size','usdcSize','price','timestamp','conditionId','outcomeIndex')}
+                fields = {k:row.get(k) for k in ('transactionHash','type','asset','side')}
                 if not fields['transactionHash']: raise ValueError('missing transaction hash')
-                body = json.dumps(fields,sort_keys=True,allow_nan=False)
-                key = hashlib.sha256(body.encode()).hexdigest()
+                from .wallet_chain_monitor import _row_key
+                key = _row_key(row)
                 cur = db.execute('INSERT OR IGNORE INTO wallet_activity VALUES (?,?,?,?,?)',
                                  (wallet,key,now,ts,json.dumps(row,allow_nan=False)))
                 inserted += cur.rowcount

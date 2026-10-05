@@ -1,6 +1,7 @@
 import importlib.util
 import json
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -36,6 +37,37 @@ class ReportingTests(unittest.TestCase):
         body=call.call_args.args[2]
         self.assertEqual(body['sha'],'old')
         self.assertNotIn(b'TOKEN_SECRET',r.base64.b64decode(body['content']))
+
+    def test_copy_history_trimmed_so_upload_stays_under_limit(self):
+        """Unbounded copy history pushed every hourly export over 700 kB."""
+        self.store.set('wallet_copy_execution',{
+            'status':'RUNNING',
+            'skip_review':{f'w{i}':'x'*2000 for i in range(5)},
+            'recent_trades':[{'id':i,'note':'y'*500} for i in range(80)],
+            'recent_errors':[{'error':'z'*500} for i in range(30)]})
+        report=r.snapshot(self.root)
+        copy=report['wallet_copy_execution']
+        self.assertEqual(copy['skip_review'],{'omitted_entries':5})
+        self.assertEqual(len(copy['recent_trades']),20)
+        self.assertEqual(copy['recent_trades_truncated'],80)
+        self.assertEqual(len(copy['recent_errors']),10)
+        self.assertEqual(copy['status'],'RUNNING')
+        self.assertLess(len(json.dumps(report).encode()),700000)
+
+    def test_clock_drift_is_raised_as_an_alert(self):
+        """A 2s skew blocked every copy for 50 minutes while the worker looked healthy."""
+        self.store.set('worker',{'status':'RECORDING','heartbeat':time.time(),
+            'clock_skew':{'book':2.04,'reference':1.9,'samples':{'book':15,'reference':15}}})
+        report=r.snapshot(self.root)
+        kinds=[(a['venue'],a['seconds']) for a in report['alerts']]
+        self.assertEqual(kinds,[('book',2.04),('reference',1.9)])
+        self.assertIn('2.04s behind',report['alerts'][0]['detail'])
+        self.assertEqual(report['worker']['clock_skew']['book'],2.04)
+
+    def test_healthy_clock_raises_no_alert(self):
+        self.store.set('worker',{'status':'RECORDING','heartbeat':time.time(),
+            'clock_skew':{'book':0.001,'reference':-0.02,'samples':{'book':15,'reference':15}}})
+        self.assertEqual(r.snapshot(self.root)['alerts'],[])
 
     def test_auth_error_does_not_attempt_put(self):
         error=r.urllib.error.HTTPError('https://api.github.com',401,'Unauthorized',{},None)

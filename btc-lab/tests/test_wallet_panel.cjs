@@ -15,7 +15,9 @@ s=render({wallet_observer:[{wallet:'0xabc',status:'POLL_OK',checked_at:now-120}]
 s=render({wallet_observer:[{wallet:'0xabc',status:'ERROR',checked_at:now,error:'HTTP 403'}]});assert.match(s,/HTTP 403/);assert.match(s,/Recorded events: unknown/);
 assert.match(render({}, {preview:true}),/synthetic preview/);
 assert.match(render({}, {isEth:()=>true}),/Select BTC/);
-s=render({wallet_discovery:{status:'SCAN_OK',last_success_at:now,candidates:[{wallet:'candidate',week_reported_pnl:12,month_reported_pnl:15}]}});assert.match(s,/candidate/);assert.match(s,/UNVERIFIED/);
+s=render({wallet_discovery:{status:'SCAN_OK',last_success_at:now,candidates:[{wallet:'candidate',week_reported_pnl:12,month_reported_pnl:15}]}});assert.match(s,/candidate/);assert.match(s,/SHORTLIST_30D/);
 s=render({wallet_discovery:{status:'ERROR',last_success_at:now-5000,error:'failed',candidates:[]}});assert.match(s,/no fresh successful scan/);assert.match(s,/failed/);
 s=render({wallet_copy_execution:{status:'RUNNING',updated_at:now,accounts:[{wallet:'sourcewallet',settled:1,pnl:-4.7,trades:1,fees:.1,max_drawdown_usd:4.7,last_reason:'COPIED_BUY'}]}});assert.match(s,/sourcewallet/);assert.match(s,/-4.7/);assert.match(s,/COPIED_BUY/);
-console.log('8 wallet panel scenarios passed');
+s=render({wallet_copy_execution:{status:'RUNNING',updated_at:now,accounts:[{wallet:'0xabc',name:'Copy Atomforge · PAPER',settled:0,pnl:0,trades:0,fees:0,max_drawdown_usd:0,last_reason:'NO_NEW_SOURCE_TRADE'}]}});assert.match(s,/Atomforge/);
+s=render({wallet_observer:[{wallet:'0xce50',label:'honey-spot',status:'POLL_OK',checked_at:now,unique_fingerprints:0}]});assert.match(s,/honey-spot · 0xce50/);
+console.log('10 wallet panel scenarios passed');

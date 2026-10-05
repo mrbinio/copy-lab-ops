@@ -11,25 +11,29 @@ import urllib.request
 from collections import deque
 from datetime import datetime
 from pathlib import Path
-from .core import Store, STRATEGIES, simulate_fill, LedgerError
+from .core import Store, STRATEGIES, VenueClock, simulate_fill, LedgerError
 from .strategy import choose, features, MODEL_HORIZON
 from .research import train, report
 from .mid_window import exit_intent, simulate_sale
 from .mid_window_v2 import exit_intent_v2
 from .exit_comparison import ExitComparison
 from .complete_set import CompleteSetObserver
-from .feed_watchdog import fresh_messages
+from .feed_watchdog import fresh_messages, next_backoff
 from .wallet_observer import WalletObserver, get_active_wallets
 from .wallet_discovery import WalletDiscovery
 from .wallet_copy import WalletCopy
 from .opportunity_research import OpportunityResearch
 from .value_execution import ValueExecution
+from .strategy_control import is_paused as strategy_paused
 from .reference import classify_rule, observation, SPOT, TWAP60, TWAP30
 
 LOG=logging.getLogger('btc-lab')
 GAMMA='https://gamma-api.polymarket.com'
 CLOB='https://clob.polymarket.com'
 RTDS='wss://ws-live-data.polymarket.com'
+# Free public Polygon log stream. Replaces paid Alchemy when no URL is set.
+# blockmachine held 90s with live TransferSingle logs; drpc drops ~30s; llamarpc fails DNS here.
+DEFAULT_CHAIN_WSS=('wss://rpc-polygon.blockmachine.io','wss://polygon.drpc.org')
 
 def reference_subscription(asset="BTC"):
     if asset not in ("BTC", "ETH"): raise ValueError("unsupported asset")
@@ -83,10 +87,14 @@ def normalize_market(raw, start, asset="BTC"):
             'fee_rate':rate,'fee_verified':verified,'opening':None,'books':{},'title':raw.get('question',raw['slug']),
             'accepting':raw.get('active') is True and raw.get('closed') is False and raw.get('acceptingOrders') is True}
 
-def normalize_book(raw, token, now):
+def normalize_book(raw, token, now, max_age=8, venue_clock=None):
     if str(raw.get('asset_id'))!=str(token): raise ValueError('book token mismatch')
     source=float(raw['timestamp'])/1000
-    if not -.25 <= now-source <= 3: raise ValueError('stale/future book')
+    age=now-source
+    if venue_clock is not None:
+        venue_clock.observe(source,now)
+        age=venue_clock.age(source,now)
+    if not -.25 <= age <= max_age: raise ValueError('stale/future book')
     return {'asks':[[x['price'],x['size']] for x in raw['asks']],
             'bids':[[x['price'],x['size']] for x in raw['bids']],
             'source_ts':source,'received_at':now,'min_shares':raw['min_order_size'],'tick':raw['tick_size']}
@@ -100,14 +108,20 @@ class Worker:
         self.history=deque(maxlen=3600)
         self.market=None
         self.last_research=0
+        self.last_prune=0
         self.last_registry=0
         self.feed_error=None
         self.last_decisions={}
         self.last_reconcile=0
         self.reconciliation_ok=False
         self.ledger_ok=True  # False only on LedgerError; blocks ALL operations including exits
+        self._feed_backoff=2
         self.reference_topics={}
         self.references={}
+        # The order books and the price feed are separate venues with separate
+        # clocks; one shared offset would hide a drift in either of them.
+        self.book_clock=VenueClock()
+        self.reference_clock=VenueClock()
         self.twap_history=deque(maxlen=3600)
         self.exit_comparison=ExitComparison(store)
         self.complete_set=CompleteSetObserver(store)
@@ -119,6 +133,8 @@ class Worker:
         # run independently and historical positions are never rewritten.
         if self.asset == "BTC" and strategy == "late-v1":
             return None, "STRATEGY_RETIRED"
+        if strategy_paused(self.store, strategy):
+            return None, "STRATEGY_PAUSED"
         if paused:
             return None, "MANUAL_PAUSE"
         return choose("mid-window-v1" if self.asset == "ETH" else strategy,
@@ -146,6 +162,7 @@ class Worker:
         value=observation(event,now,self.asset)
         if value is None:return
         topic=value['topic']
+        self.reference_clock.observe(value['source_ts'],now)
         previous=self.references.get(topic)
         if previous and value['source_ts']<=previous['source_ts']:return
         if previous and value['source_ts']-previous['source_ts']>10:
@@ -174,7 +191,13 @@ class Worker:
         import websockets
         while True:
             try:
-                async with websockets.connect(RTDS,open_timeout=10,max_size=1_000_000) as ws:
+                async with websockets.connect(RTDS,open_timeout=10,max_size=1_000_000,
+                                               ping_interval=20,ping_timeout=10) as ws:
+                    self._feed_backoff=2
+                    drop=self.data/'DROP_REFERENCE'
+                    if drop.exists():
+                        drop.unlink()
+                        raise TimeoutError('controlled reference drop')
                     await ws.send(json.dumps(reference_subscription(self.asset)))
                     async def ping():
                         while True:
@@ -183,6 +206,10 @@ class Worker:
                     task=asyncio.create_task(ping())
                     try:
                         async for message in fresh_messages(ws, lambda: self.references.get(TWAP60,{}).get('source_ts')):
+                            drop=self.data/'DROP_REFERENCE'
+                            if drop.exists():
+                                drop.unlink()
+                                raise TimeoutError('controlled reference drop')
                             if message in ('PONG','PING',''): continue
                             e=json.loads(message)
                             try:self.accept_reference(e,time.time())
@@ -201,7 +228,8 @@ class Worker:
                 self.references.clear()
                 self.twap_history.clear()
                 self.reference_topics.clear()
-                await asyncio.sleep(5)
+                await asyncio.sleep(self._feed_backoff)
+                self._feed_backoff=next_backoff(self._feed_backoff)
 
     async def discover(self, start):
         asset=self.asset
@@ -218,12 +246,17 @@ class Worker:
         self.store.record('market_metadata',raw)
         return m
 
+    def clock_skew(self):
+        """Published so a drifting local clock is visible before it costs a trade."""
+        return {'book':round(self.book_clock.skew(),3),'reference':round(self.reference_clock.skew(),3),
+                'samples':{'book':len(self.book_clock.offsets),'reference':len(self.reference_clock.offsets)}}
+
     async def books(self, m):
         async def one(side,token):
             raw=await asyncio.to_thread(get_json,f'{CLOB}/book?token_id={urllib.parse.quote(str(token),safe="")}')
             now=time.time()
             self.store.record('book',{'market':m['slug'],'side':side,'raw':raw},now)
-            return side,normalize_book(raw,token,now)
+            return side,normalize_book(raw,token,now,venue_clock=self.book_clock)
         results=await asyncio.gather(*(one(s,t) for s,t in m['tokens'].items()))
         return dict(results)
 
@@ -274,7 +307,7 @@ class Worker:
                     # P0-2 FIX: Require arrival book strictly newer than decision snapshot.
                     # Filling on the same book violates independent-arrival principle.
                     reason='EXIT_ARRIVAL_NOT_NEWER'
-                    if book['source_ts']>decision_book_ts and -.25<=at-book['source_ts']<=3:
+                    if book['source_ts']>decision_book_ts and -.25<=self.book_clock.age(book['source_ts'],at)<=3:
                         fill=simulate_sale(book,p['shares'],market['fee_rate'],intent['floor'])
                         reason='EXIT_NO_FULL_FILL'
                         if fill:
@@ -291,7 +324,17 @@ class Worker:
         m=self.market
         self.capture_opening(m)
         self.store.set('market',m)
-        m['books']=await self.books(m)
+        try:
+            m['books']=await self.books(m)
+        except ValueError as error:
+            if 'stale/future book' not in str(error):
+                raise
+            now=time.time()
+            self.store.set('worker',{'status':'DEGRADED','heartbeat':now,
+                'reference_status':'FRESH' if self.selected_reference(m) else 'MISSING_OR_STALE',
+                'book_status':'STALE','reference_error':self.feed_error,'version':'0.6.7','asset':self.asset,
+                'execution':'PAPER ONLY','clock_skew':self.clock_skew()})
+            return
         now=time.time()
         try:
             self.complete_set.step(m,now)
@@ -312,7 +355,7 @@ class Worker:
         probability=um/(um+dm) if um is not None and dm is not None and um+dm>0 else None
         m['causal_history']=[x for x in history if now-35<=x[0]<=now]
         m['features']=None
-        if reference and m['opening'] and probability and -.25<=now-reference['source_ts']<=5:
+        if reference and m['opening'] and probability and -.25<=self.reference_clock.age(reference['source_ts'],now)<=5:
             past=[x for x in history if now-600<=x[0]<=now]
             m['features']=features(reference['price'],m['opening'],past,probability,m['end']-now)
         try:
@@ -321,13 +364,13 @@ class Worker:
         except Exception as error:
             self.store.set('opportunity_research_error',{'at':now,'error':error_detail(error)})
         try:
-            self.value_execution.step(m,reference,time.time(),entries_allowed and not self.is_paused())
+            self.value_execution.step(m,reference,time.time(),entries_allowed and not self.is_paused() and not strategy_paused(self.store,'value-surface-paper-v1'))
             self.store.set('value_surface_execution_error',{})
         except Exception as error:
             self.store.set('value_surface_execution_error',{'at':time.time(),'error':error_detail(error)})
         # Match the model's existing decision horizon. One causal sample per
         # market; never backdate or fill a missed window with later data.
-        books_fresh=all(-.25 <= now-b['source_ts'] <= 3 for b in (up,down))
+        books_fresh=all(-.25 <= self.book_clock.age(b['source_ts'],now) <= 3 for b in (up,down))
         if (self.asset=='BTC' and m['features'] and m['rule_supported'] and books_fresh
                 and MODEL_HORIZON[0] <= m['end']-now <= MODEL_HORIZON[1]):
             with self.store.connect() as db:
@@ -384,8 +427,8 @@ class Worker:
                 else:
                     time_valid=True  # other strategies have their own window checks in choose()
                 # P0-2 FIX: Arrival book must have a strictly newer source_ts than decision.
-                book_valid=all(-.25<=at-b['source_ts']<=3 and b['source_ts']>decision_book_ts.get(side,0) for side,b in arrival.items())
-                if time_valid and book_valid and not self.is_paused() and at < m['end']-30 and reference and -.25 <= at-reference['source_ts']<=5 and m.get('fee_verified'):
+                book_valid=all(-.25<=self.book_clock.age(b['source_ts'],at)<=3 and b['source_ts']>decision_book_ts.get(side,0) for side,b in arrival.items())
+                if time_valid and book_valid and not self.is_paused() and at < m['end']-30 and reference and -.25 <= self.reference_clock.age(reference['source_ts'],at)<=5 and m.get('fee_verified'):
                     capacity=self.store.entry_capacity(intent['strategy'],at)
                     intent.update(sizing_policy='remaining-risk-v1',entry_capacity_micro=capacity)
                     if capacity<=0:
@@ -411,10 +454,13 @@ class Worker:
                 self.decision(intent['strategy'],m['slug'],reason,intent,at)
         reference=self.selected_reference(m)
         self.store.set('reference',reference or {})
-        reference_fresh=reference and -.25<=time.time()-reference['source_ts']<=5
-        self.store.set('worker',{'status':('PAUSED' if paused else 'RECORDING') if reference_fresh else 'DEGRADED','heartbeat':time.time(),
+        now=time.time()
+        reference_fresh=reference and -.25<=self.reference_clock.age(reference['source_ts'],now)<=5
+        self.store.set('worker',{'status':('PAUSED' if paused else 'RECORDING') if reference_fresh else 'DEGRADED','heartbeat':now,
             'reference_status':'FRESH' if reference_fresh else 'MISSING_OR_STALE',
-            'reference_error':self.feed_error,'version':'0.6.4','asset':self.asset,'execution':'PAPER ONLY'})
+            'book_status':'FRESH' if books_fresh else 'STALE',
+            'reference_error':self.feed_error,'version':'0.6.7','asset':self.asset,'execution':'PAPER ONLY',
+            'clock_skew':self.clock_skew()})
 
     async def iteration(self):
         errors=[]
@@ -452,16 +498,25 @@ class Worker:
                 self.last_research=time.time()
             except Exception as e:
                 failure('research',e)
+        if time.time()-self.last_prune>=600:
+            try:
+                dropped=self.store.prune_ephemeral()
+                self.last_prune=time.time()
+                if dropped:
+                    LOG.info('pruned %d old book/price notes',dropped)
+            except Exception as e:
+                failure('prune',e)
         if errors:
             self.store.set('worker',{'status':'DEGRADED','heartbeat':time.time(),
-                'errors':errors,'version':'0.6.4','asset':self.asset})
+                'errors':errors,'version':'0.6.7','asset':self.asset,'clock_skew':self.clock_skew()})
 
     async def run(self):
         self.store.audit()
         reference=asyncio.create_task(self.reference_stream())
         observer=WalletObserver(self.store,get_json) if self.asset=="BTC" else None
         wallets=asyncio.create_task(observer.run()) if observer else None
-        discovery=None  # Disabled: too many unverified wallets. Seed wallets only.
+        # Hourly shortlist only. Candidates are never auto-copied.
+        discovery=asyncio.create_task(WalletDiscovery(self.store,get_json).run()) if self.asset=='BTC' else None
         # --- CLOB live order support (optional, off by default) ---
         clob_client = None
         if self.asset == "BTC":
@@ -487,19 +542,20 @@ class Worker:
                     LOG.warning('Failed to initialize CLOB client: %s', e)
                     clob_client = None
         copier=asyncio.create_task(WalletCopy(self.store,get_json,self.is_paused,clob_client=clob_client).run()) if self.asset=="BTC" else None
-        # Chain monitor: detects trades on-chain (~2s), then aggressively polls
-        # Data API until source trade with confirmed price appears (~5-10s total).
-        # Uses same key format as REST observer — true dedup, no duplicates.
+        # Chain monitor: insert the seed trade as soon as it hits Polygon.
+        # Same activity key as REST, so the public list cannot double-copy.
         chain_task=None
         monitor=None
         if self.asset=="BTC":
-            chain_wss=os.environ.get('ALCHEMY_WSS','')
-            if chain_wss:
+            chain_wss=os.environ.get('ALCHEMY_WSS')
+            chain_urls=[u for u in ((chain_wss,) if chain_wss else DEFAULT_CHAIN_WSS) + DEFAULT_CHAIN_WSS if u]
+            chain_urls=list(dict.fromkeys(chain_urls))
+            if chain_urls:
                 from .wallet_chain_monitor import ChainMonitor, ChainBridge
                 bridge=ChainBridge(self.store,get_json)
-                monitor=ChainMonitor(chain_wss,get_active_wallets(self.store),bridge.on_event)
+                monitor=ChainMonitor(chain_urls,get_active_wallets(self.store),bridge.on_event)
                 chain_task=asyncio.create_task(monitor.run())
-                LOG.info('chain monitor: detect on-chain → poll Data API for price')
+                LOG.info('chain monitor: detect on-chain → copy without waiting for the public list')
             else:
                 LOG.info('ALCHEMY_WSS not set; REST-only polling')
         last_wallet_refresh=time.time()

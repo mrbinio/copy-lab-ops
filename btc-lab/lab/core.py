@@ -14,6 +14,50 @@ STRATEGIES = {"value-v1": "Reference-aware value", "late-v1": "Late direction ·
 
 ETH_STRATEGIES = {"eth-mid-window-v1": "ETH 3–7 · PAPER · stop 10%"}
 
+class VenueClock:
+    """How far the local clock trails the venue's own timestamps.
+
+    Freshness has to be judged in venue time. A Mac two seconds behind NTP
+    made every fresh order book look like it came from the future, which
+    rejected the paper books outright and held a copy back until the local
+    clock caught up with the trade.
+
+    Each sample of `source - received` is the clock offset minus the transport
+    delay, and the delay is never negative. So the least delayed sample is the
+    honest estimate and an average is biased low; the price feed runs ~1.7s
+    behind its own stamps and an averaged offset would have quietly stretched
+    its 5s staleness ceiling to 6.7s. We take a high sample instead of the
+    outright maximum so one bogus future stamp cannot move the estimate.
+    """
+    LIMIT = 30.0
+
+    def __init__(self, samples=15):
+        self.offsets = []
+        self.samples = samples
+
+    def observe(self, source, received):
+        self.offsets.append(source - received)
+        del self.offsets[:-self.samples]
+
+    def skew(self):
+        """Estimated seconds the local clock is behind the venue, never below zero.
+
+        Correcting only in the 'local clock is late' direction keeps the unsafe
+        case impossible: we can never make a genuinely stale snapshot look fresh.
+        A local clock running ahead just makes data look older and holds trading
+        back, which is the direction we want to fail in.
+        """
+        if not self.offsets: return 0.0
+        ordered = sorted(self.offsets)
+        high = ordered[int(len(ordered) * 0.9)] if len(ordered) >= 10 else ordered[-1]
+        return max(0.0, min(self.LIMIT, high))
+
+    def age(self, source, received):
+        """Age of a venue timestamp in venue time, so a late local clock
+        does not make a fresh snapshot look like it arrived from the future."""
+        return received + self.skew() - source
+
+
 class LedgerError(ValueError):
     """Requires explicit operator review before entries resume."""
 
@@ -118,9 +162,23 @@ class Store:
             row = db.execute("SELECT body FROM state WHERE key=?", (key,)).fetchone()
         return json.loads(row[0]) if row else default
 
+    EPHEMERAL_KINDS = ('book', 'rtds', 'market_metadata', 'reference_gap',
+                       'reference_rejected', 'reference_disconnect', 'chain_timeout')
+
     def record(self, kind, body, ts=None):
         with self.connect() as db:
             db.execute("INSERT INTO observations(ts,kind,body) VALUES (?,?,?)", (ts or time.time(), kind, json.dumps(body, allow_nan=False)))
+
+    def prune_ephemeral(self, now=None, keep_seconds=48*3600, limit=4000):
+        """Drop old book/price notes so the file stops growing. Does not shrink it."""
+        now = now or time.time()
+        cutoff = now - keep_seconds
+        marks = ','.join('?' * len(self.EPHEMERAL_KINDS))
+        with self.connect() as db:
+            cur = db.execute(
+                f"DELETE FROM observations WHERE id IN (SELECT id FROM observations WHERE ts<? AND kind IN ({marks}) LIMIT ?)",
+                (cutoff, *self.EPHEMERAL_KINDS, limit))
+            return cur.rowcount
 
     def decide(self, strategy, market, reason, body, ts):
         with self.connect() as db:
@@ -249,10 +307,10 @@ class Store:
                 a['today_pnl']=sum((r['payout']-r['cost']-r['fee']-r['exit_fee']) for r in rows if datetime.fromtimestamp(r['resolved'],ZoneInfo('Europe/Stockholm')).date()==datetime.fromtimestamp(now,ZoneInfo('Europe/Stockholm')).date())/1e6
             trades = [dict(p) for p in db.execute("SELECT id,strategy,market,side,shares,cost,fee,exit_fee,opened,status,payout,resolved FROM positions ORDER BY id DESC LIMIT 100")]
             decisions = [dict(d) for d in db.execute("SELECT ts,strategy,market,reason FROM decisions ORDER BY id DESC LIMIT 25")]
-            count = db.execute("SELECT COUNT(*) FROM observations").fetchone()[0]
+            count = db.execute("SELECT COALESCE(MAX(id),0) FROM observations").fetchone()[0]
             labels = db.execute("SELECT COUNT(*) FROM labels").fetchone()[0]
-        from .wallet_observer import get_active_wallets
-        wallets=[self.get('wallet_observer:'+w,{'wallet':w,'status':'NOT_STARTED','checked_at':None}) for w in get_active_wallets(self)] if self.asset=='BTC' else []
+        from .wallet_observer import get_active_wallets, wallet_label
+        wallets=[{**self.get('wallet_observer:'+w,{'wallet':w,'status':'NOT_STARTED','checked_at':None}),'label':wallet_label(w)} for w in get_active_wallets(self)] if self.asset=='BTC' else []
         wallet_events=[]
         with self.connect() as db:
             if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='wallet_activity'").fetchone():
@@ -280,10 +338,11 @@ class Store:
         for t in copies.get('recent_trades',[]):
             trades.append({**{k:t.get(k) for k in ('strategy','market','side','shares','cost','fee','exit_fee','opened','status','payout')},'id':'copy:'+t['id'],'resolved':t.get('closed_at')})
         trades=sorted(trades,key=lambda t:t['opened'],reverse=True)[:300]
-        return {"wallet_copy_execution":copies,"wallet_copy_error":self.get("wallet_copy_error",{}),"wallet_observer":wallets,"wallet_activity_recent":wallet_events,"wallet_discovery":self.get("wallet_discovery",{}),"opportunity_research":self.get("opportunity_research",{}),"value_surface_execution":experiment,"asset":self.asset,"mode":"PAPER","live_enabled":False,"accounts":accounts,"trades":trades,"decisions":decisions,
+        from .strategy_control import pauses as strategy_pauses
+        return {"wallet_copy_execution":copies,"wallet_copy_error":self.get("wallet_copy_error",{}),"wallet_observer":wallets,"wallet_activity_recent":wallet_events,"wallet_discovery":self.get("wallet_discovery",{}),"wallet_roster":self.get("wallet_roster",{}),"opportunity_research":self.get("opportunity_research",{}),"value_surface_execution":experiment,"asset":self.asset,"mode":"PAPER","live_enabled":False,"accounts":accounts,"trades":trades,"decisions":decisions,
                 "observations":count,"labels":labels,"worker":self.get("worker",{}),"market":self.get("market",{}),
                 "reference":self.get("reference",{}),"model":self.get("model",{"status":"COLLECTING","samples":0}),
-                "price_history":self.get("price_history",[]),"generated_at":time.time()}
+                "price_history":self.get("price_history",[]),"strategy_pauses":strategy_pauses(self),"generated_at":time.time()}
 
 
 

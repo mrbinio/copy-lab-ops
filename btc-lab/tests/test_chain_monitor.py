@@ -30,7 +30,11 @@ class ClassifyTests(unittest.TestCase):
     def _e(self,op,f,t):return parse_transfer_single(make_log(op,f,t))
     def test_buy(self):self.assertEqual(classify_transfer(self._e(CTF_EXCHANGE,'0xs',WALLET_A),{WALLET_A}),(WALLET_A,'BUY'))
     def test_sell(self):self.assertEqual(classify_transfer(self._e(CTF_EXCHANGE,WALLET_A,'0xb'),{WALLET_A}),(WALLET_A,'SELL'))
-    def test_non_exchange(self):self.assertIsNone(classify_transfer(self._e('0xr',WALLET_A,'0xb'),{WALLET_A})[0])
+    def test_rotating_operator_still_matches(self):
+        """Relayer addresses rotate; gating on them dropped every seed fill."""
+        unlisted='0xe111180000d2663c0091e4f400237545b87b996b'
+        self.assertNotIn(unlisted.lower(),{o.lower() for o in EXCHANGE_OPERATORS}-{unlisted})
+        self.assertEqual(classify_transfer(self._e('0xdeadbeef','0xs',WALLET_A),{WALLET_A}),(WALLET_A,'BUY'))
     def test_no_match(self):self.assertIsNone(classify_transfer(self._e(CTF_EXCHANGE,'0xa','0xb'),{WALLET_A})[0])
 
 class BridgeTests(unittest.TestCase):
@@ -49,9 +53,21 @@ class BridgeTests(unittest.TestCase):
                 'timestamp':self.now-1,'slug':'btc-updown-15m-4000','conditionId':'c',
                 'asset':asset,'price':price,'size':5.0,'usdcSize':2.95,'outcomeIndex':idx}
 
+    def _fetch(self,activity,book=None,seen=None):
+        """Gamma answers the open 15m window; an empty book forces the poll path."""
+        def fetch(url):
+            if 'gamma-api' in url:
+                if 'btc-updown-15m-4500' in url:
+                    return {'slug':'btc-updown-15m-4500','conditionId':'c','clobTokenIds':['111','222']}
+                return {'slug':'other','conditionId':'z','clobTokenIds':['999']}
+            if '/book?' in url:return book or {}
+            if seen is not None:seen.append(url)
+            return activity() if callable(activity) else activity
+        return fetch
+
     def test_inserts_with_confirmed_api_price(self):
         row=self._api_row(price=0.59)
-        bridge=ChainBridge(self.store,lambda u:[row],lambda:self.now,asyncio.sleep)
+        bridge=ChainBridge(self.store,self._fetch([row]),lambda:self.now,asyncio.sleep)
         asyncio.run(bridge.on_event(self._event()))
         with self.store.connect() as db:
             rows=db.execute('SELECT * FROM wallet_activity').fetchall()
@@ -63,7 +79,7 @@ class BridgeTests(unittest.TestCase):
 
     def test_same_key_as_rest(self):
         row=self._api_row()
-        bridge=ChainBridge(self.store,lambda u:[row],lambda:self.now,asyncio.sleep)
+        bridge=ChainBridge(self.store,self._fetch([row]),lambda:self.now,asyncio.sleep)
         asyncio.run(bridge.on_event(self._event()))
         with self.store.connect() as db:
             actual=db.execute('SELECT event_key FROM wallet_activity').fetchone()[0]
@@ -76,7 +92,7 @@ class BridgeTests(unittest.TestCase):
         with self.store.connect() as db:
             db.execute('INSERT INTO wallet_activity VALUES(?,?,?,?,?)',
                        (WALLET_A,key,self.now,self.now,json.dumps(row)))
-        bridge=ChainBridge(self.store,lambda u:[row],lambda:self.now,asyncio.sleep)
+        bridge=ChainBridge(self.store,self._fetch([row]),lambda:self.now,asyncio.sleep)
         asyncio.run(bridge.on_event(self._event(tx='0xsame')))
         with self.store.connect() as db:
             self.assertEqual(db.execute('SELECT COUNT(*) FROM wallet_activity').fetchone()[0],1)
@@ -84,7 +100,7 @@ class BridgeTests(unittest.TestCase):
     def test_chain_first_rest_deduped(self):
         """Chain inserts → REST tries same key → INSERT OR IGNORE."""
         row=self._api_row(tx='0xfirst')
-        bridge=ChainBridge(self.store,lambda u:[row],lambda:self.now,asyncio.sleep)
+        bridge=ChainBridge(self.store,self._fetch([row]),lambda:self.now,asyncio.sleep)
         asyncio.run(bridge.on_event(self._event(tx='0xfirst')))
         key=_row_key(row)
         with self.store.connect() as db:
@@ -97,7 +113,7 @@ class BridgeTests(unittest.TestCase):
         """Two fills in one tx → both inserted."""
         fill1=self._api_row(tx='0xm',price=0.55,asset='111',idx=0)
         fill2=self._api_row(tx='0xm',price=0.45,asset='222',side='SELL',idx=1)
-        bridge=ChainBridge(self.store,lambda u:[fill1,fill2],lambda:self.now,asyncio.sleep)
+        bridge=ChainBridge(self.store,self._fetch([fill1,fill2]),lambda:self.now,asyncio.sleep)
         asyncio.run(bridge.on_event(self._event(tx='0xm')))
         with self.store.connect() as db:
             self.assertEqual(db.execute('SELECT COUNT(*) FROM wallet_activity').fetchone()[0],2)
@@ -111,7 +127,7 @@ class BridgeTests(unittest.TestCase):
         with self.store.connect() as db:
             db.execute('INSERT INTO wallet_activity VALUES(?,?,?,?,?)',
                        (WALLET_A,_row_key(fill1),self.now,self.now,json.dumps(fill1)))
-        bridge=ChainBridge(self.store,lambda u:[fill1,fill2],lambda:self.now,asyncio.sleep)
+        bridge=ChainBridge(self.store,self._fetch([fill1,fill2]),lambda:self.now,asyncio.sleep)
         asyncio.run(bridge.on_event(self._event(tx='0xp')))
         with self.store.connect() as db:
             self.assertEqual(db.execute('SELECT COUNT(*) FROM wallet_activity').fetchone()[0],2)
@@ -120,7 +136,7 @@ class BridgeTests(unittest.TestCase):
     def test_timeout(self):
         times=[self.now]
         async def fast_sleep(s):times[0]+=s
-        bridge=ChainBridge(self.store,lambda u:[],lambda:times[0],fast_sleep)
+        bridge=ChainBridge(self.store,self._fetch([]),lambda:times[0],fast_sleep)
         asyncio.run(bridge.on_event(self._event()))
         self.assertEqual(bridge.timeouts,1)
         self.assertEqual(bridge.bridged,0)
@@ -129,18 +145,66 @@ class BridgeTests(unittest.TestCase):
         n=[0]
         row=self._api_row()
         times=[self.now]
-        def fetch(u):
+        def activity():
             n[0]+=1
             return [row] if n[0]>=3 else []
         async def fast_sleep(s):times[0]+=s
-        bridge=ChainBridge(self.store,fetch,lambda:times[0],fast_sleep)
+        bridge=ChainBridge(self.store,self._fetch(activity),lambda:times[0],fast_sleep)
         asyncio.run(bridge.on_event(self._event()))
         self.assertEqual(bridge.bridged,1)
         self.assertGreaterEqual(n[0],3)
 
+    def test_fast_insert_skips_public_list(self):
+        self.now=4500.5
+        def fetch(url):
+            if 'gamma-api' in url:
+                if 'btc-updown-15m-4500' in url:
+                    return {'slug':'btc-updown-15m-4500','conditionId':'c','clobTokenIds':['111','222']}
+                return {'slug':'other','conditionId':'z','clobTokenIds':['9']}
+            if '/book?' in url:
+                return {'asks':[{'price':'0.61','size':'20'}]}
+            raise AssertionError(url)
+        bridge=ChainBridge(self.store,fetch,lambda:self.now,asyncio.sleep)
+        asyncio.run(bridge.on_event(self._event()))
+        with self.store.connect() as db:
+            rows=db.execute('SELECT body FROM wallet_activity').fetchall()
+        self.assertEqual(len(rows),1)
+        body=json.loads(rows[0][0])
+        self.assertEqual(body['_source'],'chain_fast')
+        self.assertEqual(body['price'],0.61)
+        self.assertEqual(body['slug'],'btc-updown-15m-4500')
+        self.assertEqual(bridge.bridged,1)
+
+    def test_off_market_token_is_dropped_without_polling(self):
+        """Hourly markets cannot be copied; they must not occupy the poll queue."""
+        seen=[]
+        bridge=ChainBridge(self.store,self._fetch([self._api_row()],seen=seen),lambda:self.now,asyncio.sleep)
+        asyncio.run(bridge.on_event(dict(self._event(),token_id=777)))
+        with self.store.connect() as db:
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM wallet_activity').fetchone()[0],0)
+        self.assertEqual(bridge.off_market,1)
+        self.assertEqual(bridge.bridged,0)
+        self.assertEqual(seen,[])
+
+    def test_window_set_survives_gamma_failure(self):
+        calls=[0]
+        def fetch(url):
+            if 'gamma-api' in url:
+                calls[0]+=1
+                if calls[0]>4:raise RuntimeError('gamma down')
+                if 'btc-updown-15m-4500' in url:
+                    return {'slug':'btc-updown-15m-4500','conditionId':'c','clobTokenIds':['111','222']}
+                return {'slug':'other','conditionId':'z','clobTokenIds':['999']}
+            if '/book?' in url:return {'asks':[{'price':'0.61','size':'20'}]}
+            raise AssertionError(url)
+        bridge=ChainBridge(self.store,fetch,lambda:self.now,asyncio.sleep)
+        self.assertIsNotNone(bridge._window_for('111'))
+        bridge._windows_at=0  # force a refresh that now fails
+        self.assertIsNotNone(bridge._window_for('111'))
+
     def test_status(self):
         s=ChainBridge(self.store,lambda u:[],lambda:self.now).status()
-        self.assertIn('bridged',s);self.assertIn('timeouts',s)
+        self.assertIn('bridged',s);self.assertIn('timeouts',s);self.assertIn('off_market',s)
 
 class MonitorTests(unittest.IsolatedAsyncioTestCase):
     async def test_non_blocking_dispatch(self):
@@ -163,7 +227,7 @@ class MonitorTests(unittest.IsolatedAsyncioTestCase):
 
     def test_status_defaults(self):
         s=ChainMonitor('wss://fake',[WALLET_A],lambda e:None).status()
-        self.assertEqual(s['mode'],'CHAIN_DETECT_REST_PRICE')
+        self.assertEqual(s['mode'],'CHAIN_FAST')
         self.assertFalse(s['connected'])
 
 if __name__=='__main__':unittest.main()

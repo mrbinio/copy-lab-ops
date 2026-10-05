@@ -1,0 +1,118 @@
+import json
+import tempfile
+import unittest
+from pathlib import Path
+from lab.core import Store
+from lab.wallet_roster import (
+    RULES, can_observe_to_test, evaluate_copy_book, tick, bootstrap, SPEC,
+    hypothetical_settled,
+)
+
+class RosterTests(unittest.TestCase):
+    def test_rules_reenable_harder_than_pause(self):
+        self.assertLess(RULES['paper_active_to_paused']['rolling_7d_net_usd'], 0)
+        self.assertGreater(RULES['paused_to_paper_test']['hyp_7d_net_usd'], 0)
+        self.assertGreaterEqual(
+            RULES['paused_to_paper_test']['min_pause_days'], 14)
+
+    def test_leaderboard_alone_does_not_qualify(self):
+        self.assertFalse(can_observe_to_test({
+            'our_trades': 40, 'windows': 10, 'age_days': 30,
+            'copy_sim_net_usd': None, 'best_day_share': 0.2,
+        }))
+        self.assertTrue(can_observe_to_test({
+            'our_trades': 40, 'windows': 10, 'age_days': 30,
+            'copy_sim_net_usd': 12, 'best_day_share': 0.2,
+        }))
+
+    def test_one_lucky_day_blocks_activation(self):
+        now=1_000_000
+        closed=[{'status':'CLOSED','closed_at':now-86400,'pnl_micro':20_000_000,'market':'a'}]
+        closed+=[{'status':'CLOSED','closed_at':now-2*86400,'pnl_micro':100_000,'market':f'm{i}'} for i in range(29)]
+        book=evaluate_copy_book(closed,now,now-20*86400)
+        self.assertFalse(book['can_activate'])
+
+    def test_pause_and_retest_are_not_the_same_threshold(self):
+        now=2_000_000
+        losses=[{'status':'CLOSED','closed_at':now-i,'pnl_micro':-2_000_000,'market':str(i)} for i in range(8)]
+        book=evaluate_copy_book(losses,now,now-20*86400)
+        self.assertTrue(book['should_pause'])
+        self.assertFalse(book['can_retest'])
+
+    def test_bootstrap_keeps_seed_states_and_is_versioned(self):
+        with tempfile.TemporaryDirectory() as d:
+            store=Store(Path(d)/'lab.db')
+            state=bootstrap(store, now=10)
+            self.assertEqual(state['spec'], SPEC)
+            self.assertEqual(state['wallets']['0x16217458b59b3458149918058754cd234096b159']['state'],'paper_active')
+            self.assertEqual(state['wallets']['0xeebde7a0e019a63e6b476eb425505b7b3e6eba30']['state'],'paused')
+            again=bootstrap(store, now=20)
+            self.assertEqual(again['wallets']['0x16217458b59b3458149918058754cd234096b159']['since'],10)
+
+    def test_new_candidate_needs_copy_sim_not_public_month(self):
+        with tempfile.TemporaryDirectory() as d:
+            store=Store(Path(d)/'lab.db')
+            bootstrap(store, now=10)
+            state,changed=tick(store, now=11, candidate_stats={
+                '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa': {
+                    'our_trades':50,'windows':20,'age_days':30,
+                    'copy_sim_net_usd':None,'best_day_share':0.1,
+                }})
+            self.assertEqual(changed,[])
+            self.assertNotIn('0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', state['wallets'])
+
+    def test_losing_paper_test_is_paused(self):
+        with tempfile.TemporaryDirectory() as d:
+            store = Store(Path(d) / 'lab.db')
+            now = 3_000_000
+            bootstrap(store, now=now)
+            w = '0x84389cfc4a652ea14d8d8be969769b1f69de3680'
+            with store.connect() as db:
+                db.execute(
+                    'CREATE TABLE IF NOT EXISTS wallet_copy_positions '
+                    '(id INTEGER PRIMARY KEY, body TEXT)'
+                )
+                for i in range(8):
+                    db.execute(
+                        'INSERT INTO wallet_copy_positions(body) VALUES (?)',
+                        (json.dumps({
+                            'wallet': w,
+                            'status': 'CLOSED',
+                            'closed_at': now - i,
+                            'opened': now - 86400,
+                            'pnl_micro': -2_000_000,
+                            'market': str(i),
+                        }),),
+                    )
+            state, changed = tick(store, now=now)
+            self.assertIn(w, changed)
+            self.assertEqual(state['wallets'][w]['state'], 'paused')
+
+    def test_retest_uses_hypotheticals_not_old_losses(self):
+        with tempfile.TemporaryDirectory() as d:
+            store = Store(Path(d) / 'lab.db')
+            now = 5_000_000
+            state = bootstrap(store, now=now - 20 * 86400)
+            w = '0xeebde7a0e019a63e6b476eb425505b7b3e6eba30'
+            state['wallets'][w]['since'] = now - 20 * 86400
+            store.set('wallet_roster', state)
+            with store.connect() as db:
+                db.execute(
+                    'CREATE TABLE wallet_copy_skip_reviews '
+                    '(wallet TEXT, event_key TEXT, end REAL, checked REAL, body TEXT, '
+                    'PRIMARY KEY(wallet, event_key))'
+                )
+                for i in range(10):
+                    db.execute(
+                        'INSERT INTO wallet_copy_skip_reviews VALUES (?,?,?,?,?)',
+                        (w, str(i), now, now, json.dumps({
+                            'reason': 'COPY_PAUSED',
+                            'official_seen_at': now - 86400,
+                            'source_event': {'slug': f'm{i}'},
+                            'shadow': {'status': 'SETTLED', 'pnl_micro': 1_000_000},
+                        })),
+                    )
+            self.assertEqual(len(hypothetical_settled(store)[w]), 10)
+            updated, changed = tick(store, now=now)
+            self.assertIn(w, changed)
+            self.assertEqual(updated['wallets'][w]['state'], 'paper_test')

@@ -88,6 +88,8 @@ class EthCycleTests(unittest.IsolatedAsyncioTestCase):
     async def test_real_signal_delayed_entry_sale_and_no_btc_model_training(self):
         with tempfile.TemporaryDirectory() as tmp:
             store=Store(Path(tmp)/'eth/lab.sqlite',asset='ETH');w=Worker(store,Path(tmp)/'eth')
+            from lab.strategy_control import set_paused
+            set_paused(store,'eth-mid-window-v1',False)
             start=9000;now=[start+200];raw=raw_market(start)
             w.accept_reference(event(start,price=2700),start)
             w.market=normalize_market(raw,start,'ETH');w.capture_opening(w.market)

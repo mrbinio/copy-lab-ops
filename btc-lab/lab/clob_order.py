@@ -1,13 +1,12 @@
-"""CLOB order module — places real limit orders on Polymarket via py-clob-client.
+"""CLOB order module — places real limit orders on Polymarket via py-clob-client-v2.
 
 Requires:
-  - pip install py-clob-client
+  - pip install py-clob-client-v2
   - Polygon wallet private key
-  - Polymarket API credentials (key, secret, passphrase)
   - USDC balance on Polygon
 
 This module is DISABLED by default. Set CLOB_LIVE=true in config to enable.
-All orders are GTC limit orders on the BUY side only.
+Live buys are FOK market orders with a price cap so they fill now or cancel.
 
 Safety:
   - Max order size capped at MAX_ORDER_USD
@@ -41,13 +40,15 @@ class CLOBClient:
             funder: Optional funder address (for proxy wallets)
             max_order_usd: Max USD per order (capped at MAX_ORDER_USD)
         """
-        # Lazy import — don't crash if py-clob-client not installed
-        from py_clob_client.client import ClobClient
-        from py_clob_client.clob_types import OrderArgs, OrderType
+        from py_clob_client_v2.client import ClobClient
+        from py_clob_client_v2.clob_types import (
+            MarketOrderArgs, OrderArgs, OrderType,
+        )
 
         self._BUY = "BUY"
         self._SELL = "SELL"
         self._OrderArgs = OrderArgs
+        self._MarketOrderArgs = MarketOrderArgs
         self._OrderType = OrderType
 
         self.max_order_usd = min(max_order_usd, MAX_ORDER_USD)
@@ -58,12 +59,12 @@ class CLOBClient:
             signature_type=0,
             funder=funder,
         )
-        self.client.set_api_creds(self.client.create_or_derive_api_creds())
-        log.info("CLOB client initialized, max_order=%.2f USD", self.max_order_usd)
+        self.client.set_api_creds(self.client.create_or_derive_api_key())
+        log.info("CLOB v2 client initialized, max_order=%.2f USD", self.max_order_usd)
 
     def buy(self, token_id: str, price: float, size: float,
             fee_rate: float = 0.07) -> dict:
-        """Place a GTC BUY limit order.
+        """Place a FOK BUY limit order.
 
         Args:
             token_id: Polymarket condition token ID for the side to buy
@@ -85,30 +86,34 @@ class CLOBClient:
         if size < 5:
             raise ValueError(f"Size {size} below Polymarket minimum of 5 shares")
 
-        order_args = self._OrderArgs(
-            price=price,
-            size=size,
-            side=self._BUY,
+        amount = round(cost_usd, 2)
+        order_args = self._MarketOrderArgs(
             token_id=token_id,
+            amount=amount,
+            side=self._BUY,
+            price=price,
+            order_type=self._OrderType.FOK,
         )
 
         log.info(
             "CLOB BUY: token=%s price=%.2f size=%.2f cost=~$%.2f",
-            token_id[:16] + "...", price, size, cost_usd,
+            token_id[:16] + "...", price, size, amount,
         )
 
         try:
-            signed = self.client.create_order(order_args)
-            resp = self.client.post_order(signed, self._OrderType.GTC)
+            resp = self.client.create_and_post_market_order(
+                order_args, order_type=self._OrderType.FOK,
+            )
             log.info("CLOB order response: %s", json.dumps(resp, default=str)[:500])
             return {
-                "ok": resp.get("success", False),
-                "order_id": resp.get("orderID"),
+                "ok": bool(resp.get("success", False) or resp.get("orderID") or resp.get("order_id")),
+                "order_id": resp.get("orderID") or resp.get("order_id"),
                 "status": resp.get("status", "UNKNOWN"),
                 "response": resp,
                 "placed_at": time.time(),
                 "price": price,
                 "size": size,
+                "amount_usd": amount,
                 "token_id": token_id,
             }
         except Exception as e:
@@ -130,9 +135,6 @@ class CLOBClient:
             price: Limit price
             size: Number of shares to sell
         """
-        from py_clob_client.clob_types import OrderArgs, OrderType
-        SELL_SIDE = "SELL"
-
         if not 0.01 <= price <= 0.99:
             raise ValueError(f"Price {price} outside valid range")
         if size < 5:
@@ -141,7 +143,7 @@ class CLOBClient:
         order_args = self._OrderArgs(
             price=price,
             size=size,
-            side=SELL_SIDE,
+            side=self._SELL,
             token_id=token_id,
         )
 
@@ -151,8 +153,7 @@ class CLOBClient:
         )
 
         try:
-            signed = self.client.create_order(order_args)
-            resp = self.client.post_order(signed, self._OrderType.GTC)
+            resp = self.client.create_and_post_order(order_args, order_type=self._OrderType.GTC)
             log.info("CLOB sell response: %s", json.dumps(resp, default=str)[:500])
             return {
                 "ok": resp.get("success", False),

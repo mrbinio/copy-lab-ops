@@ -14,14 +14,19 @@ class RetirementTests(unittest.TestCase):
 
     def test_eth_and_other_baselines_unchanged_and_pause_respected(self):
         with tempfile.TemporaryDirectory() as d:
-            for asset,strategy,expected in [('BTC','mid-window-v1','mid-window-v1'),('BTC','early-v1','early-v1'),('ETH','eth-mid-window-v1','mid-window-v1')]:
-                worker=Worker(Store(Path(d)/(asset+'.db'),asset=asset),d)
-                with patch('lab.worker.choose',return_value=(None,'TEST')) as choose:
-                    worker.choose_entry(strategy,{},None,{},200)
-                    self.assertEqual(choose.call_args.args[0],expected)
-                    choose.reset_mock()
-                    self.assertEqual(worker.choose_entry(strategy,{},None,{},200,True),(None,'MANUAL_PAUSE'))
-                    choose.assert_not_called()
+            worker=Worker(Store(Path(d)/'BTC.db'),d)
+            with patch('lab.worker.choose',return_value=(None,'TEST')) as choose:
+                self.assertEqual(worker.choose_entry('mid-window-v1',{},None,{},200),(None,'STRATEGY_PAUSED'))
+                choose.assert_not_called()
+                self.assertEqual(worker.choose_entry('early-v1',{},None,{},200)[1],'TEST')
+                self.assertEqual(choose.call_args.args[0],'early-v1')
+                choose.reset_mock()
+                self.assertEqual(worker.choose_entry('early-v1',{},None,{},200,True),(None,'MANUAL_PAUSE'))
+                choose.assert_not_called()
+            eth=Worker(Store(Path(d)/'ETH.db',asset='ETH'),d)
+            with patch('lab.worker.choose',return_value=(None,'TEST')) as choose:
+                self.assertEqual(eth.choose_entry('eth-mid-window-v1',{},None,{},200),(None,'STRATEGY_PAUSED'))
+                choose.assert_not_called()
 
     def test_retirement_preserves_open_position_and_official_loss(self):
         with tempfile.TemporaryDirectory() as d:

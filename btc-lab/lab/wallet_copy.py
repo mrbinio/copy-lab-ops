@@ -9,10 +9,12 @@ import time
 from datetime import datetime
 from decimal import Decimal, ROUND_FLOOR
 from urllib.parse import quote
-from .core import simulate_fill
+from .core import VenueClock, simulate_fill
 from .mid_window import simulate_sale
 from .reference import classify_rule
-from .wallet_observer import WALLETS, get_active_wallets, SEED_WALLETS
+from .wallet_observer import get_active_wallets, wallet_label
+from .strategy_control import is_paused as copy_paused, pauses as copy_pauses
+from .copy_totals import summarize as copy_summarize, path_stats, path_record
 
 log = logging.getLogger(__name__)
 
@@ -20,7 +22,9 @@ class CopyLedgerError(ValueError):pass
 
 KEY='wallet_copy_execution'
 INITIAL=500_000_000
-BUDGET=5_000_000  # all-in paper cap; not a live allocation
+BUDGET=5_000_000  # hard cap; the ticket itself is one market minimum
+MIN_SOURCE_PRICE=Decimal('0.20')
+MAX_SOURCE_PRICE=Decimal('0.70')
 
 def market_spec(raw, event, now):
     slug=str(event.get('slug',''))
@@ -80,9 +84,13 @@ class WalletCopy:
             db.execute("UPDATE wallet_copy_events SET reason='ABORTED_ON_RESTART' WHERE reason='PROCESSING'")
         if not store.get('wallet_copy_start',{}):store.set('wallet_copy_start',{'at':clock()})
         self.started=store.get('wallet_copy_start',{})['at']
-        self.last_settlement=0
-        self.review_task=None
+        try:
+            from .wallet_roster import tick as roster_tick
+            roster_tick(store, clock())
+        except Exception:
+            pass
         self.last_publish=0
+        self.book_clock=VenueClock()
         if not hasattr(store,"wallet_activity_ready"):store.wallet_activity_ready=asyncio.Event()
         self.publish('STARTED')
 
@@ -104,7 +112,7 @@ class WalletCopy:
                 for t in closed:
                     total+=t['pnl_micro'];peak=max(peak,total);dd=max(dd,peak-total);curve.append({'ts':t['closed_at'],'pnl':total/1e6})
                 last=db.execute('SELECT ts,reason FROM wallet_copy_events WHERE wallet=? ORDER BY ts DESC,rowid DESC LIMIT 1',(wallet,)).fetchone()
-                accounts.append(dict(id='copy-'+wallet,wallet=wallet,name='Copy '+wallet[-8:]+' · PAPER',initial=500,cash=cash/1e6,pnl=pnl/1e6,
+                accounts.append(dict(id='copy-'+wallet,wallet=wallet,name='Copy '+wallet_label(wallet)+' · PAPER',initial=500,cash=cash/1e6,pnl=pnl/1e6,
                     fees=sum(t['fee']+t.get('exit_fee',0) for t in rows)/1e6,open_cost=exposure/1e6,pending=0,
                     trades=len(rows),settled=len(closed),wins=sum(t['pnl_micro']>0 for t in closed),curve=curve[-300:],
                     max_drawdown_usd=dd/1e6,independent_windows=len({t['market'] for t in closed}),
@@ -114,11 +122,18 @@ class WalletCopy:
             for r in db.execute('SELECT wallet,event_key,ts,reason,body FROM wallet_copy_events ORDER BY ts DESC,rowid DESC LIMIT 30'):
                 e=json.loads(r['body']);recent.append({k:r[k] for k in ('wallet','event_key','ts','reason')}|{'error':e.get('error'),'copy_delay':e.get('copy_delay')})
             errors=[dict(r)|{'detail':json.loads(r['body']).get('error')} for r in db.execute("SELECT wallet,event_key,ts,body FROM wallet_copy_events WHERE reason='ERROR' ORDER BY ts DESC LIMIT 30")]
+        samples=[]
+        for t in trades:
+            path=(t.get('entry_evidence') or {}).get('path_ms')
+            if path:samples.append(path)
+        totals=copy_summarize(trades,copy_pauses(self.store),now,observed=len(get_active_wallets(self.store)),copy_wallets=list(get_active_wallets(self.store)),roster=self.store.get('wallet_roster',{}))
         self.store.set(KEY,dict(spec='wallet-signal-copy-v1',status=status,error=error,updated_at=now,started_at=self.started,
-            mode='PAPER + CLOB' if self.clob_client else 'PAPER ONLY',accounts=[a for a in accounts if a['trades']>0 or a['wallet'] in SEED_WALLETS],recent_trades=[public_trade(t) for t in sorted(trades,key=lambda t:t['opened'],reverse=True)[:100]],
+            mode='PAPER + CLOB' if self.clob_client else 'PAPER ONLY',accounts=accounts,recent_trades=[public_trade(t) for t in sorted(trades,key=lambda t:t['opened'],reverse=True)[:100]],
             trades_truncated=len(trades)>100,reasons=reasons,recent_decisions=recent,
             skip_review=self.skip_summary(),recent_errors=errors,entry_policy='copy-immediate-v7',
-            scope='BTC/ETH 5m and 15m only; fixed <=5USD all-in,500USD separate virtual scenarios; first SELL closes full copied lot',
+            totals=totals,path_ms=path_stats(samples[-200:]),
+            clock_skew={'book':round(self.book_clock.skew(),3),'samples':len(self.book_clock.offsets)},
+            scope='BTC/ETH 5m and 15m only; one market minimum (not $5 all-in), source price 20-70c; 500USD separate virtual scenarios; first SELL closes full copied lot',
             limitation='Not identical source sizing/partial exits. Public indexed activity,1s target polling,BUY<=30s age and +/-3c from source; SELL<=90s age; FOK at fresh delayed books with50% depth. No profitability guarantee.'))
 
     def skip_summary(self):
@@ -181,10 +196,28 @@ class WalletCopy:
 
     def risk(self,db,wallet,now):return self.risk_reason(db,wallet,now) is None
 
+    def paper_pnl_micro(self,db,wallet):
+        return sum(t['pnl_micro'] for t in self.positions(db) if t['wallet']==wallet and t['status'] in ('CLOSED','SETTLED'))
+
     async def book(self,token):
         from .worker import normalize_book
         raw=await asyncio.to_thread(self.fetch,'https://clob.polymarket.com/book?token_id='+quote(token,safe=''))
-        return normalize_book(raw,token,self.clock())
+        return normalize_book(raw,token,self.clock(),max_age=15,venue_clock=self.book_clock)
+
+    def pending_activity(self,db,active=None):
+        """Only fresh rows. A full-table INSERT every second blocked the event loop
+        and the WebSocket handshakes timed out while SQLite held the thread."""
+        active=list(active if active is not None else get_active_wallets(self.store))
+        now=self.clock()
+        if not active:
+            return []
+        db.execute('CREATE INDEX IF NOT EXISTS wallet_activity_seen ON wallet_activity(first_seen)')
+        marks=','.join('?'*len(active))
+        return [dict(r) for r in db.execute(
+            f"SELECT a.* FROM wallet_activity a LEFT JOIN wallet_copy_events e "
+            f"ON a.wallet=e.wallet AND a.event_key=e.event_key "
+            f"WHERE e.event_key IS NULL AND a.wallet IN ({marks}) AND a.first_seen>=? "
+            f"ORDER BY a.first_seen ASC LIMIT 20",(*active, now-90))]
 
     async def process(self,row):
         await self._process(row)
@@ -200,20 +233,23 @@ class WalletCopy:
         event=review['source_event']
         try:
             now=self.clock()
+            # COPY_PAUSED still gets a hypothetical ticket. Real buys stay blocked.
+            # SOURCE_TOO_OLD does not: a reboot must not invent late copies.
             if self.paused() or review['reason'] in ('PAUSED','ERROR','SOURCE_TOO_OLD','SOURCE_IDENTITY_MISMATCH','SOURCE_PRICE_INVALID'):raise ValueError('NOT_ELIGIBLE_FOR_SHADOW')
             if not 0<=now-review['decision_at']<=5:raise ValueError('CAPTURE_TOO_LATE_NO_BACKFILL')
             raw=await asyncio.to_thread(self.fetch,'https://gamma-api.polymarket.com/markets/slug/'+quote(event['slug'],safe=''))
             m=market_spec(raw,event,self.clock())
             decision=await self.book(m['token']);at=self.clock()
-            if not (0<=at-decision['source_ts']<=5 and decision['asks']):raise ValueError('DECISION_STALE_OR_EMPTY')
+            if not (0<=self.book_clock.age(decision['source_ts'],at)<=5 and decision['asks']):raise ValueError('DECISION_STALE_OR_EMPTY')
             limit=min(Decimal('.999999'),min(Decimal(p) for p,q in decision['asks'])+Decimal('.02'))
             shadow.update(decision_book=decision,decision_at=at,limit=str(limit))
             await self.sleep(.25)
             arrival=await self.book(m['token']);now=self.clock()
             shadow.update(arrival_book=arrival,arrival_at=now,source_to_arrival_seconds=now-row['source_ts'])
-            if not (.25<=now-at<=5 and 0<=now-arrival['source_ts']<=5 and arrival['source_ts']>decision['source_ts']
+            if not (.25<=now-at<=5 and 0<=self.book_clock.age(arrival['source_ts'],now)<=5 and arrival['source_ts']>decision['source_ts']
                     and arrival['received_at']>=at+.25 and now<m['end']):raise ValueError('ARRIVAL_INVALID')
-            notional=(Decimal(BUDGET)/1_000_000/(1+Decimal(str(m['fee_rate'])))).quantize(Decimal('.000001'),rounding=ROUND_FLOOR)
+            ask=min(Decimal(p) for p,q in arrival['asks'])
+            notional=(Decimal(str(arrival['min_shares']))*ask).quantize(Decimal('.000001'),rounding=ROUND_FLOOR)
             fill=simulate_fill(arrival['asks'],notional,limit,m['fee_rate'],arrival['min_shares'],arrival['tick'])
             if fill and fill['cost']+fill['fee']<=BUDGET:
                 shadow.update(status='FILLED_PENDING_SETTLEMENT',fill=fill,fee_rate=m['fee_rate'])
@@ -238,7 +274,8 @@ class WalletCopy:
             review['counterfactual_pnl']=shadow['pnl_micro']/1e6
 
     async def _process(self,row):
-        now=self.clock();wallet=row['wallet'];key=row['event_key'];event=json.loads(row['body'])
+        queued_at=self.clock();wallet=row['wallet'];key=row['event_key'];event=json.loads(row['body'])
+        now=queued_at
         with self.store.connect() as db:
             inserted=db.execute('INSERT OR IGNORE INTO wallet_copy_events VALUES (?,?,?,?,?)',(wallet,key,now,'PROCESSING','{}')).rowcount
         if not inserted:return
@@ -249,6 +286,7 @@ class WalletCopy:
                 self.reason(row,'SOURCE_IDENTITY_MISMATCH');return
             if event.get('type')!='TRADE' or event.get('side') not in ('BUY','SELL'):self.reason(row,'NOT_BUY_OR_SELL');return
             if self.paused():self.reason(row,'PAUSED');return
+            if copy_paused(self.store,'copy-'+wallet):self.reason(row,'COPY_PAUSED');return
             if not re.fullmatch(r'(btc|eth)-updown-(5m|15m)-\d+',str(event.get('slug',''))):self.reason(row,'UNSUPPORTED_MARKET');return
             slug=str(event['slug'])
             raw=await asyncio.to_thread(self.fetch,'https://gamma-api.polymarket.com/markets/slug/'+quote(slug,safe=''))
@@ -259,10 +297,13 @@ class WalletCopy:
                 if blocked:self.reason(row,blocked);return
                 if kind=='BUY' and any(t for t in self.positions(db) if t['wallet']==wallet and t['market']==m['slug'] and t['status'] in ('OPEN','RESOLVED')):self.reason(row,'COPY_POSITION_ALREADY_OPEN');return
                 if kind=='SELL' and not open_trade:self.reason(row,'NO_COPIED_POSITION');return
-            decision=await self.book(m['token']);at=self.clock()
             if kind=='BUY':
                 source_price=Decimal(str(event.get('price',0)))
                 if not source_price.is_finite() or not 0<source_price<1:self.reason(row,'SOURCE_PRICE_INVALID');return
+                if source_price<MIN_SOURCE_PRICE:self.reason(row,'COPY_PRICE_TOO_LOW');return
+                if source_price>MAX_SOURCE_PRICE:self.reason(row,'COPY_PRICE_TOO_HIGH');return
+            t_book=self.clock();decision=await self.book(m['token']);at=self.clock()
+            if kind=='BUY':
                 if not decision['asks']:self.reason(row,'NO_ASK');return
                 ask=min(Decimal(p) for p,q in decision['asks'])
                 limit=min(Decimal('.999999'),ask+Decimal('.02'))
@@ -270,12 +311,20 @@ class WalletCopy:
                 if not decision['bids']:self.reason(row,'NO_BID');return
                 limit=max(Decimal(decision['tick']),max(Decimal(p) for p,q in decision['bids'])-Decimal('.02'))
             now=self.clock()
+            timing=path_record(event,row,queued_at,t_book,at,now)
+            # From the API timestamp only. chain_fast has no source-trade clock.
+            copy_delay=None if timing['detect_from_trade_ms'] is None else now-row['source_ts']
             evidence=dict(source_event=event,source_timestamp=row['source_ts'],first_seen=row['first_seen'],decision_at=at,arrival_at=now,
-                detection_delay=row['first_seen']-row['source_ts'],copy_delay=now-row['source_ts'],decision_book=decision,arrival_book=decision,market_metadata=raw)
+                detection_delay=None if timing['detect_from_trade_ms'] is None else timing['detect_from_trade_ms']/1000,
+                copy_delay=copy_delay,
+                path_ms=timing,
+                decision_book=decision,arrival_book=decision,market_metadata=raw)
             if kind=='BUY':
-                evidence['copy_policy']='copy-immediate-v7'
-                notional=(Decimal(BUDGET)/1_000_000/(1+Decimal(str(m['fee_rate'])))).quantize(Decimal('.000001'),rounding=ROUND_FLOOR)
+                evidence['copy_policy']='copy-min-lot-20-70c-v1'
+                # One market minimum, not $5 every time. Cheap losers were a $5 hole.
+                notional=(Decimal(str(decision['min_shares']))*ask).quantize(Decimal('.000001'),rounding=ROUND_FLOOR)
                 fill=simulate_fill(decision['asks'],notional,limit,m['fee_rate'],decision['min_shares'],decision['tick'])
+                evidence['path_ms']['paper_ms']=round((self.clock()-now)*1000,1)
                 if not fill or fill['cost']+fill['fee']>BUDGET:self.reason(row,'BUY_NO_FULL_FILL_OR_MINIMUM',evidence);return
                 trade=dict(id=wallet+':'+key,wallet=wallet,strategy='copy-'+wallet,market=m['slug'],condition=m['condition'],asset=m['asset'],interval=m['interval'],
                     token=m['token'],side=m['side'],end=m['end'],status='OPEN',opened=now,shares=fill['shares'],cost=fill['cost'],fee=fill['fee'],exit_fee=0,
@@ -288,41 +337,8 @@ class WalletCopy:
                     db.execute('UPDATE wallet_copy_accounts SET cash=cash+? WHERE wallet=?',(debit,wallet))
                     db.execute('INSERT INTO wallet_copy_ledger VALUES (?,?,?)',('buy:'+trade['id'],wallet,debit))
                     db.execute("UPDATE wallet_copy_events SET reason='COPIED_BUY',body=? WHERE wallet=? AND event_key=?",(json.dumps(evidence),wallet,key))
-                # --- CLOB live order (optional, after paper accounting) ---
                 if self.clob_client:
-                    try:
-                        clob_budget = min(5.0, float(fill['cost'] + fill['fee']) / 1e6)
-                        clob_price = float(limit)
-                        clob_size = clob_budget / clob_price if clob_price > 0 else 0
-                        remaining_exposure = self.CLOB_MAX_EXPOSURE_USD - self._clob_exposure_usd
-                        if clob_budget > remaining_exposure:
-                            clob_budget = max(0, remaining_exposure)
-                            clob_size = clob_budget / clob_price if clob_price > 0 else 0
-                        log.info(
-                            'CLOB BUY attempt: token=%s price=%.4f size=%.2f budget=$%.2f exposure=$%.2f/%s',
-                            m['token'][:16], clob_price, clob_size, clob_budget,
-                            self._clob_exposure_usd, self.CLOB_MAX_EXPOSURE_USD,
-                        )
-                        if clob_budget >= 0.50 and clob_size >= 5:
-                            clob_result = self.clob_client.buy(
-                                token_id=m['token'],
-                                price=clob_price,
-                                size=round(clob_size, 2),
-                            )
-                            self._clob_exposure_usd += clob_budget
-                            log.info('CLOB order result: %s', json.dumps(clob_result, default=str)[:500])
-                            evidence['clob_order'] = clob_result
-                        else:
-                            evidence['clob_order'] = {
-                                'ok': False, 'reason': 'BELOW_MINIMUM',
-                                'budget': clob_budget, 'size': clob_size,
-                                'remaining_exposure': remaining_exposure,
-                            }
-                            log.info('CLOB order skipped: budget=$%.2f size=%.2f below minimums', clob_budget, clob_size)
-                    except Exception as clob_err:
-                        log.error('CLOB order error: %s', clob_err)
-                        evidence['clob_order'] = {'ok': False, 'error': str(clob_err)[:400]}
-                    # Update stored evidence with CLOB result
+                    evidence['clob_order']=await self.place_clob_buy(wallet,m['token'],limit,fill)
                     with self.store.connect() as db:
                         db.execute("UPDATE wallet_copy_events SET body=? WHERE wallet=? AND event_key=?",
                             (json.dumps(evidence),wallet,key))
@@ -331,6 +347,33 @@ class WalletCopy:
                 if not fill:self.reason(row,'SELL_NO_FULL_FILL',evidence);return
                 self.close(open_trade,fill['proceeds'],fill['fee'],now,'CLOSED',{'fill':fill,'evidence':evidence},row)
         except Exception as error:self.reason(row,'ERROR',{'error':str(error)[:400]})
+
+    async def place_clob_buy(self,wallet,token,limit,fill):
+        with self.store.connect() as db:
+            pnl=self.paper_pnl_micro(db,wallet)
+        if pnl<0:
+            log.info('CLOB skipped %s: paper result is negative',wallet[-8:])
+            return {'ok':False,'reason':'PAPER_NEGATIVE','pnl_usd':pnl/1e6}
+        clob_budget=min(5.0,float(fill['cost']+fill['fee'])/1e6)
+        clob_price=float(limit)
+        clob_size=clob_budget/clob_price if clob_price>0 else 0
+        remaining=self.CLOB_MAX_EXPOSURE_USD-self._clob_exposure_usd
+        if clob_budget>remaining:
+            clob_budget=max(0,remaining)
+            clob_size=clob_budget/clob_price if clob_price>0 else 0
+        log.info('CLOB BUY attempt: token=%s price=%.4f size=%.2f budget=$%.2f exposure=$%.2f/%s',
+                 token[:16],clob_price,clob_size,clob_budget,self._clob_exposure_usd,self.CLOB_MAX_EXPOSURE_USD)
+        if clob_budget<0.50 or clob_size<5:
+            return {'ok':False,'reason':'BELOW_MINIMUM','budget':clob_budget,'size':clob_size,'remaining_exposure':remaining}
+        try:
+            result=await asyncio.to_thread(self.clob_client.buy,token,clob_price,round(clob_size,2))
+            if result.get('ok'):
+                self._clob_exposure_usd+=clob_budget
+            log.info('CLOB order result: %s',json.dumps(result,default=str)[:500])
+            return result
+        except Exception as error:
+            log.error('CLOB order error: %s',error)
+            return {'ok':False,'error':str(error)[:400]}
 
     def close(self,trade,payout,fee,now,status,evidence,row=None):
         with self.store.connect() as db:
@@ -362,23 +405,35 @@ class WalletCopy:
                 official_payout=trade['shares'] if str(winners[0]['token_id'])==trade['token'] else 0)
             with self.store.connect() as db:db.execute('UPDATE wallet_copy_positions SET body=? WHERE id=?',(json.dumps(trade),trade['id']))
 
+    async def upkeep(self):
+        """Settlement and skip review, beside the copy path instead of inside it.
+
+        Settling an ended window costs one request per position. Running that
+        before new activity delayed a fresh copy by up to three seconds.
+        """
+        while True:
+            for job, key, width in ((self.settle, 'wallet_copy_settlement_error', 400),
+                                    (self.review_skips, 'wallet_skip_review_error', 200)):
+                try:
+                    await job()
+                    self.store.set(key, {})
+                except Exception as error:
+                    self.store.set(key, {'at': self.clock(), 'error': str(error)[:width]})
+            await self.sleep(30)
+
+    def _load_pending(self, active):
+        with self.store.connect() as db:
+            has=db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='wallet_activity'").fetchone()
+            return self.pending_activity(db, active) if has else []
+
     async def step(self):
         try:
             # Observer wakes this loop immediately after persisting new activity.
-            if self.clock()-self.last_settlement>=30:
-                await self.settle();self.last_settlement=self.clock()
-                if self.review_task is None or self.review_task.done():
-                    if self.review_task is not None and not self.review_task.cancelled():
-                        error=self.review_task.exception()
-                        self.store.set('wallet_skip_review_error',{'at':self.clock(),'error':str(error)[:200]} if error else {})
-                    self.review_task=asyncio.create_task(self.review_skips())
-            with self.store.connect() as db:
-                has=db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='wallet_activity'").fetchone()
-                if has:
-                    db.execute("INSERT OR IGNORE INTO wallet_copy_events SELECT wallet,event_key,?,'PRE_ACTIVATION','{}' FROM wallet_activity WHERE source_ts<? OR first_seen<?",(self.clock(),self.started,self.started))
-                rows=[dict(r) for r in db.execute('SELECT a.* FROM wallet_activity a LEFT JOIN wallet_copy_events e ON a.wallet=e.wallet AND a.event_key=e.event_key WHERE e.event_key IS NULL ORDER BY a.source_ts,a.first_seen LIMIT 100')] if has else []
+            # The read runs off the event loop so a slow query cannot freeze RTDS.
+            active=list(get_active_wallets(self.store))
+            rows=await asyncio.to_thread(self._load_pending, active)
             for row in rows:
-                if row['wallet'] in get_active_wallets(self.store):await self.process(row)
+                await self.process(row)
             if rows or self.clock()-self.last_publish>=2:
                 self.publish('RUNNING');self.last_publish=self.clock()
             self.store.set('wallet_copy_error',{})
@@ -388,12 +443,19 @@ class WalletCopy:
             raise
 
     async def run(self):
-        while True:
-            self.store.wallet_activity_ready.clear()
-            try:await self.step()
-            except CopyLedgerError:return
-            except Exception:
-                await self.sleep(10)
-                continue
-            try:await asyncio.wait_for(self.store.wallet_activity_ready.wait(),timeout=1)
-            except asyncio.TimeoutError:pass
+        upkeep=asyncio.create_task(self.upkeep())
+        try:
+            while True:
+                self.store.wallet_activity_ready.clear()
+                try:await self.step()
+                except CopyLedgerError:
+                    log.error('copy ledger mismatch; retrying in 30s')
+                    await self.sleep(30)
+                    continue
+                except Exception:
+                    await self.sleep(10)
+                    continue
+                try:await asyncio.wait_for(self.store.wallet_activity_ready.wait(),timeout=1)
+                except asyncio.TimeoutError:pass
+        finally:
+            upkeep.cancel()

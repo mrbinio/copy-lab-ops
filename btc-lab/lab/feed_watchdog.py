@@ -2,6 +2,17 @@
 import asyncio
 import time
 
+
+def next_backoff(seconds, cap=30):
+    """Double the wait after a failed handshake. Cap it so a dead host is not a spin loop."""
+    try:
+        seconds = float(seconds)
+    except (TypeError, ValueError):
+        seconds = 1
+    if seconds < 1:
+        seconds = 1
+    return min(seconds * 2, cap)
+
 async def fresh_messages(ws, source_timestamp, timeout=20):
     last=source_timestamp()
     deadline=time.monotonic()+timeout

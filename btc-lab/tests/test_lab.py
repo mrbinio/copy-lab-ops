@@ -130,6 +130,53 @@ class DataTests(unittest.TestCase):
         for raw in ({'asset_id':'wrong'},{'asset_id':'u','timestamp':'101000'}):
             with self.assertRaises(ValueError):normalize_book(raw,'u',100)
 
+    def test_fresh_book_accepted_when_local_clock_trails_the_venue(self):
+        """A late Mac clock made every fresh book look like it came from the future."""
+        from lab.core import VenueClock
+        clock=VenueClock()
+        raw={'asset_id':'u','timestamp':'102000','asks':[],'bids':[],'min_order_size':'5','tick_size':'.01'}
+        with self.assertRaises(ValueError):normalize_book(dict(raw),'u',100)
+        book=normalize_book(dict(raw),'u',100,venue_clock=clock)
+        self.assertEqual(book['source_ts'],102)
+        self.assertAlmostEqual(clock.skew(),2)
+        self.assertEqual(book['received_at'],100)
+        # Still rejected once the book really is older than max_age in venue time.
+        stale=dict(raw,timestamp='80000')
+        with self.assertRaises(ValueError):normalize_book(stale,'u',100,venue_clock=clock)
+
+    def test_venue_age_compensates_a_late_local_clock(self):
+        from lab.core import VenueClock
+        clock=VenueClock()
+        for _ in range(5):clock.observe(102,100)
+        # Local clock two seconds behind: a book stamped 102 is current, not future.
+        self.assertAlmostEqual(clock.age(102,100),0)
+        self.assertAlmostEqual(clock.age(99,100),3)
+        # Without any samples the age is just the plain local difference.
+        self.assertAlmostEqual(VenueClock().age(99,100),1)
+
+    def test_absurd_future_book_still_rejected(self):
+        from lab.core import VenueClock
+        clock=VenueClock()
+        raw={'asset_id':'u','timestamp':'1000000','asks':[],'bids':[],'min_order_size':'5','tick_size':'.01'}
+        with self.assertRaises(ValueError):normalize_book(raw,'u',100,venue_clock=clock)
+        self.assertEqual(clock.skew(),VenueClock.LIMIT)
+
+    def test_transport_delay_never_shrinks_the_measured_age(self):
+        """The price feed trails its own stamps by ~1.7s; treating that as clock
+        skew would have stretched its 5s staleness ceiling to 6.7s."""
+        from lab.core import VenueClock
+        feed=VenueClock()
+        for _ in range(15):feed.observe(98.3,100)   # healthy clock, 1.7s pipeline delay
+        self.assertEqual(feed.skew(),0.0)
+        self.assertAlmostEqual(feed.age(98.3,100),1.7)
+
+    def test_one_bogus_future_stamp_does_not_move_the_estimate(self):
+        from lab.core import VenueClock
+        clock=VenueClock()
+        for _ in range(14):clock.observe(100,100)
+        clock.observe(129,100)
+        self.assertEqual(clock.skew(),0.0)
+
     def test_no_signal_on_stale_reference(self):
         m={'end':1100,'opening':70000,'rule_supported':True,'accepting':True,'fee_verified':True}
         signal,reason=choose('late-v1',m,{'price':70100,'source_ts':990},{},1000)
@@ -169,9 +216,27 @@ class AuthTests(unittest.TestCase):
                 with self.assertRaises(urllib.error.HTTPError) as e:
                     urllib.request.urlopen(urllib.request.Request(url+'/api/trade',data=b'{}',headers={'Authorization':auth}))
                 self.assertEqual(e.exception.code,501)
+                pause=urllib.request.Request(url+'/api/strategy-pause',data=json.dumps({'id':'mid-window-v1','paused':False}).encode(),headers={'Authorization':auth,'Content-Type':'application/json'})
+                with urllib.request.urlopen(pause) as r:
+                    body=json.load(r)
+                    self.assertTrue(body['ok'])
+                    self.assertFalse(body['strategy_pauses']['mid-window-v1'])
             finally:server.shutdown();server.server_close();thread.join()
 
 class CycleTests(unittest.IsolatedAsyncioTestCase):
+    async def test_clock_skew_is_published_so_drift_is_visible(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            worker=Worker(Store(Path(tmp)/'db'),tmp)
+            self.assertEqual(worker.clock_skew()['samples'],{'book':0,'reference':0})
+            for _ in range(5):worker.book_clock.observe(102,100)
+            worker.last_research=time.time()
+            worker.cycle=AsyncMock(side_effect=TimeoutError('market unavailable'))
+            worker.reconcile=AsyncMock()
+            await worker.iteration()
+            published=worker.store.get('worker')['clock_skew']
+            self.assertEqual(published['book'],2)
+            self.assertEqual(published['samples']['book'],5)
+
     async def test_settlement_survives_collection_failure(self):
         with tempfile.TemporaryDirectory() as tmp:
             worker=Worker(Store(Path(tmp)/'db'),tmp)

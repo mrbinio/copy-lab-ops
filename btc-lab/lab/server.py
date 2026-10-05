@@ -4,12 +4,38 @@ import hashlib
 import hmac
 import json
 import os
+import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from .core import Store
 from .daily_report import build_report
+from .strategy_control import set_paused
 from urllib.parse import parse_qs, urlsplit
+
+_SNAP = {}
+_SNAP_LOCK = threading.Lock()
+_SNAP_TTL = 2.0
+
+def dashboard_state(store):
+    """One live snapshot at a time. The raw build takes ~8s and the page waits 7s,
+    so overlapping polls never received Atomforge / honey-spot."""
+    now = time.time()
+    key = store.asset
+    with _SNAP_LOCK:
+        hit = _SNAP.get(key)
+        if hit and now - hit[0] < _SNAP_TTL:
+            return hit[1]
+        value = store.snapshot()
+        _SNAP[key] = (time.time(), value)
+        return value
+
+def drop_dashboard_state(asset=None):
+    with _SNAP_LOCK:
+        if asset is None:
+            _SNAP.clear()
+        else:
+            _SNAP.pop(asset, None)
 
 def handler(store, web, password_hash, username='damian', local_dev=False, eth_store=None):
     class Handler(BaseHTTPRequestHandler):
@@ -57,7 +83,7 @@ def handler(store, web, password_hash, username='damian', local_dev=False, eth_s
                     selected=eth_store if asset=='ETH' else store
                     if selected is None:
                         self.send(503,b'ETH worker not installed','text/plain');return
-                    value=selected.snapshot() if path=='/api/state' else build_report(selected,query.get('date',[None])[0])
+                    value=dashboard_state(selected) if path=='/api/state' else build_report(selected,query.get('date',[None])[0])
                 except ValueError:
                     self.send(400,b'Invalid completed report date','text/plain'); return
                 self.send(200,json.dumps(value,allow_nan=False).encode(),'application/json')
@@ -68,6 +94,31 @@ def handler(store, web, password_hash, username='damian', local_dev=False, eth_s
             target=web/allowed[path]
             kind={'html':'text/html; charset=utf-8','css':'text/css; charset=utf-8','js':'text/javascript; charset=utf-8'}[target.suffix[1:]]
             self.send(200,target.read_bytes(),kind)
+
+        def do_POST(self):
+            path=self.path.split('?',1)[0]
+            if not self.authorized():
+                self.send(401,b'Authentication required','text/plain',{'WWW-Authenticate':'Basic realm="BTC Lab", charset="UTF-8"'})
+                return
+            if path=='/api/trade':
+                self.send(501,b'Live orders are disabled','text/plain');return
+            if path!='/api/strategy-pause':
+                self.send(404,b'Not found','text/plain');return
+            try:
+                length=int(self.headers.get('Content-Length') or 0)
+                if length<=0 or length>2000:raise ValueError('body')
+                payload=json.loads(self.rfile.read(length))
+                strategy=str(payload.get('id',''))
+                paused=payload.get('paused')
+                if paused not in (True,False):raise ValueError('paused')
+                asset=str(payload.get('asset','BTC'))
+                selected=eth_store if asset=='ETH' else store
+                if selected is None:raise ValueError('asset')
+                value=set_paused(selected,strategy,paused)
+                drop_dashboard_state(selected.asset)
+            except (TypeError,ValueError,json.JSONDecodeError):
+                self.send(400,b'Invalid strategy pause','text/plain');return
+            self.send(200,json.dumps({'ok':True,'strategy_pauses':value},allow_nan=False).encode(),'application/json')
     return Handler
 
 def main():
