@@ -263,11 +263,22 @@ async def settle_batch(copier, limit=8):
             _settle_close(copier.store, trade, now)
             closed += 1
     fetched = 0
-    for trade in rows:
+    # Least recently checked first: an unresolved market must not starve others.
+    for trade in sorted(rows, key=lambda t: (t.get('settlement_checked_at', 0), t.get('end', 0))):
         if fetched >= limit:
             break
         if trade.get('status') != 'OPEN' or now < float(trade.get('end') or now + 1):
             continue
+        if now - float(trade.get('settlement_checked_at') or 0) < 60:
+            continue
+        # Persist the attempt before I/O, including failed and unresolved requests.
+        with copier.store.connect() as db:
+            current = db.execute('SELECT body FROM wallet_observation_positions WHERE id=?', (trade['id'],)).fetchone()
+            if not current or json.loads(current[0]).get('status') != 'OPEN':
+                continue
+            trade = json.loads(current[0])
+            trade['settlement_checked_at'] = now
+            db.execute('UPDATE wallet_observation_positions SET body=? WHERE id=?', (json.dumps(trade), trade['id']))
         fetched += 1
         try:
             condition = trade.get('condition')
@@ -337,4 +348,14 @@ async def observe_batch(copier):
                 _record(db, row['wallet'], row['event_key'], copier.clock(), 'ERROR',
                         {'policy': OBSERVE_VERSION, 'error': str(error)[:200]})
     await settle_batch(copier)
+    # Selection follows settlement, not the hourly discovery scan.
+    await asyncio.to_thread(refresh_roster, copier.store, copier.clock())
     return len(rows)
+
+
+def refresh_roster(store, now):
+    from .wallet_roster import bootstrap, copy_evidence, tick
+    wallets = bootstrap(store, now)['wallets']
+    stats = {wallet: copy_evidence(store, wallet, now)
+             for wallet, row in wallets.items() if row['state'] == 'observed'}
+    return tick(store, now, stats)
