@@ -1032,6 +1032,11 @@ class WalletCopy:
                 self.store.set('wallet_observation_error', {})
             except Exception as error:
                 self.store.set('wallet_observation_error', {'at': self.clock(), 'error': str(error)[:200]})
+            try:
+                from .wallet_roster import tick as roster_tick
+                await asyncio.to_thread(roster_tick, self.store, self.clock())
+            except Exception as error:
+                self.store.set('wallet_roster_error', {'at': self.clock(), 'error': str(error)[:200]})
             for job, key, width in ((self.settle, 'wallet_copy_settlement_error', 400),
                                     (self.review_skips, 'wallet_skip_review_error', 200)):
                 try:

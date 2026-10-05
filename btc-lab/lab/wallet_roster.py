@@ -112,8 +112,9 @@ RULES = {
     'concentration_uncertain_above': 0.70,
 }
 _RULES_FOR = {PREVIOUS_SPEC: RULES_V1, SPEC_V2: RULES_V2}
-PAUSE_REASON = 'paper-roster-v3 pause: current period closed net is negative'
+PAUSE_REASON = 'paper-roster-v3 pause: settled copy book is negative'
 RETEST_REASON = 'paper-roster-v3 retest'
+RESTORE_PLUS_REASON = 'paper-roster-v3 retest: settled copy book is positive'
 PROMOTE_REASON = 'paper-roster-v3 paper_test'
 
 SEED_STATE = {
@@ -366,6 +367,47 @@ def hypothetical_settled(store):
     return found
 
 
+def observation_results(store):
+    """Every settled observation with a known result. Older rule versions count.
+
+    A missing pnl is left out. It is not treated as zero.
+    """
+    found = {}
+    with store.connect() as db:
+        if not db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='wallet_observation_positions'"
+        ).fetchone():
+            return found
+        for wallet, body in db.execute('SELECT wallet, body FROM wallet_observation_positions'):
+            trade = json.loads(body)
+            if trade.get('status') not in ('CLOSED', 'SETTLED') or trade.get('pnl_micro') is None:
+                continue
+            trade['fee_micro'] = trade.get('fee')
+            found.setdefault(wallet, []).append(trade)
+    return found
+
+
+def plus_observation(rows, now):
+    """Stats when the settled observation book is in the plus. Otherwise None."""
+    if not rows:
+        return None
+    first = min((t.get('closed_at') or t.get('opened') or now) for t in rows)
+    book = evaluate_copy_book(rows, now, first)
+    net = book['net_usd']
+    if net is None or net < RULES['observed_to_paper_test']['min_copy_sim_net_usd']:
+        return None
+    if book['trades'] < 1 or book['windows'] < 1:
+        return None
+    return {
+        'our_trades': book['trades'],
+        'windows': book['windows'],
+        'age_days': book['age_days'],
+        'copy_sim_net_usd': net,
+        'best_day_share': book['best_day_share'],
+        'source': 'observation-settled',
+    }
+
+
 def observation_settled(store):
     """Closed rows from the versioned observation book. Not the independent tickets."""
     found = {}
@@ -454,12 +496,27 @@ def admit_observed(store, wallet, now, evidence, reason):
     return state, True
 
 
+def _shown_net(state, wallet, closed_by):
+    """Copy-book net when every close has a pnl. Otherwise the stored sim, then zero."""
+    settled = [
+        t for t in closed_by.get(wallet, [])
+        if t.get('status') in ('CLOSED', 'SETTLED')
+    ]
+    if settled:
+        net = _known_net(settled)
+        if net is not None:
+            return net
+    stats = (state['wallets'].get(wallet) or {}).get('stats') or {}
+    sim = stats.get('copy_sim_net_usd')
+    return sim if isinstance(sim, (int, float)) else 0
+
+
 def _promote_paper_test(store, state, wallet, stats, now, closed_by):
     """Move observed → paper_test. A full slate drops the weakest test, not its history."""
     tests = [w for w, row in state['wallets'].items() if row['state'] == 'paper_test']
     if len(tests) >= PAPER_TEST_SLOTS:
-        weakest = min(tests, key=lambda w: (_book_net(closed_by.get(w, [])), w))
-        weak_net = _book_net(closed_by.get(weakest, []))
+        weakest = min(tests, key=lambda w: (_shown_net(state, w, closed_by), w))
+        weak_net = _shown_net(state, weakest, closed_by)
         if (stats.get('copy_sim_net_usd') or 0) <= weak_net:
             audit(store, now, wallet, 'rejected', 'weaker_than_current_paper_test', {
                 'copy_sim_net_usd': stats.get('copy_sim_net_usd'),
@@ -504,31 +561,29 @@ def tick(store, now=None, candidate_stats=None):
                 if opened:
                     first_by[t['wallet']] = min(first_by.get(t['wallet'], opened), opened)
     observed_book = observation_settled(store)
+    plus_book = observation_results(store)
     changed = []
+    promotions = []
     already = set(state['wallets'])
     for w, row in list(state['wallets'].items()):
         closed = closed_by.get(w, [])
         first = first_by.get(w) or row.get('since')
-        since = row.get('since') or first
-        book = evaluate_copy_book(period_closes(closed, since), now, since) if row['state'] in ('paper_test', 'paper_active', 'paused') else None
-        if row['state'] in ('paper_active', 'paper_test') and book and book['should_pause']:
-            row['state'] = 'paused'
+        # Pause and return use the whole settled copy book. One red stint does
+        # not turn off a book that is still in the plus, and it does not keep
+        # a plus book paused.
+        lifetime = evaluate_copy_book(closed, now, first) if row['state'] in (
+            'paper_test', 'paper_active', 'paused',
+        ) else None
+        if row['state'] == 'paused' and lifetime and lifetime['can_retest']:
+            row['state'] = 'paper_test'
             row['since'] = now
-            row['reason'] = PAUSE_REASON
+            row['confidence'] = 'medium'
+            row['sample'] = 'enough' if not lifetime['uncertain'] else 'uncertain'
+            row['reason'] = RESTORE_PLUS_REASON
             changed.append(w)
-            audit(store, now, w, 'paused', row['reason'], {
-                'net_usd': book['net_usd'], 'trades': book['trades'],
-            })
-        elif row['state'] == 'paper_test' and book and book['can_activate']:
-            row['state'] = 'paper_active'
-            row['since'] = now
-            row['reason'] = 'paper-roster-v3 activate'
-            if book.get('concentration_uncertain'):
-                row['confidence'] = 'low'
-                row['concentration'] = 'uncertain'
-            changed.append(w)
-            audit(store, now, w, 'promoted', row['reason'], {
-                'net_usd': book['net_usd'], 'trades': book['trades'], 'best_day_share': book['best_day_share'],
+            audit(store, now, w, 'restored', row['reason'], {
+                'net_usd': lifetime['net_usd'], 'trades': lifetime['trades'],
+                'sample': row['sample'],
             })
         elif row['state'] == 'paused':
             # opened_after cuts observations from before this pause.
@@ -550,8 +605,47 @@ def tick(store, now=None, candidate_stats=None):
                 })
         elif row['state'] == 'observed':
             stats = (candidate_stats or {}).get(w)
-            if stats and can_observe_to_test(stats) and _promote_paper_test(store, state, w, stats, now, closed_by):
-                changed.append(w)
+            plus = plus_observation(plus_book.get(w, []), now)
+            chosen = stats if stats and can_observe_to_test(stats) else plus
+            if chosen:
+                net = chosen.get('copy_sim_net_usd')
+                if isinstance(net, (int, float)):
+                    promotions.append((net, w, chosen))
+    for _net, w, stats in sorted(promotions, key=lambda item: (-item[0], item[1])):
+        if state['wallets'][w]['state'] != 'observed':
+            continue
+        if _promote_paper_test(store, state, w, stats, now, closed_by):
+            changed.append(w)
+    for w, row in list(state['wallets'].items()):
+        closed = closed_by.get(w, [])
+        first = first_by.get(w) or row.get('since')
+        since = row.get('since') or first
+        lifetime = evaluate_copy_book(closed, now, first) if row['state'] in (
+            'paper_test', 'paper_active',
+        ) else None
+        period = evaluate_copy_book(period_closes(closed, since), now, since) if row['state'] in (
+            'paper_test', 'paper_active',
+        ) else None
+        if row['state'] in ('paper_active', 'paper_test') and lifetime and lifetime['should_pause']:
+            row['state'] = 'paused'
+            row['since'] = now
+            row['reason'] = PAUSE_REASON
+            changed.append(w)
+            audit(store, now, w, 'paused', row['reason'], {
+                'net_usd': lifetime['net_usd'], 'trades': lifetime['trades'],
+            })
+        elif row['state'] == 'paper_test' and period and period['can_activate']:
+            row['state'] = 'paper_active'
+            row['since'] = now
+            row['reason'] = 'paper-roster-v3 activate'
+            if period.get('concentration_uncertain'):
+                row['confidence'] = 'low'
+                row['concentration'] = 'uncertain'
+            changed.append(w)
+            audit(store, now, w, 'promoted', row['reason'], {
+                'net_usd': period['net_usd'], 'trades': period['trades'],
+                'best_day_share': period['best_day_share'],
+            })
     for w, stats in (candidate_stats or {}).items():
         if w in already:
             continue
