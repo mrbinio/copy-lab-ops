@@ -332,7 +332,8 @@ function fillWalletTiles(s,board,period){
     if(!(account.trades>0))idle++;
     const known=!!period&&(!!row&&row.net_micro!=null||!row);
     const net=row&&row.net_micro!=null?Number(row.net_micro):known?0:null;
-    const card=node('article',undefined,'strategy-card wallet-tile'+(net>0?' profit':net<0?' loss':''));
+    const copyingZero=copyingNow(account)&&net===0;
+    const card=node('article',undefined,'strategy-card wallet-tile'+(net>0?' profit':net<0?' loss':copyingZero?' flat':''));
     card.dataset.strategy='copy-'+wallet;
     const top=node('div',undefined,'strategy-top');
     top.append(node('span',String(wallet).slice(-8),'strategy-number'),node('span',rosterLabel(account.roster_state),'chip'));
