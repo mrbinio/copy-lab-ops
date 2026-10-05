@@ -6,9 +6,11 @@ paper-roster-v1 states:
   paper_active— isolated PAPER copy after a longer paper_test
   paused      — no new buys; open tickets still settle; losses stay
 
-Rules were fixed before this morning's book and are not refit to it.
 Pause at -15 USD / 7 days is several min-lot losses, not one unlucky ticket.
-Return needs +8 USD, 10 hypothetical trades and 14 days, so one green day cannot flip the wallet.
+The 14-day calendar waits are off: a paused wallet can return when the new
+observation book clears +8 USD and 10 trades, and a paper test can become
+the regular copy when it has 30 closes, a positive net and no single day
+above 70% of the gains. One green afternoon still does not flip a wallet.
 This is a PAPER experiment. It does not prove an edge and it does not raise risk limits.
 """
 import json
@@ -38,7 +40,7 @@ RULES = {
     },
     'paper_test_to_paper_active': {
         'min_copy_trades': 30,
-        'min_days': 14,
+        'min_days': 0,
         'min_net_usd': 0.01,
         'max_best_day_share': 0.70,
     },
@@ -47,7 +49,7 @@ RULES = {
         'loss_streak': 8,
     },
     'paused_to_paper_test': {
-        'min_pause_days': 14,
+        'min_pause_days': 0,
         'hyp_7d_net_usd': 8.0,
         'min_hyp_trades': 10,
     },

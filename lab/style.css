@@ -18,4 +18,7 @@
 .board-result .metric-value{font-size:42px}
 #board-wallets td,#board-sum{font-variant-numeric:tabular-nums}
 #wynik .help-link,#dziennik .help-link{display:none}
+#copy-periods .metric.on{box-shadow:inset 0 0 0 1px #65d7bc}
+#wallet-tiles{margin-top:12px}
+#today-lines p{margin:6px 0}
 tfoot th{font-size:13px;color:var(--text)}

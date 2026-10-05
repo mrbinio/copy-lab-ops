@@ -1,37 +1,49 @@
 <!doctype html>
 <html lang="pl">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0b1018"><title>BTC Lab · PAPER</title><link rel="stylesheet" href="style.css?v=20261005-board"><script defer src="app.js?v=20261005-board"></script></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0b1018"><title>BTC Lab · PAPER</title><link rel="stylesheet" href="style.css?v=20261005-tiles"><script defer src="app.js?v=20261005-tiles"></script></head>
 <body>
 <aside class="sidebar"><a class="brand" href="#wynik"><span class="brand-mark">₿</span><span>BTC<span class="brand-light">LAB</span><small>PAPER</small></span></a>
 <p class="nav-label">WIDOK</p>
 <nav aria-label="Main navigation">
-<a class="nav-item active" href="#wynik"><span>◈</span><b>Wynik</b></a>
+<a class="nav-item active" href="#wynik"><span>◈</span><b>Portfele</b></a>
 <a class="nav-item" href="#dziennik"><span>≋</span><b>Dziennik</b></a>
 <a class="nav-item" href="#obserwacje"><span>◉</span><b>Obserwacje</b></a>
 <a class="nav-item" href="#kandydaci"><span>⌕</span><b>Kandydaci</b></a>
-<a class="nav-item" href="#strategie"><span>⊞</span><b>Strategie</b></a>
+<a class="nav-item" href="#strategie"><span>⊞</span><b>5–15 min</b></a>
 <a class="nav-item" href="#diagnostyka"><span>◎</span><b>Diagnostyka</b></a>
 </nav>
 <div class="sidebar-bottom"><strong>PAPER — symulacja, nie prawdziwe pieniądze</strong><p>Port 8769. To nie jest saldo giełdy i nie są to prawdziwe zlecenia.</p><div class="build"><span id="service-version">—</span></div></div></aside>
 <main>
-<header><div class="breadcrumb">BTC Lab <span>/</span> <b id="tab-name">Wynik</b></div><div class="header-actions"><span id="clock">—</span><button id="language" class="small-button" aria-label="Change language">EN</button></div></header>
+<header><div class="breadcrumb">BTC Lab <span>/</span> <b id="tab-name">Portfele</b></div><div class="header-actions"><span id="clock">—</span><button id="language" class="small-button" aria-label="Change language">EN</button></div></header>
 <section class="page" id="wynik">
 <p id="demo-banner" class="demo-banner" hidden>NIEAKTUALNY PODGLĄD — to nie są bieżące wyniki usługi na porcie 8769.</p>
-<p class="paper-banner">PAPER — symulacja, nie prawdziwe pieniądze</p>
+<p class="paper-banner">PAPER — symulacja, nie prawdziwe pieniądze. Tylko kopiowane portfele. Własne strategie 5–15 min są na osobnej zakładce i nie wchodzą do tej liczby.</p>
 <p id="data-status" class="data-status">Dane nieaktualne</p>
 <p id="revision-line" class="revision-line">Rewizja: brak danych</p>
+<p id="revision-note" class="metric-note">To skrót kodu wczytanego przy starcie procesu. Plik ekranu skopiowany bez restartu może być nowszy. Poprzedni ekran pokazywał ab38d9c właśnie dlatego.</p>
+<div class="metrics" id="copy-periods">
+<article class="metric" id="card-today"><div class="metric-label" id="label-today">Dzisiaj</div><div class="metric-value" id="net-today">brak danych</div><p class="metric-note" id="note-today">Zamknięte kopie PAPER po kosztach. Strategie 5–15 min nie wchodzą.</p></article>
+<article class="metric" id="card-week"><div class="metric-label" id="label-week">Ostatnie 7 dni</div><div class="metric-value" id="net-week">brak danych</div><p class="metric-note" id="note-week">Zamknięte kopie PAPER po kosztach. Strategie 5–15 min nie wchodzą.</p></article>
+<article class="metric" id="card-all"><div class="metric-label" id="label-all">Od początku księgi</div><div class="metric-value" id="net-all">brak danych</div><p class="metric-note" id="note-all">Zamknięte kopie PAPER po kosztach. Strategie 5–15 min nie wchodzą.</p></article>
+</div>
 <div class="period-switch" role="group" aria-label="Okres wyniku">
 <button type="button" id="period-today" data-period="today">Dzisiaj</button>
 <button type="button" id="period-week" data-period="week">Ostatnie 7 dni</button>
 <button type="button" id="period-all" data-period="all">Od początku</button>
 </div>
-<article class="metric board-result"><div class="metric-label">Wynik kopiowania PAPER po kosztach</div><div class="metric-value" id="board-net">brak danych</div><p class="metric-note" id="board-net-note">Zamknięte transakcje tej księgi. Otwarte pozycje są osobno.</p></article>
+<article class="metric board-result"><div class="metric-label" id="board-net-label">Wybrany okres</div><div class="metric-value" id="board-net">brak danych</div><p class="metric-note" id="board-net-note">Zamknięte transakcje tej księgi. Otwarte pozycje są osobno.</p></article>
 <article class="metric"><div class="metric-label">Otwarte pozycje</div><div class="metric-value" id="board-open-count">brak danych</div><p class="metric-note" id="board-open-note">Aktualny wynik po szacowanych kosztach sprzedaży jest osobno od wyniku zamkniętych transakcji.</p></article>
-<section class="panel"><div class="panel-heading"><div><h2>Portfele</h2><p>Ta sama księga i ten sam okres co wynik u góry.</p></div></div>
+<section class="panel"><div class="panel-heading"><div><h2>Skład wyniku z dzisiaj</h2><p id="today-scope">Zamknięte kopie PAPER z dzisiejszej daty w Sztokholmie. Ta lista jest sumą liczby „Dzisiaj”.</p></div></div>
+<div id="today-lines"></div></section>
+<section class="panel"><div class="panel-heading"><div><h2>Śledzone portfele</h2><p id="wallet-track">Każdy kafel to portfel, który usługa sprawdza. Strategii 5–15 min tu nie ma.</p></div></div>
+<div id="wallet-tiles" class="strategy-grid"></div></section>
+<section class="panel"><div class="panel-heading"><div><h2>Filtr ceny 20–70¢</h2><p id="price-band-note">Zakup źródła droższy niż 70¢, także 75¢ z przykładu Mitcha, jest odrzucany. To nie jest system Mitcha i filtra nie rozszerzamy.</p></div></div>
+<p id="price-band-counts">brak danych</p></section>
+<section class="panel"><div class="panel-heading"><div><h2 id="table-title">Portfele w wybranym okresie</h2><p id="table-scope">Ta sama księga i ten sam okres co wyróżniona liczba u góry.</p></div></div>
 <div class="table-scroll"><table><thead><tr><th>Portfel</th><th>Czy teraz kopiujemy?</th><th>Wynik netto</th><th>Zamknięte transakcje</th><th>Powód wstrzymania</th></tr></thead><tbody id="board-wallets"></tbody><tfoot><tr><th>Suma</th><td></td><th id="board-sum">brak danych</th><th id="board-sum-count">brak danych</th><td id="board-sum-note"></td></tr></tfoot></table></div></section>
 </section>
 <section class="page" id="dziennik" hidden>
-<p class="paper-banner">PAPER — symulacja, nie prawdziwe pieniądze</p>
+<p class="paper-banner">PAPER — symulacja, nie prawdziwe pieniądze. Dziennik kopiowanych portfeli. Strategie 5–15 min tu nie wchodzą.</p>
 <section class="panel" id="activity"><div class="panel-heading"><div><h2>Dziennik kopiowania PAPER</h2><p id="journal-scope">Tylko zamknięte transakcje księgi kopiowania PAPER z wybranego okresu.</p></div><span class="chip" id="journal-count">brak danych</span></div>
 <div class="table-scroll"><table><thead><tr><th>CZAS</th><th>PORTFEL</th><th>STRONA</th><th>KOSZT + OPŁATY</th><th>STATUS</th><th>WYNIK</th></tr></thead><tbody id="trades"></tbody></table></div>
 <p id="journal-sum" class="metric-note"></p>
@@ -47,12 +59,12 @@
 <div id="candidate-content"></div>
 </section>
 <section class="page" id="strategie" hidden>
-<p class="demo-banner">Stare strategie badawcze. Ich wynik nie wchodzi do kopiowania PAPER.</p>
+<p class="paper-banner">PAPER — symulacja, nie prawdziwe pieniądze. Własne strategie 5–15 min. Ta liczba nie jest wynikiem kopiowanych portfeli.</p>
 <p id="asset-note" class="asset-note" hidden></p>
 <div class="title-actions"><label class="asset-control" for="asset"><span id="asset-label">Rynek</span><select id="asset" aria-label="Market / Rynek"><option value="BTC">BTC</option><option value="ETH">ETH</option></select></label><label>Data raportu <input id="report-date" type="date" aria-label="Completed Stockholm date; empty means yesterday"></label><span id="export-status" role="status"></span><button id="export" class="button primary">↓ Raport</button></div>
 <p id="selected-account-status" class="asset-note" role="status"></p>
-<div class="metrics"><article class="metric"><div class="metric-label">Wynik strategii</div><div class="metric-value" id="pnl">—</div><div class="metric-note" id="capital-note"></div></article><article class="metric"><div class="metric-label">Gotówka</div><div class="metric-value" id="balance">—</div></article><article class="metric"><div class="metric-label">Skuteczność</div><div class="metric-value" id="win-rate">—</div><div class="metric-note" id="trade-count"></div></article><article class="metric"><div class="metric-label">Obserwacje</div><div class="metric-value" id="observations">—</div><div class="metric-note" id="labels"></div></article></div>
-<div class="main-grid"><article class="panel chart-panel"><div class="panel-heading"><div><h2 data-i18n="performance">Strategy performance</h2></div><select id="account" aria-label="Choose strategy"></select></div><div class="chart-wrap"><svg id="performance-chart" viewBox="0 0 760 245" role="img"></svg><div id="chart-empty" class="chart-empty"></div></div><div class="chart-footer"><span id="curve-period"></span></div></article>
+<div class="metrics"><article class="metric"><div class="metric-label">Wynik strategii 5–15 min · od początku · tylko ta strategia</div><div class="metric-value" id="pnl">—</div><div class="metric-note" id="capital-note"></div></article><article class="metric"><div class="metric-label">Gotówka</div><div class="metric-value" id="balance">—</div></article><article class="metric"><div class="metric-label">Skuteczność</div><div class="metric-value" id="win-rate">—</div><div class="metric-note" id="trade-count"></div></article><article class="metric"><div class="metric-label">Obserwacje</div><div class="metric-value" id="observations">—</div><div class="metric-note" id="labels"></div></article></div>
+<div class="main-grid"><article class="panel chart-panel"><div class="panel-heading"><div><h2 data-i18n="performance">5–15 min strategy result</h2></div><select id="account" aria-label="Choose strategy"></select></div><div class="chart-wrap"><svg id="performance-chart" viewBox="0 0 760 245" role="img"></svg><div id="chart-empty" class="chart-empty"></div></div><div class="chart-footer"><span id="curve-period"></span></div></article>
 <article class="panel"><div class="panel-heading"><h2 data-i18n="currentWindow">Current window</h2></div><div class="market-title"><b id="asset-window">BTC</b></div><div class="countdown" id="countdown">—:—</div><div class="quote-pair"><div><small>UP</small><strong id="up-ask">—</strong></div><div><small>DOWN</small><strong id="down-ask">—</strong></div></div><dl class="decision-details"><div><dt id="reference-label">Reference</dt><dd id="reference-price">—</dd></div><div><dt>Opening</dt><dd id="opening-price">—</dd></div><div><dt>Age</dt><dd id="reference-age">—</dd></div></dl><div class="decision-reason"><span id="decision-reason"></span></div></article></div>
 <div id="strategy-cards" class="strategy-grid"></div>
 <label hidden><span id="journal-filter-label"></span><select id="journal-strategy" aria-label="Journal strategy"><option id="journal-all" value="all">All</option></select></label>

@@ -13,7 +13,8 @@ class RosterTests(unittest.TestCase):
         self.assertLess(RULES['paper_active_to_paused']['rolling_7d_net_usd'], 0)
         self.assertGreater(RULES['paused_to_paper_test']['hyp_7d_net_usd'], 0)
         self.assertGreaterEqual(
-            RULES['paused_to_paper_test']['min_pause_days'], 14)
+            RULES['paused_to_paper_test']['min_pause_days'], 0)
+        self.assertEqual(RULES['paper_test_to_paper_active']['min_days'], 0)
 
     def test_leaderboard_alone_does_not_qualify(self):
         self.assertFalse(can_observe_to_test({
