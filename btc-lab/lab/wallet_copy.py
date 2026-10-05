@@ -489,20 +489,22 @@ class WalletCopy:
         """Only fresh rows. A full-table INSERT every second blocked the event loop
         and the WebSocket handshakes timed out while SQLite held the thread.
 
-        Observed names fill only the slots left after paper and paused wallets,
-        so a noisy new candidate cannot block a wallet we already copy.
+        A wallet with copying on is read before a paused backlog, and observed
+        names fill only the slots that remain.
         """
         active=list(active if active is not None else get_active_wallets(self.store))
         now=self.clock()
         if not active:
             return []
-        db.execute('CREATE INDEX IF NOT EXISTS wallet_activity_seen ON wallet_activity(first_seen)')
         roster=(self.store.get('wallet_roster') or {}).get('wallets') or {}
-        hi=[];lo=[]
+        copying=[];paused=[];lo=[]
         for wallet in active:
-            if (roster.get(wallet) or {}).get('state')=='observed':lo.append(wallet)
-            else:hi.append(wallet)
-        rows=self._pending_query(db,hi,now,20)
+            state=(roster.get(wallet) or {}).get('state')
+            if state=='observed':lo.append(wallet)
+            elif state in ('paper_test','paper_active'):copying.append(wallet)
+            else:paused.append(wallet)
+        rows=self._pending_query(db,copying,now,20)
+        if len(rows)<20:rows.extend(self._pending_query(db,paused,now,20-len(rows)))
         if len(rows)<20:rows.extend(self._pending_query(db,lo,now,20-len(rows)))
         return rows
 
