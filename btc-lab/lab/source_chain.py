@@ -491,8 +491,12 @@ def _recent_tokens(store, now):
         ).fetchone()
         if not ready:
             return []
+        if not db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='index' AND name='wallet_activity_seen'"
+        ).fetchone():
+            db.execute('CREATE INDEX IF NOT EXISTS wallet_activity_seen ON wallet_activity(first_seen)')
         rows = db.execute(
-            '''SELECT wallet, body FROM wallet_activity
+            '''SELECT wallet, body FROM wallet_activity INDEXED BY wallet_activity_seen
                WHERE first_seen>=? ORDER BY first_seen DESC LIMIT 400''',
             (now - LOOKBACK,)).fetchall()
         known = set()

@@ -446,6 +446,8 @@ class WalletCopy:
         self.store,self.fetch,self.paused,self.clock,self.sleep=store,fetch,paused,clock,sleep
         self.clob_client = clob_client
         self._clob_exposure_usd = 0.0  # running total of CLOB orders placed
+        self._last_decision={}
+        self._last_decision_load=0
         self._market_cache={}
         with store.connect() as db:
             db.executescript('''
@@ -479,10 +481,19 @@ class WalletCopy:
     def publish(self,status,error=None):
         now=self.clock()
         roster=(self.store.get('wallet_roster') or {}).get('wallets') or {}
+        wallets=list(get_active_wallets(self.store))
+        with self.store.connect() as db:
+            for wallet in wallets:
+                db.execute('INSERT OR IGNORE INTO wallet_copy_accounts VALUES (?,?)',(wallet,INITIAL))
         with self.store.connect() as db:
             trades=self.positions(db);accounts=[]
-            for wallet in get_active_wallets(self.store):
-                db.execute('INSERT OR IGNORE INTO wallet_copy_accounts VALUES (?,?)',(wallet,INITIAL))
+            if now-self._last_decision_load>=30:
+                for wallet in wallets:
+                    last=db.execute('SELECT ts,reason FROM wallet_copy_events WHERE wallet=? ORDER BY ts DESC,rowid DESC LIMIT 1',(wallet,)).fetchone()
+                    if last and (wallet not in self._last_decision or last['ts']>=self._last_decision[wallet][0]):
+                        self._last_decision[wallet]=(last['ts'], last['reason'])
+                self._last_decision_load=now
+            for wallet in wallets:
                 rows=[t for t in trades if t['wallet']==wallet]
                 closed=sorted((t for t in rows if t['status'] in ('CLOSED','SETTLED')),key=lambda t:t['closed_at'])
                 pnl=sum(t['pnl_micro'] for t in closed);exposure=sum(t['cost']+t['fee'] for t in rows if t['status'] in ('OPEN','RESOLVED'))
@@ -492,14 +503,14 @@ class WalletCopy:
                 curve=[];total=peak=dd=0
                 for t in closed:
                     total+=t['pnl_micro'];peak=max(peak,total);dd=max(dd,peak-total);curve.append({'ts':t['closed_at'],'pnl':total/1e6})
-                last=db.execute('SELECT ts,reason FROM wallet_copy_events WHERE wallet=? ORDER BY ts DESC,rowid DESC LIMIT 1',(wallet,)).fetchone()
+                cached=self._last_decision.get(wallet)
                 roster_row=roster.get(wallet) or {}
                 accounts.append(dict(id='copy-'+wallet,wallet=wallet,name='Copy '+wallet_label(wallet)+' · PAPER',initial=500,cash=cash/1e6,pnl=pnl/1e6,
                     roster_state=roster_row.get('state'),watch=self.watch.get(wallet),
                     fees=sum(t['fee']+t.get('exit_fee',0) for t in rows)/1e6,open_cost=exposure/1e6,pending=0,
                     trades=len(rows),settled=len(closed),wins=sum(t['pnl_micro']>0 for t in closed),curve=curve[-300:],
                     max_drawdown_usd=dd/1e6,independent_windows=len({t['market'] for t in closed}),
-                    current_block=self.risk_reason(db,wallet,now),last_reason=last['reason'] if last else 'NO_NEW_SOURCE_TRADE',last_decision_at=last['ts'] if last else None))
+                    current_block=self.risk_reason(db,wallet,now),last_reason=cached[1] if cached else 'NO_NEW_SOURCE_TRADE',last_decision_at=cached[0] if cached else None))
             if now-self._scan_at>=30 or not self._scan:
                 reasons=[dict(r) for r in db.execute('SELECT wallet,reason,COUNT(*) AS count FROM wallet_copy_events GROUP BY wallet,reason')]
                 recent=[]
@@ -547,6 +558,7 @@ class WalletCopy:
         with self.store.connect() as db:
             db.execute('UPDATE wallet_copy_events SET reason=?,body=? WHERE wallet=? AND event_key=?',
                 (reason,json.dumps(evidence,allow_nan=False),row['wallet'],row['event_key']))
+            self._last_decision[row['wallet']]=(now, reason)
             match=re.fullmatch(r'(btc|eth)-updown-(5m|15m)-(\d+)',str(event.get('slug','')))
             if (match and event.get('type')=='TRADE' and event.get('side')=='BUY'
                 and reason not in ('PRE_ACTIVATION','SOURCE_IDENTITY_MISMATCH','NOT_BUY_OR_SELL')
@@ -877,6 +889,7 @@ class WalletCopy:
     def _set_copy_reason(self,db,wallet,key,reason,evidence):
         db.execute('UPDATE wallet_copy_events SET reason=?,body=? WHERE wallet=? AND event_key=?',
             (reason,json.dumps(evidence),wallet,key))
+        self._last_decision[wallet]=(self.clock(), reason)
 
     def _open_lot(self,trade,evidence,wallet,key):
         debit=int(trade['cost'])+int(trade['fee'])

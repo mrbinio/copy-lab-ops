@@ -16,6 +16,8 @@ Odczyt przed SELL nie stoi już w środku jednej kolejki. Sprzedaże startują r
 
 Kolejka `pending_activity` szła po kluczu portfela i skanowała jego całą historię. Na Macu jeden taki odczyt trwał 1713 ms i zwracał 20 wierszy. Decyzje z ostatniej godziny miały medianę opóźnienia 94 s, przy progu 90 s. Zapytanie jest teraz przypięte do indeksu `wallet_activity_seen`. Ten sam odczyt na żywej bazie, bez zapisu, trwał 0,7 ms. Indeks już był. Nowego indeksu na bazie 6 GB nie zakładam.
 
+Po pierwszym restarcie świeże sygnały i tak zostawały bez decyzji: 443 wiersze z dwóch minut, 421 bez wpisu. Publikacja stanu przy każdym kroku trzymała blokadę zapisu przez sortowanie 153 522 decyzji (ostatni powód portfela około 1 s, zbiorczy licznik 1,4 s). Inne zapisy, w tym odbiór aktywności, dostawały `database is locked`. Zapis kont jest teraz osobno i krótki. Ostatni powód trzyma pamięć procesu i odświeża się z bazy najwyżej co 30 s.
+
 Limity 5 USD i 25 USD, hasło, port 8769 i `clob_live=false` zostają. Historia nie jest kasowana. Stare transakcje nie wracają jako nowe zakupy.
 
 ## Liczby
