@@ -7,6 +7,7 @@ from lab.wallet_roster import (
     RULES, RULES_V1, RULES_V2, can_observe_to_test, copy_evidence, evaluate_copy_book, tick, bootstrap, SPEC,
     SPEC_V2, PREVIOUS_SPEC, hypothetical_settled, audit, AUDIT_TABLE, AUDIT_DISPLAY_LIMIT,
     PAUSE_REASON, RETEST_REASON, RESTORE_PLUS_REASON, PROMOTE_REASON,
+    pause_if_period_negative, buy_pause_reason,
 )
 
 class RosterTests(unittest.TestCase):
@@ -220,8 +221,8 @@ class RosterTests(unittest.TestCase):
                 db.execute(
                     'INSERT INTO wallet_copy_positions(body) VALUES (?)',
                     (json.dumps({
-                        'wallet': weak, 'status': 'CLOSED', 'closed_at': now - 10,
-                        'opened': now - 20, 'pnl_micro': -500_000, 'market': 'kept',
+                        'wallet': weak, 'status': 'CLOSED', 'closed_at': now - 1,
+                        'opened': now - 4, 'pnl_micro': -500_000, 'market': 'kept',
                     }),),
                 )
             updated, _changed = tick(store, now=now, candidate_stats={newbie: {
@@ -402,11 +403,10 @@ class RosterTests(unittest.TestCase):
                     }),),
                 )
             updated, changed = tick(store, now=now)
-            self.assertIn(wallet, changed)
-            self.assertEqual(updated['wallets'][wallet]['state'], 'paper_test')
-            self.assertEqual(updated['wallets'][wallet]['reason'], RESTORE_PLUS_REASON)
+            self.assertNotIn(wallet, changed)
+            self.assertEqual(updated['wallets'][wallet]['state'], 'paused')
 
-    def test_one_red_stint_does_not_pause_a_book_that_is_still_plus(self):
+    def test_negative_period_pauses_even_when_older_trades_are_positive(self):
         with tempfile.TemporaryDirectory() as d:
             store = Store(Path(d) / 'lab.db')
             now = 6_000_000
@@ -430,8 +430,57 @@ class RosterTests(unittest.TestCase):
                         }),),
                     )
             updated, changed = tick(store, now=now)
-            self.assertNotIn(wallet, changed)
+            self.assertIn(wallet, changed)
+            self.assertEqual(updated['wallets'][wallet]['state'], 'paused')
+            self.assertEqual(updated['wallets'][wallet]['reason'], PAUSE_REASON)
+
+    def test_plus_period_keeps_copying_when_older_losses_are_outside_it(self):
+        with tempfile.TemporaryDirectory() as d:
+            store = Store(Path(d) / 'lab.db')
+            now = 6_000_000
+            wallet = '0x' + '11' * 20
+            state = bootstrap(store, now=now)
+            state['wallets'][wallet] = {
+                'wallet': wallet, 'state': 'paper_test', 'since': now - 60, 'reason': 'copying',
+            }
+            store.set('wallet_roster', state)
+            with store.connect() as db:
+                db.execute('CREATE TABLE wallet_copy_positions (id INTEGER PRIMARY KEY, body TEXT)')
+                for pnl, opened, market in (
+                    (-10_000_000, now - 86400, 'old'),
+                    (1_000_000, now - 30, 'new'),
+                ):
+                    db.execute(
+                        'INSERT INTO wallet_copy_positions(body) VALUES (?)',
+                        (json.dumps({
+                            'wallet': wallet, 'status': 'SETTLED', 'opened': opened,
+                            'closed_at': opened + 10, 'pnl_micro': pnl, 'market': market,
+                        }),),
+                    )
+            updated, changed = tick(store, now=now)
             self.assertEqual(updated['wallets'][wallet]['state'], 'paper_test')
+
+    def test_pause_is_visible_to_the_next_buy_on_the_same_connection(self):
+        with tempfile.TemporaryDirectory() as d:
+            store = Store(Path(d) / 'lab.db')
+            now = 6_000_000
+            wallet = '0x' + '22' * 20
+            state = bootstrap(store, now=now)
+            state['wallets'][wallet] = {
+                'wallet': wallet, 'state': 'paper_test', 'since': now - 60, 'reason': 'copying',
+            }
+            store.set('wallet_roster', state)
+            with store.connect() as db:
+                db.execute('CREATE TABLE wallet_copy_positions (id INTEGER PRIMARY KEY, body TEXT)')
+                db.execute(
+                    'INSERT INTO wallet_copy_positions(body) VALUES (?)',
+                    (json.dumps({
+                        'wallet': wallet, 'status': 'SETTLED', 'opened': now - 10,
+                        'closed_at': now, 'pnl_micro': -500_000, 'market': 'm',
+                    }),),
+                )
+                self.assertTrue(pause_if_period_negative(db, wallet, now))
+                self.assertEqual(buy_pause_reason(db, wallet, now), 'COPY_PAUSED')
 
     def test_plus_observation_opens_a_copy_without_waiting_for_candidate_stats(self):
         with tempfile.TemporaryDirectory() as d:

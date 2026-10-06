@@ -27,6 +27,11 @@ def dashboard_state(store):
         if hit and now - hit[0] < _SNAP_TTL:
             return hit[1]
         value = store.snapshot()
+        watch = Path(store.path).resolve().parent.parent / 'logs' / 'watchdog-status.json'
+        try:
+            value['service_watch'] = json.loads(watch.read_text()) if watch.exists() else value.get('service_watch') or {}
+        except (OSError, ValueError):
+            value['service_watch'] = {'status': 'unknown'}
         value['revision'] = os.environ.get('LAB_REVISION') or None
         value['view'] = 'live'
         value['dashboard_port'] = 8769

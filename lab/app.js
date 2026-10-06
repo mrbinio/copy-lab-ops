@@ -352,7 +352,16 @@ function fillWalletTiles(s,board,period){
     if(openCount)card.append(node('p',t('Open copy','Otwarta kopia')+' · '+openCount+' · '+t('not a closed result','to nie jest zamknięty wynik'),'watch-line'));
     else if(row&&row.pause_reason)card.append(node('p',row.pause_reason,'watch-line'));
     else if(!(account.trades>0))card.append(node('p',t('No closed copy. Watching is not a result.','Brak zamkniętej kopii. Śledzenie nie jest wynikiem.'),'watch-line'));
+    card.onclick=()=>{localStorage.setItem('btc-lab-open-wallet',wallet);openWalletDetail(s,account,row,openCount);};
     box.append(card);
+  }
+  const openId=localStorage.getItem('btc-lab-open-wallet');
+  if(openId){
+    const account=accounts.find(a=>(a.wallet||String(a.id).replace(/^copy-/,''))===openId);
+    if(account){
+      const wallet=account.wallet||String(account.id).replace(/^copy-/,'');
+      openWalletDetail(s,account,by[wallet],opensBy[wallet]||0);
+    }
   }
   text('wallet-track',periodName+' · '+t('watched ','śledzone ')+accounts.length+' · '+t('copying now ','kopiujemy teraz ')+copying+' · '+t('no closed copy ','bez zamkniętej kopii ')+idle+'. '+t('Copying wallets first, then green. 5–15 min strategies are on their own tab.','Najpierw kopiowane, potem zielone. Strategie 5–15 min są na osobnej zakładce.'));
 }
@@ -452,9 +461,9 @@ function renderPaperBoard(s){
     text('journal-scope',t('Closed copies are the main number. Open copies are listed and are not in that sum.','Zamknięte kopie są liczbą główną. Otwarte kopie są na liście i nie wchodzą do tej sumy.'));
   }
 }
-function render(){const s=state||blank();syncAssetUI(s);renderWalletPanel(s);const a=ownStrategies(s.accounts).find(x=>x.id===selected)||ownStrategies(s.accounts)[0]||{id:'',name:'',cash:null,pnl:null,trades:0,settled:0,wins:0,curve:[],initial:null};const live=connected&&!preview;const versionElement=$('service-version');if(versionElement)versionElement.textContent=serviceVersionLabel(s.worker,live,preview,Date.now()/1000);const age=Date.now()/1000-(s.worker.heartbeat||0);const healthy=live&&age<30&&s.worker.status==='RECORDING';text('status-text',preview?t('DESIGN PREVIEW','PODGLĄD PROJEKTU'):healthy?t('RECORDING','ZBIERANIE DANYCH'):live?t('SERVICE DEGRADED','SYSTEM WYMAGA UWAGI'):t('NOT CONNECTED','NIEPOŁĄCZONY'));text('status-detail',preview?t('Synthetic examples · excluded from research','Dane przykładowe · poza badaniem'):healthy?t('Collector connected. Strategy checks remain independent.','Kolektor połączony. Strategie osobno sprawdzają dane.'):live?t('Entries wait for valid data and service recovery.','Wejścia czekają na poprawne dane i działający system.'):t('The dashboard is ready. The 24/7 service is not connected.','Dashboard jest gotowy. Usługa 24/7 nie jest podłączona.'));$('status-dot').style.background=healthy?'var(--teal)':'var(--amber)';$('demo-banner').hidden=!preview;text('demo-banner',t('DESIGN PREVIEW — synthetic data, not trading results.','PODGLĄD PROJEKTU — dane sztuczne, to nie są wyniki handlu.'));text('pnl',a.settled?money(a.pnl,true):t('No settlements','Brak rozliczeń'));$('pnl').style.fontSize=a.settled?'':'1.35rem';$('pnl').className='metric-value '+(a.pnl>0?'positive':a.pnl<0?'negative':'');text('balance',money(a.cash));const selectedStatus=$('selected-account-status');if(selectedStatus){const last=(s.decisions||[]).find(d=>d.strategy===a.id);selectedStatus.textContent=(a.name||a.id)+' · '+a.trades+' '+t('trades','transakcji')+' · '+(last?reason(last.reason):t('No recorded decision','Brak zapisanej decyzji'))+(connected?'':' · '+t('Connection unavailable; last received data','Brak połączenia; ostatnio odebrane dane'));}text('capital-note',t('Research account · virtual ','Konto badawcze · wirtualne ')+money(a.initial??500));text('win-rate',a.settled?`${(100*a.wins/a.settled).toFixed(1)}%`:'—');text('trade-count',`${a.settled} ${t('settled trades','rozliczonych transakcji')}`);text('observations',s.observations==null?'—':s.observations.toLocaleString());text('labels',`${t('Official outcomes','Oficjalne wyniki')}: ${s.labels??'—'}`);chart(a.curve||[]);text('curve-period',a.curve?.length?`${formatTime(a.curve[0].ts)} — ${formatTime(a.curve.at(-1).ts)} · Stockholm`:t('No performance history','Brak historii wyników'));const ask=side=>{const book=s.market.books?.[side];return book?.asks?.length?`${(100*Math.min(...book.asks.map(x=>Number(x[0])))).toFixed(1)}¢`:'—';};text('up-ask',ask('Up'));text('down-ask',ask('Down'));text('reference-label',s.market.rule_kind==='TWAP60'?'Chainlink TWAP 60 s':t('Reference price','Cena referencyjna'));text('reference-price',money(s.reference?.price));text('opening-price',money(s.market.opening));const d=s.decisions.find(x=>x.strategy===selected);text('decision-reason',d?reason(d.reason):t('Awaiting verified data','Oczekiwanie na zweryfikowane dane'));
+function render(){const scrollY=document.scrollingElement?document.scrollingElement.scrollTop:0;const s=state||blank();syncAssetUI(s);renderOpsBar(s);renderWalletPanel(s);const a=ownStrategies(s.accounts).find(x=>x.id===selected)||ownStrategies(s.accounts)[0]||{id:'',name:'',cash:null,pnl:null,trades:0,settled:0,wins:0,curve:[],initial:null};const live=connected&&!preview;const versionElement=$('service-version');if(versionElement)versionElement.textContent=serviceVersionLabel(s.worker,live,preview,Date.now()/1000);const age=Date.now()/1000-(s.worker.heartbeat||0);const healthy=live&&age<30&&s.worker.status==='RECORDING';text('status-text',preview?t('DESIGN PREVIEW','PODGLĄD PROJEKTU'):healthy?t('RECORDING','ZBIERANIE DANYCH'):live?t('SERVICE DEGRADED','SYSTEM WYMAGA UWAGI'):t('NOT CONNECTED','NIEPOŁĄCZONY'));text('status-detail',preview?t('Synthetic examples · excluded from research','Dane przykładowe · poza badaniem'):healthy?t('Collector connected. Strategy checks remain independent.','Kolektor połączony. Strategie osobno sprawdzają dane.'):live?t('Entries wait for valid data and service recovery.','Wejścia czekają na poprawne dane i działający system.'):t('The dashboard is ready. The 24/7 service is not connected.','Dashboard jest gotowy. Usługa 24/7 nie jest podłączona.'));$('status-dot').style.background=healthy?'var(--teal)':'var(--amber)';$('demo-banner').hidden=!preview;text('demo-banner',t('DESIGN PREVIEW — synthetic data, not trading results.','PODGLĄD PROJEKTU — dane sztuczne, to nie są wyniki handlu.'));text('pnl',a.settled?money(a.pnl,true):t('No settlements','Brak rozliczeń'));$('pnl').style.fontSize=a.settled?'':'1.35rem';$('pnl').className='metric-value '+(a.pnl>0?'positive':a.pnl<0?'negative':'');text('balance',money(a.cash));const selectedStatus=$('selected-account-status');if(selectedStatus){const last=(s.decisions||[]).find(d=>d.strategy===a.id);selectedStatus.textContent=(a.name||a.id)+' · '+a.trades+' '+t('trades','transakcji')+' · '+(last?reason(last.reason):t('No recorded decision','Brak zapisanej decyzji'))+(connected?'':' · '+t('Connection unavailable; last received data','Brak połączenia; ostatnio odebrane dane'));}text('capital-note',t('Research account · virtual ','Konto badawcze · wirtualne ')+money(a.initial??500));text('win-rate',a.settled?`${(100*a.wins/a.settled).toFixed(1)}%`:'—');text('trade-count',`${a.settled} ${t('settled trades','rozliczonych transakcji')}`);text('observations',s.observations==null?'—':s.observations.toLocaleString());text('labels',`${t('Official outcomes','Oficjalne wyniki')}: ${s.labels??'—'}`);chart(a.curve||[]);text('curve-period',a.curve?.length?`${formatTime(a.curve[0].ts)} — ${formatTime(a.curve.at(-1).ts)} · Stockholm`:t('No performance history','Brak historii wyników'));const ask=side=>{const book=s.market.books?.[side];return book?.asks?.length?`${(100*Math.min(...book.asks.map(x=>Number(x[0])))).toFixed(1)}¢`:'—';};text('up-ask',ask('Up'));text('down-ask',ask('Down'));text('reference-label',s.market.rule_kind==='TWAP60'?'Chainlink TWAP 60 s':t('Reference price','Cena referencyjna'));text('reference-price',money(s.reference?.price));text('opening-price',money(s.market.opening));const d=s.decisions.find(x=>x.strategy===selected);text('decision-reason',d?reason(d.reason):t('Awaiting verified data','Oczekiwanie na zweryfikowane dane'));
 const cards=$('strategy-cards');cards.replaceChildren();const visibleAccounts=sortAccounts(ownStrategies(s.accounts));const books=bookParts(s.accounts);const totalPnl=books.strategy;const bar=node('div',undefined,'card-layout-bar');const autoBtn=node('button',t('Green on top','Zielone u góry'),'small-button'+(cardLayout==='auto'?' on':''));const manBtn=node('button',t('My order · drag','Mój układ · przeciągnij'),'small-button'+(cardLayout==='manual'?' on':''));autoBtn.type=manBtn.type='button';autoBtn.onclick=()=>{cardLayout='auto';localStorage.setItem('btc-lab-card-layout','auto');render();};manBtn.onclick=()=>{cardLayout='manual';if(!cardOrder.length)cardOrder=visibleAccounts.map(a=>a.id);localStorage.setItem('btc-lab-card-layout','manual');localStorage.setItem('btc-lab-card-order',JSON.stringify(cardOrder));render();};bar.append(autoBtn,manBtn);const totalBox=node('div',undefined,'total-pnl');totalBox.append(node('span',t('5–15 min strategies','Strategie 5–15 min')),node('strong',money(totalPnl,true),totalPnl>=0?'positive':'negative'),node('small',t('From the start of each strategy account. Copied wallets stay on Portfele.','Od początku każdego konta strategii. Kopiowane portfele zostają w Portfelach.')),node('small',`${t('Updated','Odświeżono')}: ${formatTime(s.generated_at)}`));cards.append(bar,totalBox);visibleAccounts.forEach((account,i)=>{const pnlClass=cardToneClass(account);const card=node('article',undefined,'strategy-card'+pnlClass+(account.id===selected?' selected':''));card.dataset.strategy=account.id;card.draggable=cardLayout==='manual';if(cardLayout==='manual'){card.addEventListener('dragstart',ev=>{ev.dataTransfer.setData('text/plain',account.id);card.classList.add('dragging');});card.addEventListener('dragend',()=>card.classList.remove('dragging'));card.addEventListener('dragover',ev=>ev.preventDefault());card.addEventListener('drop',ev=>{ev.preventDefault();const from=ev.dataTransfer.getData('text/plain');if(!from||from===account.id)return;const ids=visibleAccounts.map(a=>a.id);const a=ids.indexOf(from),b=ids.indexOf(account.id);if(a<0||b<0)return;ids.splice(a,1);ids.splice(b,0,from);cardOrder=ids;localStorage.setItem('btc-lab-card-order',JSON.stringify(cardOrder));render();});}const top=node('div',undefined,'strategy-top');top.append(node('span',`0${i+1} / ${asset} 15M`,'strategy-number'),node('span',cardKind(account),'chip'));card.append(top,node('h3',cardTitle(account)),node('p',cardBlurb(account)));const stats=node('div',undefined,'strategy-stats');const pairs=account.id.startsWith('copy-')?copyStatPairs(account):[[money(account.pnl,true),'P&L'],[String(account.trades),t('Paper trades','Transakcje testowe')]];for(const [v,label]of pairs){const box=node('div');box.append(node('strong',v),node('small',label));stats.append(box);}card.append(stats);if(account.id.startsWith('copy-')){for(const line of copyWatchLines(account))card.append(node('p',line,'watch-line'));}const pauses=s.strategy_pauses||{};if(Object.prototype.hasOwnProperty.call(pauses,account.id)){const paused=!!pauses[account.id];const btn=node('button',paused?t('Turn entries on','Włącz nowe zakłady'):t('Turn entries off','Wyłącz nowe zakłady'),'small-button strategy-toggle');btn.type='button';btn.onclick=async ev=>{ev.stopPropagation();try{const res=await fetch('./api/strategy-pause',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:account.id,paused:!paused,asset})});if(!res.ok)throw Error('pause');}catch(e){btn.textContent=t('Could not save','Nie zapisano');return;}refresh();};card.append(btn);if(paused)card.append(node('p',t('New entries are off. Open tickets still settle.','Nowe zakłady są wyłączone. Otwarte bilety nadal się rozliczają.')));}if(account.current_block)card.append(node('p',reason(account.current_block)));if(account.entry_capacity_usd!=null)card.append(node('p',`${t('Available next-entry budget including fees','Dostępna kwota kolejnego wejścia z opłatami')}: ${money(account.entry_capacity_usd)} · ${t('Market minimum still applies','Obowiązuje minimum rynku')}`));if(account.losses_7d!=null)card.append(node('p',`${t('Today net','Dzisiaj netto')}: ${money(account.today_pnl,true)} · ${t('7-day gross losses','Straty brutto 7 dni')}: ${money(account.losses_7d)} / ${money(account.week_limit)} · ${t('Next entry loss is also reserved','Limit uwzględnia też możliwą stratę nowego wejścia')}`));cards.append(card);});
-text('journal-filter-label',t('Journal strategy','Strategia w dzienniku'));text('journal-all',t('All strategies','Wszystkie strategie'));const bookSelect=$('journal-book');if(bookSelect){const bookLabel=$('journal-book-label');if(bookLabel)bookLabel.textContent=t('Journal book','Księga dziennika');if(bookSelect.dataset.ready!==lang){bookSelect.replaceChildren();for(const [value,label] of [['paper',t('PAPER accounts','Konta PAPER')],['policy',t('Policy observation','Obserwacja polityki')],['independent',t('Independent tickets','Niezależne bilety')]]){const o=node('option',label);o.value=value;bookSelect.append(o);}bookSelect.dataset.ready=lang;}bookSelect.value=journalBook;}const journalTrades=filterJournal(openCopyTrades(s).concat(journalRows(s)),journalFilter);const rows=$('trades');rows.replaceChildren();journalTrades.forEach(tr=>{const row=node('tr');const pnl=journalPnl(tr);const costText=tr.hypothetical&&!tr.cost_known?missing():money((tr.cost+tr.fee+(tr.exit_fee||0))/1e6);[formatTime(tr.opened),journalLabel(tr,s.accounts),tr.side,costText,journalStatus(tr),pnl==null?missing():money(pnl,true)].forEach((v,i)=>row.append(node('td',v,i===5?(pnl>0?'positive':pnl<0?'negative':''):'')));rows.append(row);});$('journal-empty').hidden=!!journalTrades.length;text('journal-scope',journalBook==='policy'?t('Policy observation only. Not the PAPER account.','Tylko obserwacja polityki. To nie konto PAPER.'):journalBook==='independent'?t('Independent hold-to-settlement tickets only. Not a PAPER profit and not a promotion.','Tylko niezależne bilety trzymane do rozstrzygnięcia. To nie zysk konta PAPER i nie awans.'):journalFilter==='all'?t('PAPER account fills only. Observation and independent tickets are separate views.','Tylko wypełnienia kont PAPER. Obserwacja i niezależne bilety są osobnymi widokami.'):`${journalFilter} · ${t('filtered from latest 100 service records; full day in Export report','filtr ostatnich 100 wpisów serwera; pełny dzień w Pobierz raport')}`);text('journal-count',`${journalTrades.length} ${t('recent trades','ostatnich transakcji')}`);text('collector-health',preview?'PREVIEW':healthy?'CONNECTED':live?'DEGRADED':'OFFLINE');text('model-health',isEth()?t('NOT USED','NIE JEST UŻYWANY'):s.model.status);text('training-count',isEth()?t('Separate ETH experiment','Osobny eksperyment ETH'):`${s.model.samples||0} / 200`);$('training-progress').hidden=isEth();$('training-progress').value=Math.min(200,s.model.samples||0);const events=$('events');events.replaceChildren();for(const error of (s.worker.errors||[])){const row=node('div',undefined,'event');row.append(node('span',error.stage),node('b',error.detail||error.error));events.append(row);}if(s.worker.reference_error){events.append(node('p',s.worker.reference_error,'muted'));}s.decisions.slice(0,6).forEach(d=>{const row=node('div',undefined,'event');row.append(node('time',formatTime(d.ts)),node('span',d.strategy),node('b',reason(d.reason)));events.append(row);});if(!s.decisions.length)events.append(node('p',t('No decisions recorded. Waiting for the worker.','Brak zapisanych decyzji. Oczekiwanie na silnik.'),'muted'));text('updated',preview?t('Preview · not connected to a market','Podgląd · bez połączenia z rynkiem'):connected?`${t('Last response','Ostatnia odpowiedź')}: ${formatTime(s.generated_at)} · Stockholm`:t('No service connected','Usługa nie jest podłączona'));tick();installHelp();renderPaperBoard(s);}
+text('journal-filter-label',t('Journal strategy','Strategia w dzienniku'));text('journal-all',t('All strategies','Wszystkie strategie'));const bookSelect=$('journal-book');if(bookSelect){const bookLabel=$('journal-book-label');if(bookLabel)bookLabel.textContent=t('Journal book','Księga dziennika');if(bookSelect.dataset.ready!==lang){bookSelect.replaceChildren();for(const [value,label] of [['paper',t('PAPER accounts','Konta PAPER')],['policy',t('Policy observation','Obserwacja polityki')],['independent',t('Independent tickets','Niezależne bilety')]]){const o=node('option',label);o.value=value;bookSelect.append(o);}bookSelect.dataset.ready=lang;}bookSelect.value=journalBook;}const journalTrades=renderHistory(s);$('journal-empty').hidden=!!journalTrades.length;text('journal-scope',journalBook==='policy'?t('Policy observation only. Not the PAPER account.','Tylko obserwacja polityki. To nie konto PAPER.'):journalBook==='independent'?t('Independent hold-to-settlement tickets only. Not a PAPER profit and not a promotion.','Tylko niezależne bilety trzymane do rozstrzygnięcia. To nie zysk konta PAPER i nie awans.'):journalFilter==='all'?t('PAPER account fills only. Observation and independent tickets are separate views.','Tylko wypełnienia kont PAPER. Obserwacja i niezależne bilety są osobnymi widokami.'):`${journalFilter} · ${t('filtered from latest 100 service records; full day in Export report','filtr ostatnich 100 wpisów serwera; pełny dzień w Pobierz raport')}`);text('journal-count',`${journalTrades.length} ${t('recent trades','ostatnich transakcji')}`);text('collector-health',preview?'PREVIEW':healthy?'CONNECTED':live?'DEGRADED':'OFFLINE');text('model-health',isEth()?t('NOT USED','NIE JEST UŻYWANY'):s.model.status);text('training-count',isEth()?t('Separate ETH experiment','Osobny eksperyment ETH'):`${s.model.samples||0} / 200`);$('training-progress').hidden=isEth();$('training-progress').value=Math.min(200,s.model.samples||0);const events=$('events');events.replaceChildren();for(const error of (s.worker.errors||[])){const row=node('div',undefined,'event');row.append(node('span',error.stage),node('b',error.detail||error.error));events.append(row);}if(s.worker.reference_error){events.append(node('p',s.worker.reference_error,'muted'));}s.decisions.slice(0,6).forEach(d=>{const row=node('div',undefined,'event');row.append(node('time',formatTime(d.ts)),node('span',d.strategy),node('b',reason(d.reason)));events.append(row);});if(!s.decisions.length)events.append(node('p',t('No decisions recorded. Waiting for the worker.','Brak zapisanych decyzji. Oczekiwanie na silnik.'),'muted'));text('updated',preview?t('Preview · not connected to a market','Podgląd · bez połączenia z rynkiem'):connected?`${t('Last response','Ostatnia odpowiedź')}: ${formatTime(s.generated_at)} · Stockholm`:t('No service connected','Usługa nie jest podłączona'));tick();installHelp();renderPaperBoard(s);renderMitch(s);if(document.scrollingElement)document.scrollingElement.scrollTop=scrollY;}
 function tick(){text('clock',new Date().toLocaleTimeString('en-GB',{timeZone:'Europe/Stockholm'})+' · Stockholm');const now=Date.now()/1000;const remaining=state?.market?.end?Math.max(0,Math.floor(state.market.end-now)):null;text('countdown',remaining==null?'—:—':`${String(Math.floor(remaining/60)).padStart(2,'0')}:${String(remaining%60).padStart(2,'0')}`);const age=state?.reference?.source_ts?Math.max(0,now-state.reference.source_ts):null;text('reference-age',age==null?'—':`${age.toFixed(1)}s`);text('reference-health',preview?'PREVIEW':connected&&age!=null&&age<=5?'FRESH':'WAITING');}
 async function refresh(){if(preview)return;const requested=location.hash==='#strategie'?asset:'BTC';try{if(isEth()&&location.hostname.endsWith('github.io'))throw Error('ETH requires private backend');const endpoint=location.hostname.endsWith('github.io')?'./state.json':'./api/state?asset='+requested;const res=await fetch(endpoint,{cache:'no-store',signal:AbortSignal.timeout(20000)});if(!res.ok)throw Error('offline');const data=await res.json();if(data.demo===true||data.mode!=='PAPER'||!Array.isArray(data.accounts)||!Array.isArray(data.decisions)||!Array.isArray(data.trades)||(requested==='ETH'&&data.asset!=='ETH'))throw Error('invalid schema');if(requested!==asset||preview)return;state=data;connected=true;}catch{if(requested!==asset||preview)return;connected=false;}render();}
 
@@ -482,7 +491,7 @@ function renderGuide(){
  for(const e of guideEntries){const title=e[lang==='pl'?2:1];const link=node('a',title);link.href='#guide-'+e[0];$('guide-toc').append(link);const card=node('article',undefined,'panel guide-card');card.id='guide-'+e[0];card.tabIndex=-1;card.append(node('h2',title),node('p',e[lang==='pl'?4:3]));const back=node('a',t('↑ Guide contents','↑ Spis treści'));back.href='#guide';card.append(back);$('guide-content').append(card);}
 }
 function routeGuide(){
-  const names={wynik:'Portfele',dziennik:'Dziennik',obserwacje:'Obserwacje',kandydaci:'Kandydaci',strategie:'5–15 min',diagnostyka:'Diagnostyka',guide:'Opis'};
+  const names={wynik:'Portfele',mitch:'Mitch copy wallets',dziennik:'Historia',obserwacje:'Obserwacje',kandydaci:'Kandydaci',strategie:'5–15 min',diagnostyka:'Diagnostyka',guide:'Opis'};
   const alias={overview:'wynik',activity:'dziennik',wallets:'obserwacje',strategies:'strategie',operations:'diagnostyka'};
   let name=(location.hash||'#wynik').slice(1);
   if(name.startsWith('guide'))name='guide';
@@ -491,6 +500,7 @@ function routeGuide(){
   for(const id of Object.keys(names)){const el=$(id);if(el)el.hidden=id!==name;}
   text('tab-name',names[name]);
   document.querySelectorAll('.nav-item').forEach(a=>a.classList.toggle('active',a.getAttribute('href')==='#'+name));
+  document.querySelectorAll('.project-tabs a').forEach(a=>a.classList.toggle('on',a.getAttribute('href')==='#'+name));
 }
 window.addEventListener('hashchange',routeGuide);
 
@@ -502,7 +512,7 @@ function syncAssetUI(s){
 }
 $('asset').onchange=e=>{asset=e.target.value;localStorage.setItem('btc-lab-asset',asset);selected=isEth()?'eth-mid-window-v1':'value-v1';journalFilter='all';state=null;connected=false;translate();refresh();};
 $('journal-strategy').onchange=e=>{journalFilter=e.target.value;render();};const journalBookSelect=$('journal-book');if(journalBookSelect)journalBookSelect.onchange=e=>{journalBook=e.target.value;localStorage.setItem('btc-lab-journal-book',journalBook);render();};
-$('language').onclick=()=>{lang=lang==='en'?'pl':'en';localStorage.setItem('btc-lab-language',lang);translate();};$('account').onchange=e=>{selected=e.target.value;render();};$('export').onclick=async()=>{return exportDaily();};document.querySelectorAll('.nav-item').forEach(a=>a.onclick=()=>{document.querySelectorAll('.nav-item').forEach(x=>x.classList.remove('active'));a.classList.add('active');});translate();refresh();setInterval(refresh,2000);setInterval(tick,1000);
+$('language').onclick=()=>{lang=lang==='en'?'pl':'en';localStorage.setItem('btc-lab-language',lang);translate();};$('account').onchange=e=>{selected=e.target.value;render();};$('export').onclick=async()=>{return exportDaily();};document.querySelectorAll('.nav-item').forEach(a=>a.onclick=()=>{document.querySelectorAll('.nav-item').forEach(x=>x.classList.remove('active'));a.classList.add('active');});bindHistory();translate();refresh();setInterval(refresh,2000);setInterval(tick,1000);
 
 
 async function exportDaily(){
@@ -576,5 +586,152 @@ function renderWalletPanel(s){
  const v=s.value_surface_execution||{};const r=s.opportunity_research||{};
  add('p',v.status?reason(v.status):t('No execution state received','Nie otrzymano stanu wykonania'));
  add('p',t('Research state: ','Stan badania: ')+(r.status||t('not available','brak danych'))+' · '+t('Updated: ','Aktualizacja: ')+stamp(r.updated_at));
+}
+let historyPage=Number(localStorage.getItem('btc-lab-history-page')||0);
+function bindHistory(){
+  const fields=[['history-wallet','btc-lab-history-wallet'],['history-date','btc-lab-history-date'],['history-kind','btc-lab-history-kind']];
+  for(const [id,key] of fields){
+    const el=$(id);if(!el||el.dataset.bound)continue;
+    el.dataset.bound='1';
+    el.value=localStorage.getItem(key)|| (id==='history-kind'?'all':'');
+    el.addEventListener('input',()=>{historyPage=0;localStorage.setItem(key,el.value);localStorage.setItem('btc-lab-history-page','0');render();});
+    el.addEventListener('change',()=>{historyPage=0;localStorage.setItem(key,el.value);localStorage.setItem('btc-lab-history-page','0');render();});
+  }
+  const prev=$('history-prev'),next=$('history-next');
+  if(prev&&!prev.dataset.bound){prev.dataset.bound='1';prev.onclick=()=>{historyPage=Math.max(0,historyPage-1);localStorage.setItem('btc-lab-history-page',String(historyPage));render();};}
+  if(next&&!next.dataset.bound){next.dataset.bound='1';next.onclick=()=>{historyPage+=1;localStorage.setItem('btc-lab-history-page',String(historyPage));render();};}
+}
+function renderHistory(s){
+  const all=filterJournal(openCopyTrades(s).concat(journalRows(s)),journalFilter);
+  const walletQ=(($('history-wallet')||{}).value||'').trim().toLowerCase();
+  const dateQ=($('history-date')||{}).value||'';
+  const kind=($('history-kind')||{}).value||'all';
+  const filtered=all.filter(tr=>{
+    const label=String(tr.strategy||'').toLowerCase();
+    if(walletQ&&!label.includes(walletQ))return false;
+    if(dateQ){
+      const day=new Date((tr.opened||0)*1000).toLocaleDateString('en-CA',{timeZone:'Europe/Stockholm'});
+      if(day!==dateQ)return false;
+    }
+    const status=String(tr.status||'');
+    const side=String(tr.side||'').toUpperCase();
+    if(kind==='open'&&status!=='OPEN'&&status!=='RESOLVED')return false;
+    if(kind==='closed'&&(status==='OPEN'||status==='RESOLVED'))return false;
+    if(kind==='buy'&&side==='SELL')return false;
+    if(kind==='sell'&&side!=='SELL')return false;
+    return true;
+  });
+  const pages=Math.max(1,Math.ceil(filtered.length/25));
+  if(historyPage>=pages)historyPage=pages-1;
+  if(historyPage<0)historyPage=0;
+  const slice=filtered.slice(historyPage*25,historyPage*25+25);
+  const rows=$('trades');
+  if(rows){
+    rows.replaceChildren();
+    slice.forEach(tr=>{const row=node('tr');const pnl=journalPnl(tr);const costText=tr.hypothetical&&!tr.cost_known?missing():money((tr.cost+tr.fee+(tr.exit_fee||0))/1e6);[formatTime(tr.opened),journalLabel(tr,s.accounts),tr.side,costText,journalStatus(tr),pnl==null?missing():money(pnl,true)].forEach((v,i)=>row.append(node('td',v,i===5?(pnl>0?'positive':pnl<0?'negative':''):'')));rows.append(row);});
+  }
+  text('history-page',(historyPage+1)+' / '+pages+' · '+filtered.length);
+  return filtered;
+}
+function renderOpsBar(s){
+  const el=$('ops-status');if(!el)return;
+  const now=Date.now()/1000;
+  const beat=Number((s.worker||{}).heartbeat||0);
+  const age=beat?now-beat:null;
+  const generated=Number(s.generated_at||0);
+  const genAge=generated?now-generated:null;
+  const stale=!connected||age==null||age>30||(genAge!=null&&genAge>25);
+  const watch=s.service_watch||{};
+  const clock=s.clock_status||{};
+  const mitch=s.mitch_copy||{};
+  const copyAt=(s.wallet_copy_execution||{}).updated_at;
+  const copyAge=copyAt?now-Number(copyAt):null;
+  const mitchAge=mitch.updated_at?now-Number(mitch.updated_at):null;
+  const moneyMs=v=>v==null?'brak danych':(Number(v).toFixed(0)+' ms');
+  const sec=v=>v==null?'brak danych':(Number(v).toFixed(0)+' s');
+  const parts=[
+    stale?'AWARIA — ekran nie dostał świeżej odpowiedzi':'DZIAŁA',
+    'sprawdzenie '+sec(age),
+    'kopiowanie '+sec(copyAge),
+    'Mitch '+sec(mitchAge),
+    'nadzór '+(watch.status||'brak danych')+(watch.problems&&watch.problems.length?' · '+watch.problems.join(','):''),
+    'restarty '+(watch.restarts_in_window==null?'brak danych':String(watch.restarts_in_window)),
+    'zegar '+(clock.status||'brak pomiaru')+' · '+moneyMs(clock.offset_ms)+' · '+(clock.source||'brak źródła')+' · '+(clock.checked_at?formatTime(clock.checked_at):'brak sprawdzenia')+' · niepewność '+moneyMs(clock.uncertainty_ms)
+  ];
+  el.textContent=parts.join(' · ');
+  el.className='ops-status '+(stale?'bad':'ok');
+  document.body.classList.toggle('data-stale',stale);
+}
+function openWalletDetail(s,account,row,openCount){
+  const box=$('wallet-detail');if(!box)return;
+  box.hidden=false;
+  const wallet=account.wallet||String(account.id).replace(/^copy-/,'');
+  const net=row&&row.net_micro!=null?money(row.net_micro/1e6,true):missing();
+  box.replaceChildren();
+  const head=node('div',undefined,'panel-heading');
+  const title=node('div');
+  title.append(node('h2',String(wallet).slice(-8)),node('p',wallet));
+  const close=node('button','Zamknij','small-button');
+  close.type='button';
+  close.onclick=()=>{localStorage.removeItem('btc-lab-open-wallet');box.hidden=true;box.replaceChildren();};
+  head.append(title,close);
+  box.append(head,node('p','Stan: '+(account.roster_state||'brak danych')+' · wynik okresu: '+net+' · otwarte kopie: '+(openCount||0)+(row&&row.pause_reason?' · '+row.pause_reason:'')));
+}
+function renderMitch(s){
+  const root=$('mitch-metrics');if(!root)return;
+  const m=s.mitch_copy;
+  const show=v=>v==null||v===''?missing():(Number(v)===0?'0,00 USD · potwierdzone zero':money(Number(v)/1e6,true));
+  root.replaceChildren();
+  const cards=[
+    ['Dzisiaj, zamknięte',m?show(m.closed_today_micro):missing()],
+    ['Od startu, zamknięte',m?show(m.closed_all_micro):missing()],
+    ['Otwarte, koszt',m&&m.open_cost_micro!=null?money(m.open_cost_micro/1e6):missing()],
+    ['Otwarte, wycena',m&&m.open_mark_micro!=null?money(m.open_mark_micro/1e6,true):missing()]
+  ];
+  for(const [label,value] of cards){
+    const card=node('article',undefined,'metric');
+    card.append(node('div',label,'metric-label'),node('div',value,'metric-value'));
+    root.append(card);
+  }
+  const tiles=$('mitch-wallets');
+  if(tiles){
+    tiles.replaceChildren();
+    const rows=m&&Array.isArray(m.wallets)?m.wallets:[];
+    if(!rows.length)tiles.append(node('p','Brak danych projektu Mitch. To nie jest zero.'));
+    for(const row of rows){
+      const net=row.net_micro;
+      const card=node('article',undefined,'strategy-card wallet-tile'+(net>0?' profit':net<0?' loss':''));
+      card.append(node('h3',row.label||String(row.wallet||'').slice(-8)));
+      card.append(node('p','Wynik: '+(net==null?missing():money(net/1e6,true))));
+      card.append(node('p','Kopie: '+(row.copies==null?missing():String(row.copies))+' · limit okien łącznie: '+(row.spent_micro==null?missing():money(row.spent_micro/1e6))+' / '+(row.limit_usd||'brak')+' na okno'));
+      card.append(node('p','Otwarte: '+(row.open==null?missing():String(row.open))));
+      card.onclick=()=>{
+        const detail=$('mitch-detail');
+        if(!detail)return;
+        detail.hidden=false;
+        detail.replaceChildren(node('h2',row.label||''),node('p',row.wallet||''),node('p','Wynik zamknięty: '+(net==null?missing():money(net/1e6,true))));
+      };
+      tiles.append(card);
+    }
+  }
+  const extra=$('mitch-extra');
+  if(!extra)return;
+  extra.replaceChildren();
+  if(!m){extra.append(node('p','Brak danych. Założenia i opóźnienia pojawią się po pierwszym zapisie projektu.'));return;}
+  extra.append(node('p','Wersja: '+(m.spec||missing())+' · kapitał PAPER: '+(m.capital_usd_per_wallet==null?missing():money(m.capital_usd_per_wallet))+' na portfel. '+String(m.capital_note||'')));
+  extra.append(node('p',m.sum_matches?'Suma portfeli zgadza się z wynikiem projektu.':'Suma portfeli nie zgadza się z wynikiem projektu albo brakuje danych.'));
+  for(const line of m.assumptions||[])extra.append(node('p',line));
+  extra.append(node('p',m.grouping||''));
+  const lat=m.latency||{};
+  const pack=block=>!block||block.n==null?'brak danych':(block.n+' próbek, mediana '+(block.median_ms==null?'brak':block.median_ms+' ms')+', p95 '+(block.p95_ms==null?'brak':block.p95_ms+' ms')+', max '+(block.max_ms==null?'brak':block.max_ms+' ms')+', poniżej 1 s '+(block.under_1000_pct==null?'brak':block.under_1000_pct+'%'));
+  extra.append(node('p','Opóźnienie wykrycia: '+pack(lat.detect)));
+  extra.append(node('p','Przetwarzanie lokalne: '+pack(lat.process)));
+  extra.append(node('p','Razem: '+pack(lat.total)+(lat.total_confirmed?' · pomiar potwierdzony.':' · pomiar całkowity niepotwierdzony. '+(lat.note||''))));
+  const recent=m.recent||[];
+  if(!recent.length)extra.append(node('p','Brak zapisanych zdarzeń. To nie jest zero kopii z rynku, tylko pusty dziennik od startu.'));
+  for(const event of recent.slice(0,25)){
+    const detail=event.detail||{};
+    extra.append(node('p',formatTime(event.at)+' · '+String(event.wallet||'').slice(-8)+' · '+event.reason+' · źródło '+(detail.source_price||'brak')+' · kopia '+(detail.copy_vwap==null?'brak':detail.copy_vwap)));
+  }
 }
 

@@ -14,6 +14,7 @@ from .mid_window import simulate_sale
 from .reference import classify_rule
 from .wallet_observer import get_active_wallets, wallet_label
 from .strategy_control import is_paused as copy_paused, pauses as copy_pauses
+from .wallet_roster import buy_pause_reason, pause_if_period_negative
 from .copy_totals import paper_board, summarize as copy_summarize, path_stats, path_record
 from .wallet_watch import build_watch
 from .copy_policy import POLICY, band_reason, confirmed_source_price, decide_buy, decide_sell, remember_fill
@@ -787,6 +788,10 @@ class WalletCopy:
             # A pause stops a new buy. It does not block a SELL of an open PAPER position
             # or the official settlement path, which never enters this function.
             if kind=='BUY' and self.paused():self.reason(row,'PAUSED');return
+            if kind=='BUY':
+                roster_state=((self.store.get('wallet_roster') or {}).get('wallets') or {}).get(wallet,{}).get('state')
+                if roster_state not in ('paper_test','paper_active','paused','observed'):
+                    self.reason(row,'NOT_IN_COPY_ROSTER');return
             if kind=='BUY' and copy_paused(self.store,'copy-'+wallet):self.reason(row,'COPY_PAUSED');return
             if not re.fullmatch(r'(btc|eth)-updown-(5m|15m)-\d+',str(event.get('slug',''))):self.reason(row,'UNSUPPORTED_MARKET');return
             slug=str(event['slug'])
@@ -901,6 +906,10 @@ class WalletCopy:
         debit=int(trade['cost'])+int(trade['fee'])
         with self.store.connect() as db:
             db.execute('BEGIN IMMEDIATE')
+            blocked_pause=buy_pause_reason(db,wallet,self.clock())
+            if blocked_pause:
+                self._set_copy_reason(db,wallet,key,blocked_pause,evidence)
+                return False
             held=[t for t in self.positions(db) if t['wallet']==wallet]
             cash=db.execute('SELECT cash FROM wallet_copy_accounts WHERE wallet=?',(wallet,)).fetchone()[0]
             blocked=exposure_block(held,trade['market'],debit,True,cash)
@@ -919,6 +928,10 @@ class WalletCopy:
         debit=int(fill['cost'])+int(fill['fee'])
         with self.store.connect() as db:
             db.execute('BEGIN IMMEDIATE')
+            blocked_pause=buy_pause_reason(db,wallet,now)
+            if blocked_pause:
+                self._set_copy_reason(db,wallet,key,blocked_pause,evidence)
+                return False
             current=json.loads(db.execute('SELECT body FROM wallet_copy_positions WHERE id=?',(trade['id'],)).fetchone()[0])
             if current['status']!='OPEN':
                 self._set_copy_reason(db,wallet,key,'COPY_EXPOSURE_LIMIT',evidence)
@@ -968,6 +981,7 @@ class WalletCopy:
             db.execute('UPDATE wallet_copy_accounts SET cash=cash+? WHERE wallet=?',(credit,trade['wallet']))
             db.execute('INSERT INTO wallet_copy_ledger VALUES (?,?,?)',('close:'+slice_id,trade['wallet'],credit))
             db.execute("UPDATE wallet_copy_events SET reason='COPIED_SELL',body=? WHERE wallet=? AND event_key=?",(json.dumps(evidence),row['wallet'],row['event_key']))
+            pause_if_period_negative(db,trade['wallet'],now)
 
     def close(self,trade,payout,fee,now,status,evidence,row=None):
         with self.store.connect() as db:
@@ -980,6 +994,7 @@ class WalletCopy:
             db.execute('UPDATE wallet_copy_accounts SET cash=cash+? WHERE wallet=?',(payout-fee,trade['wallet']))
             db.execute('INSERT INTO wallet_copy_ledger VALUES (?,?,?)',('close:'+trade['id'],trade['wallet'],payout-fee))
             if row:db.execute("UPDATE wallet_copy_events SET reason='COPIED_SELL',body=? WHERE wallet=? AND event_key=?",(json.dumps(evidence),row['wallet'],row['event_key']))
+            pause_if_period_negative(db,trade['wallet'],now)
 
     async def settle(self):
         now=self.clock()

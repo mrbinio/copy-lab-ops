@@ -73,6 +73,10 @@ def get_active_wallets(store):
     for w, row in (roster.get('wallets') or {}).items():
         if row.get('state') in ('paper_test', 'paper_active', 'paused', 'observed') and w not in seen:
             seen.append(w)
+    from .mitch_copy import WALLETS as MITCH_WALLETS
+    for w in MITCH_WALLETS:
+        if w not in seen:
+            seen.append(w)
     return tuple(seen)
 
 
@@ -99,9 +103,24 @@ class WalletObserver:
                 if not fields['transactionHash']: raise ValueError('missing transaction hash')
                 from .wallet_chain_monitor import _row_key
                 key = _row_key(row)
+                body = json.dumps(row, allow_nan=False)
                 cur = db.execute('INSERT OR IGNORE INTO wallet_activity VALUES (?,?,?,?,?)',
-                                 (wallet,key,now,ts,json.dumps(row,allow_nan=False)))
-                inserted += cur.rowcount
+                                 (wallet, key, now, ts, body))
+                if cur.rowcount:
+                    inserted += 1
+                elif row.get('_source') != 'chain_fast':
+                    # The fast path stores a book quote, not the price he paid.
+                    # The API row for the same key replaces that quote. It does
+                    # not create a second trade.
+                    existing = db.execute(
+                        'SELECT body FROM wallet_activity WHERE wallet=? AND event_key=?',
+                        (wallet, key),
+                    ).fetchone()
+                    if existing and '"_source": "chain_fast"' in (existing[0] or ''):
+                        db.execute(
+                            'UPDATE wallet_activity SET source_ts=?, body=? WHERE wallet=? AND event_key=?',
+                            (ts, body, wallet, key),
+                        )
         if inserted:self.store.wallet_activity_ready.set()
         return inserted
 

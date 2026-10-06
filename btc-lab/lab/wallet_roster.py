@@ -112,7 +112,7 @@ RULES = {
     'concentration_uncertain_above': 0.70,
 }
 _RULES_FOR = {PREVIOUS_SPEC: RULES_V1, SPEC_V2: RULES_V2}
-PAUSE_REASON = 'paper-roster-v3 pause: settled copy book is negative'
+PAUSE_REASON = 'paper-roster-v3 pause: current copy period is negative'
 RETEST_REASON = 'paper-roster-v3 retest'
 RESTORE_PLUS_REASON = 'paper-roster-v3 retest: settled copy book is positive'
 PROMOTE_REASON = 'paper-roster-v3 paper_test'
@@ -329,6 +329,71 @@ def period_closes(closed, since):
     ]
 
 
+def _read_state(db, key):
+    row = db.execute('SELECT body FROM state WHERE key=?', (key,)).fetchone()
+    if not row:
+        return None
+    body = json.loads(row[0] if not hasattr(row, 'keys') else row['body'])
+    return body
+
+
+def _write_state(db, key, value):
+    db.execute(
+        'INSERT OR REPLACE INTO state VALUES (?,?)',
+        (key, json.dumps(value, allow_nan=False)),
+    )
+
+
+def pause_if_period_negative(db, wallet, now):
+    """Pause on this connection as soon as the current period net is negative.
+
+    Call it inside the same BEGIN IMMEDIATE that booked the close, and again
+    inside the transaction that would reserve the next buy.
+    """
+    roster = _read_state(db, 'wallet_roster') or {}
+    wallets = roster.get('wallets') or {}
+    row = wallets.get(wallet)
+    if not row or row.get('state') not in ('paper_test', 'paper_active'):
+        return False
+    since = row.get('since') or 0
+    closed = []
+    if db.execute("SELECT 1 FROM sqlite_master WHERE name='wallet_copy_positions'").fetchone():
+        for (body,) in db.execute('SELECT body FROM wallet_copy_positions'):
+            trade = json.loads(body)
+            if trade.get('wallet') == wallet:
+                closed.append(trade)
+    book = evaluate_copy_book(period_closes(closed, since), now, since)
+    if not book['should_pause']:
+        return False
+    row['state'] = 'paused'
+    row['since'] = now
+    row['reason'] = PAUSE_REASON
+    wallets[wallet] = row
+    roster['wallets'] = wallets
+    roster['updated_at'] = now
+    _write_state(db, 'wallet_roster', roster)
+    pauses = _read_state(db, 'strategy_pauses') or {}
+    if not isinstance(pauses, dict):
+        pauses = {}
+    pauses['copy-' + wallet] = True
+    _write_state(db, 'strategy_pauses', pauses)
+    return True
+
+
+def buy_pause_reason(db, wallet, now):
+    """Recheck the period and the pause flag before cash is reserved."""
+    if pause_if_period_negative(db, wallet, now):
+        return 'COPY_PAUSED'
+    roster = _read_state(db, 'wallet_roster') or {}
+    row = (roster.get('wallets') or {}).get(wallet) or {}
+    if row.get('state') not in ('paper_test', 'paper_active'):
+        return 'COPY_PAUSED'
+    pauses = _read_state(db, 'strategy_pauses') or {}
+    if isinstance(pauses, dict) and pauses.get('copy-' + wallet):
+        return 'COPY_PAUSED'
+    return None
+
+
 def can_observe_to_test(stats):
     r = RULES['observed_to_paper_test']
     return (
@@ -525,26 +590,7 @@ def tick(store, now=None, candidate_stats=None):
     promotions = []
     already = set(state['wallets'])
     for w, row in list(state['wallets'].items()):
-        closed = closed_by.get(w, [])
-        first = first_by.get(w) or row.get('since')
-        # Pause and return use the whole settled copy book. One red stint does
-        # not turn off a book that is still in the plus, and it does not keep
-        # a plus book paused.
-        lifetime = evaluate_copy_book(closed, now, first) if row['state'] in (
-            'paper_test', 'paper_active', 'paused',
-        ) else None
-        if row['state'] == 'paused' and lifetime and lifetime['can_retest']:
-            row['state'] = 'paper_test'
-            row['since'] = now
-            row['confidence'] = 'medium'
-            row['sample'] = 'enough' if not lifetime['uncertain'] else 'uncertain'
-            row['reason'] = RESTORE_PLUS_REASON
-            changed.append(w)
-            audit(store, now, w, 'restored', row['reason'], {
-                'net_usd': lifetime['net_usd'], 'trades': lifetime['trades'],
-                'sample': row['sample'],
-            })
-        elif row['state'] == 'paused':
+        if row['state'] == 'paused':
             # opened_after cuts observations from before this pause.
             # first_open alone does not. Independent tickets are not in this book.
             pause_since = row.get('since') or now
@@ -579,19 +625,16 @@ def tick(store, now=None, candidate_stats=None):
         closed = closed_by.get(w, [])
         first = first_by.get(w) or row.get('since')
         since = row.get('since') or first
-        lifetime = evaluate_copy_book(closed, now, first) if row['state'] in (
-            'paper_test', 'paper_active',
-        ) else None
         period = evaluate_copy_book(period_closes(closed, since), now, since) if row['state'] in (
             'paper_test', 'paper_active',
         ) else None
-        if row['state'] in ('paper_active', 'paper_test') and lifetime and lifetime['should_pause']:
+        if row['state'] in ('paper_active', 'paper_test') and period and period['should_pause']:
             row['state'] = 'paused'
             row['since'] = now
             row['reason'] = PAUSE_REASON
             changed.append(w)
             audit(store, now, w, 'paused', row['reason'], {
-                'net_usd': lifetime['net_usd'], 'trades': lifetime['trades'],
+                'net_usd': period['net_usd'], 'trades': period['trades'],
             })
         elif row['state'] == 'paper_test' and period and period['can_activate']:
             row['state'] = 'paper_active'

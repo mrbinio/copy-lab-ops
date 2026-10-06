@@ -542,6 +542,12 @@ class Worker:
                     LOG.warning('Failed to initialize CLOB client: %s', e)
                     clob_client = None
         copier=asyncio.create_task(WalletCopy(self.store,get_json,self.is_paused,clob_client=clob_client).run()) if self.asset=="BTC" else None
+        mitch=None
+        clock_task=None
+        if self.asset=="BTC":
+            from .mitch_copy import MitchCopy
+            mitch=asyncio.create_task(MitchCopy(self.store,get_json).run())
+            clock_task=asyncio.create_task(self.clock_loop())
         # Chain monitor: insert the seed trade as soon as it hits Polygon.
         # Same activity key as REST, so the public list cannot double-copy.
         chain_task=None
@@ -572,8 +578,30 @@ class Worker:
             if wallets:wallets.cancel()
             if discovery:discovery.cancel()
             if copier:copier.cancel()
+            if mitch:mitch.cancel()
+            if clock_task:clock_task.cancel()
             if chain_task:chain_task.cancel()
-            await asyncio.gather(reference,*([wallets] if wallets else []),*([discovery] if discovery else []),*([copier] if copier else []),*([chain_task] if chain_task else []),return_exceptions=True)
+            await asyncio.gather(reference,*([wallets] if wallets else []),*([discovery] if discovery else []),*([copier] if copier else []),*([mitch] if mitch else []),*([clock_task] if clock_task else []),*([chain_task] if chain_task else []),return_exceptions=True)
+
+    async def clock_loop(self):
+        """Measure the Mac clock against NTP. A settings toggle is not a measurement."""
+        from .clock_status import measure_clock
+        last_wall = time.time()
+        last_mono = time.monotonic()
+        while True:
+            wall = time.time()
+            mono = time.monotonic()
+            jumped = abs((wall - last_wall) - (mono - last_mono)) > 2
+            last_wall, last_mono = wall, mono
+            try:
+                sample = await asyncio.to_thread(measure_clock)
+            except Exception as error:
+                sample = {'status': 'unreliable', 'error': str(error)[:200], 'checked_at': time.time()}
+            if jumped:
+                sample['wake_or_step'] = True
+                sample['status'] = 'unreliable'
+            self.store.set('clock_status', sample)
+            await asyncio.sleep(15 if jumped else 60)
 
 def main():
     import fcntl
