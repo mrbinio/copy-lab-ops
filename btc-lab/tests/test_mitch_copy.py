@@ -1,6 +1,7 @@
 import json
 import tempfile
 import unittest
+from decimal import Decimal
 from pathlib import Path
 from lab.core import Store
 from lab.mitch_copy import (
@@ -143,6 +144,16 @@ class MitchBookTests(unittest.TestCase):
         published = self.engine.publish()
         self.assertEqual(published['spec'], 'mitch-copy-wallets-v1')
         self.assertEqual(len(published['wallets']), 5)
+
+    def test_chain_fast_quote_is_not_the_price_he_paid(self):
+        from lab.mitch_copy import source_dollars, source_price
+        quote=dict(self.event(10, '0.99'), _source='chain_fast')
+        self.assertIsNone(source_dollars(quote))
+        self.assertIsNone(source_price(quote))
+        paid=self.event(10, '0.42')
+        paid['usdcSize']='4.20'
+        self.assertEqual(source_dollars(paid), Decimal('4.20'))
+        self.assertEqual(source_price(paid), Decimal('0.42'))
 
     def test_restart_keeps_the_start_and_does_not_replay(self):
         self.store.set('mitch_copy_start', {'at': 100, 'spec': 'mitch-copy-wallets-v1'})

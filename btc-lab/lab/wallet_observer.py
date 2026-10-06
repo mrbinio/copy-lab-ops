@@ -4,6 +4,7 @@ import hashlib
 import json
 import math
 import time
+from decimal import Decimal
 from urllib.parse import urlencode
 
 SEED_WALLETS = (
@@ -80,6 +81,58 @@ def get_active_wallets(store):
     return tuple(seen)
 
 
+def _fill_sig(row):
+    return '|'.join(str(row.get(k) if row.get(k) is not None else '') for k in ('size', 'usdcSize', 'price'))
+
+
+def _money(value):
+    if value in (None, ''):
+        return None
+    try:
+        number = Decimal(str(value))
+    except Exception:
+        return None
+    if not number.is_finite():
+        return None
+    return number
+
+
+def merge_activity_body(existing_body, row):
+    """Add a later fill of the same trade exactly once.
+
+    A chain-fast book quote is replaced by the confirmed row. It is never
+    added to the price the source paid. Fetching the same fill again does
+    not change the stored dollars or shares.
+    """
+    existing = json.loads(existing_body)
+    if existing.get('_source') == 'chain_fast':
+        merged = dict(row)
+        merged.pop('_source', None)
+        merged['_fills'] = [_fill_sig(row)]
+        return json.dumps(merged, allow_nan=False), True
+    fills = list(existing.get('_fills') or [_fill_sig(existing)])
+    sig = _fill_sig(row)
+    same_totals = (
+        str(existing.get('size') or '') == str(row.get('size') or '')
+        and str(existing.get('usdcSize') or '') == str(row.get('usdcSize') or '')
+    )
+    if sig in fills or same_totals:
+        return existing_body, False
+    size0, size1 = _money(existing.get('size')), _money(row.get('size'))
+    usdc0, usdc1 = _money(existing.get('usdcSize')), _money(row.get('usdcSize'))
+    if size0 is None or size1 is None or usdc0 is None or usdc1 is None or size0 + size1 <= 0:
+        return existing_body, False
+    size = size0 + size1
+    usdc = usdc0 + usdc1
+    merged = dict(existing)
+    merged['size'] = format(size, 'f')
+    merged['usdcSize'] = format(usdc, 'f')
+    merged['price'] = format(usdc / size, 'f')
+    merged['_fills'] = fills + [sig]
+    merged.pop('_source', None)
+    return json.dumps(merged, allow_nan=False), True
+
+
 class WalletObserver:
     def __init__(self, store, fetch):
         self.store, self.fetch = store, fetch
@@ -103,24 +156,29 @@ class WalletObserver:
                 if not fields['transactionHash']: raise ValueError('missing transaction hash')
                 from .wallet_chain_monitor import _row_key
                 key = _row_key(row)
-                body = json.dumps(row, allow_nan=False)
+                stored = dict(row)
+                if row.get('_source') != 'chain_fast':
+                    stored['_fills'] = [_fill_sig(row)]
+                body = json.dumps(stored, allow_nan=False)
                 cur = db.execute('INSERT OR IGNORE INTO wallet_activity VALUES (?,?,?,?,?)',
                                  (wallet, key, now, ts, body))
                 if cur.rowcount:
                     inserted += 1
                 elif row.get('_source') != 'chain_fast':
-                    # The fast path stores a book quote, not the price he paid.
-                    # The API row for the same key replaces that quote. It does
-                    # not create a second trade.
+                    # Same hash can carry several fills. Sum them once.
+                    # A later fetch of a fill already stored does not add it again.
+                    # A chain-fast quote is replaced, not mixed into his price.
                     existing = db.execute(
                         'SELECT body FROM wallet_activity WHERE wallet=? AND event_key=?',
                         (wallet, key),
                     ).fetchone()
-                    if existing and '"_source": "chain_fast"' in (existing[0] or ''):
-                        db.execute(
-                            'UPDATE wallet_activity SET source_ts=?, body=? WHERE wallet=? AND event_key=?',
-                            (ts, body, wallet, key),
-                        )
+                    if existing:
+                        merged, changed = merge_activity_body(existing[0], row)
+                        if changed:
+                            db.execute(
+                                'UPDATE wallet_activity SET source_ts=?, body=? WHERE wallet=? AND event_key=?',
+                                (ts, merged, wallet, key),
+                            )
         if inserted:self.store.wallet_activity_ready.set()
         return inserted
 

@@ -15,7 +15,8 @@ ROOT = Path(os.environ.get(
     'BTC_LAB_ROOT',
     str(Path.home() / 'Library/Application Support/BTC Lab'),
 ))
-LABEL = 'gui/%s/com.btc-lab.paper' % os.getuid()
+LABEL = os.environ.get('BTC_LAB_LABEL', 'gui/%s/com.btc-lab.paper' % os.getuid())
+PORT = int(os.environ.get('BTC_LAB_PORT', '8769'))
 ATTEMPTS = ROOT / 'watchdog-attempts.json'
 STATUS = ROOT / 'logs/watchdog-status.json'
 MAX_RESTARTS = 3
@@ -56,7 +57,7 @@ def read_state(db_path):
     db = sqlite3.connect(uri, uri=True, timeout=5)
     try:
         out = {}
-        for key in ('worker', 'wallet_copy_execution', 'mitch_copy', 'clock_status'):
+        for key in ('worker', 'wallet_copy_execution', 'mitch_copy', 'clock_status', 'wallet_copy_health'):
             row = db.execute('SELECT body FROM state WHERE key=?', (key,)).fetchone()
             out[key] = json.loads(row[0]) if row else {}
         return out
@@ -64,21 +65,36 @@ def read_state(db_path):
         db.close()
 
 
-def assess(now, state, http_ok):
+def assess(now, state, http_ok, launch_wait=None):
+    """Split a dead process from a publish, a connection, and a bad book.
+
+    Only a stale heartbeat restarts the service. A late journal, a refused
+    HTTP check, or a ledger hold stays on the status line. Restarting would
+    not repair those, and a launch-limit wait must not be kicked again.
+    """
     worker = state.get('worker') or {}
     copy = state.get('wallet_copy_execution') or {}
     mitch = state.get('mitch_copy') or {}
+    health = state.get('wallet_copy_health') or {}
     heartbeat = float(worker.get('heartbeat') or 0)
     copy_at = float(copy.get('updated_at') or 0)
     mitch_at = float(mitch.get('updated_at') or 0)
-    problems = []
-    if now - heartbeat > HEARTBEAT_LIMIT:
-        problems.append('heartbeat')
+    restart_problems = []
+    noted = []
+    waiting = bool(launch_wait and float(launch_wait.get('retry_at') or 0) > now)
+    if waiting:
+        noted.append('launch_wait')
+    elif now - heartbeat > HEARTBEAT_LIMIT:
+        restart_problems.append('heartbeat')
     if copy_at and now - copy_at > PUBLISH_LIMIT:
-        problems.append('copy_publish')
+        noted.append('copy_publish')
     if mitch_at and now - mitch_at > PUBLISH_LIMIT:
-        problems.append('mitch_publish')
-    return problems, {
+        noted.append('mitch_publish')
+    if not http_ok:
+        noted.append('connection')
+    if health.get('status') == 'ledger_mismatch':
+        noted.append('ledger_mismatch')
+    return restart_problems, noted, {
         'heartbeat_age_s': None if not heartbeat else round(now - heartbeat, 1),
         'copy_publish_age_s': None if not copy_at else round(now - copy_at, 1),
         'mitch_publish_age_s': None if not mitch_at else round(now - mitch_at, 1),
@@ -111,7 +127,7 @@ def main():
     http_ok = False
     try:
         import urllib.request
-        with urllib.request.urlopen('http://127.0.0.1:8769/healthz', timeout=3) as response:
+        with urllib.request.urlopen('http://127.0.0.1:%s/healthz' % PORT, timeout=3) as response:
             http_ok = response.status == 200
     except Exception:
         http_ok = False
@@ -123,24 +139,37 @@ def main():
         read_error = str(error)[:200]
     else:
         read_error = None
-    problems, ages = assess(now, state, http_ok)
+    launch_wait = load(ROOT / 'logs' / 'service-stopped.json', None)
+    restart_problems, noted, ages = assess(now, state, http_ok, launch_wait)
     age = process_age(now)
     action = 'ok'
-    if problems and age is not None and age < 180:
+    if restart_problems and age is not None and age < 180:
         action = 'starting'
-    elif problems:
-        action = restart(now, ','.join(problems))
+    elif restart_problems:
+        action = restart(now, ','.join(restart_problems))
+    elif noted:
+        action = 'degraded'
     ages['process_age_s'] = age
+    if action == 'ok':
+        status = 'ok'
+    elif action == 'restarted':
+        status = 'recovering'
+    elif action in ('degraded', 'starting'):
+        status = 'degraded'
+    else:
+        status = 'failed'
     body = {
         'at': now,
-        'status': 'ok' if action == 'ok' else 'recovering' if action == 'restarted' else 'failed',
-        'problems': problems,
+        'status': status,
+        'problems': restart_problems,
+        'noted': noted,
         'action': action,
         'ages': ages,
         'http_ok': http_ok,
         'read_error': read_error,
         'restarts_in_window': len(recent_attempts(now)),
-        'note': 'No new wallet trade is not a failure. This checks heartbeat and publish freshness.',
+        'launch_wait': launch_wait if launch_wait else None,
+        'note': 'Restart only when the heartbeat is stale. A late publish, a connection error, or a ledger hold is reported and left running. After five launches the wrapper waits out the ten-minute window and starts again.',
     }
     save_status(body)
     # The dashboard reads this from the database when the worker is up.

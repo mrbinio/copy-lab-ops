@@ -657,3 +657,82 @@ class CopyTests(unittest.TestCase):
                 await self.engine.step()
             self.assertIsNone(self.engine._publish_task)
         asyncio.run(run())
+
+    def test_loss_settlement_blocks_a_buy_waiting_on_the_same_lock(self):
+        import threading
+        from lab.wallet_roster import pause_if_period_negative
+        wallet=WALLETS[0]
+        self.store.set('wallet_roster',{'updated_at':self.now,'wallets':{
+            wallet:{'wallet':wallet,'state':'paper_test','since':self.now-100,'reason':'copying'},
+        }})
+        with self.store.connect() as db:
+            db.execute('INSERT OR IGNORE INTO wallet_copy_accounts VALUES (?,?)',(wallet,500_000_000))
+            db.execute('INSERT INTO wallet_copy_events VALUES (?,?,?,?,?)',(wallet,'buy-1',self.now,'PROCESSING','{}'))
+        locked=threading.Event();release=threading.Event();errors=[]
+        def settle():
+            try:
+                with self.store.connect() as db:
+                    db.execute('BEGIN IMMEDIATE')
+                    db.execute('INSERT INTO wallet_copy_positions VALUES (?,?,?)',(
+                        'loss-1',wallet,json.dumps({
+                            'wallet':wallet,'status':'SETTLED','opened':self.now-20,
+                            'closed_at':self.now,'pnl_micro':-1_000_000,'market':'m',
+                            'cost':1_000_000,'fee':0,
+                        }),
+                    ))
+                    self.assertTrue(pause_if_period_negative(db,wallet,self.now))
+                    locked.set()
+                    self.assertTrue(release.wait(5))
+            except Exception as error:
+                errors.append(error);locked.set()
+        buyer=[]
+        def buy():
+            try:
+                trade={'id':'lot-1','wallet':wallet,'cost':1_000_000,'fee':0,'market':'m','status':'OPEN'}
+                buyer.append(self.engine._open_lot(trade,{},wallet,'buy-1'))
+            except Exception as error:
+                errors.append(error)
+        threading.Thread(target=settle).start()
+        self.assertTrue(locked.wait(5))
+        thread=threading.Thread(target=buy);thread.start()
+        thread.join(0.3)
+        self.assertTrue(thread.is_alive())
+        release.set()
+        thread.join(5)
+        self.assertFalse(errors,errors)
+        self.assertEqual(buyer,[False])
+        self.assertEqual(self.reason(),'COPY_PAUSED')
+        with self.store.connect() as db:
+            cash=db.execute('SELECT cash FROM wallet_copy_accounts WHERE wallet=?',(wallet,)).fetchone()[0]
+        self.assertEqual(cash,500_000_000)
+
+    def test_ledger_mismatch_publishes_the_failure_and_holds_only_that_wallet(self):
+        bad=WALLETS[0];other=WALLETS[1]
+        self.engine.publish('TEST')
+        good_at=self.state()['updated_at']
+        with self.store.connect() as db:
+            db.execute('UPDATE wallet_copy_accounts SET cash=cash+1 WHERE wallet=?',(bad,))
+        with self.assertRaises(CopyLedgerError):
+            self.engine.publish('TEST')
+        self.assertEqual(self.state()['updated_at'],good_at)
+        health=self.store.get('wallet_copy_health')
+        self.assertEqual(health['status'],'ledger_mismatch')
+        self.assertEqual(health['last_good_at'],good_at)
+        self.assertEqual(health['held'],[bad[-8:]])
+        self.assertEqual(health['mismatch'][0]['cash_minus_initial_ledger'],1)
+        self.assertNotIn(other,self.store.get('wallet_copy_buy_hold')['wallets'])
+        self.store.set('wallet_roster',{'updated_at':self.now,'wallets':{
+            bad:{'wallet':bad,'state':'paper_test','since':self.now-50,'reason':'copying'},
+            other:{'wallet':other,'state':'paper_test','since':self.now-50,'reason':'copying'},
+        }})
+        self.store.set('strategy_pauses',{})
+        with self.store.connect() as db:
+            db.execute('INSERT INTO wallet_copy_events VALUES (?,?,?,?,?)',(bad,'held',self.now,'PROCESSING','{}'))
+            db.execute('INSERT INTO wallet_copy_events VALUES (?,?,?,?,?)',(other,'open',self.now,'PROCESSING','{}'))
+        trade=lambda name:{'id':name,'cost':1_000_000,'fee':0,'market':'m-'+name,'status':'OPEN'}
+        self.assertFalse(self.engine._open_lot(trade('held'),{},bad,'held'))
+        self.assertTrue(self.engine._open_lot(trade('open'),{},other,'open'))
+        with self.store.connect() as db:
+            self.assertEqual(db.execute('SELECT reason FROM wallet_copy_events WHERE event_key=?',('held',)).fetchone()[0],'COPY_LEDGER_HOLD')
+            self.assertEqual(db.execute('SELECT reason FROM wallet_copy_events WHERE event_key=?',('open',)).fetchone()[0],'COPIED_BUY')
+        self.assertFalse(self.store.get('mitch_copy'))

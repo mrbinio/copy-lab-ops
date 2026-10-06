@@ -496,6 +496,7 @@ class WalletCopy:
                     if last and (wallet not in self._last_decision or last['ts']>=self._last_decision[wallet][0]):
                         self._last_decision[wallet]=(last['ts'], last['reason'])
                 self._last_decision_load=now
+            mismatches=[]
             for wallet in wallets:
                 rows=[t for t in trades if t['wallet']==wallet]
                 closed=sorted((t for t in rows if t['status'] in ('CLOSED','SETTLED')),key=lambda t:t['closed_at'])
@@ -503,7 +504,12 @@ class WalletCopy:
                 cash=db.execute('SELECT cash FROM wallet_copy_accounts WHERE wallet=?',(wallet,)).fetchone()[0]
                 ledger=db.execute('SELECT COALESCE(SUM(amount),0) FROM wallet_copy_ledger WHERE wallet=?',(wallet,)).fetchone()[0]
                 if cash<0 or cash!=INITIAL+ledger or cash+exposure!=INITIAL+pnl:
-                    raise CopyLedgerError('COPY_LEDGER_MISMATCH %s'%wallet[-8:])
+                    mismatches.append({
+                        'wallet':wallet,'cash':cash,'ledger':ledger,'exposure':exposure,'pnl':pnl,
+                        'cash_minus_initial_ledger':cash-(INITIAL+ledger),
+                        'book_minus_initial_pnl':cash+exposure-(INITIAL+pnl),
+                    })
+                    continue
                 curve=[];total=peak=dd=0
                 for t in closed:
                     total+=t['pnl_micro'];peak=max(peak,total);dd=max(dd,peak-total);curve.append({'ts':t['closed_at'],'pnl':total/1e6})
@@ -526,6 +532,9 @@ class WalletCopy:
         if 'skip' not in self._scan or now-self._scan.get('skip_at',0)>=30:
             self._scan['skip']=self.skip_summary()
             self._scan['skip_at']=now
+        if mismatches:
+            self._record_ledger_failure(now,mismatches)
+            raise CopyLedgerError('COPY_LEDGER_MISMATCH %s'%','.join(item['wallet'][-8:] for item in mismatches))
         reasons,recent,errors=self._scan['reasons'],self._scan['recent'],self._scan['errors']
         samples=[]
         for t in trades:
@@ -545,6 +554,10 @@ class WalletCopy:
             flow=self.store.get('wallet_copy_flow') or {},
             scope='BTC/ETH 5m and 15m only; one market minimum per buy (not the source size), source price band 20-70c is a limit of this PAPER version; 500USD separate virtual scenarios; an added buy increases the open lot only inside the 5USD position cap; a source SELL closes the fraction of the source position immediately before that sell',
             limitation='The 20-70c band is our version limit, not a claim that a price outside it is automatically a losing trade. Changing it belongs in a separate PAPER. The sell fraction uses detected source buys and sells, including ones we did not copy. An unknown opening position or a gap is not a faithful copy and does not invent a fraction. Settlement still runs. FOK at fresh delayed books with 50% depth. A slice below the market minimum is not filled. SELL is allowed while new buys are paused. Signal age 90s. One position including add-ons and fees stays within 5USD. Five positions cap the wallet at 25USD. No profitability guarantee.'))
+        self.store.set('wallet_copy_health',{
+            'status':'ok','checked_at':now,'last_good_at':now,'copying':'running','held':[],'mismatch':[],
+        })
+        self.store.set('wallet_copy_buy_hold',{'at':now,'wallets':{}})
 
     def skip_summary(self):
         with self.store.connect() as db:
@@ -905,11 +918,39 @@ class WalletCopy:
             (reason,json.dumps(evidence),wallet,key))
         self._last_decision[wallet]=(self.clock(), reason)
 
+    def _buy_block(self,db,wallet,now):
+        """Pause and a ledger hold, read on the reservation transaction."""
+        paused=buy_pause_reason(db,wallet,now)
+        if paused:
+            return paused
+        row=db.execute("SELECT body FROM state WHERE key='wallet_copy_buy_hold'").fetchone()
+        if row:
+            held=(json.loads(row[0]).get('wallets') or {})
+            if wallet in held:
+                return 'COPY_LEDGER_HOLD'
+        return None
+
+    def _record_ledger_failure(self,now,mismatches):
+        """Keep the last good result. Stop new buys only for the broken wallet."""
+        previous=self.store.get(KEY) or {}
+        held={}
+        for item in mismatches:
+            held[item['wallet']]=item
+        self.store.set('wallet_copy_buy_hold',{'at':now,'wallets':held})
+        self.store.set('wallet_copy_health',{
+            'status':'ledger_mismatch','checked_at':now,
+            'last_good_at':previous.get('updated_at'),
+            'copying':'held',
+            'held':[item['wallet'][-8:] for item in mismatches],
+            'mismatch':mismatches,
+        })
+        log.error('copy ledger mismatch %s',json.dumps(mismatches))
+
     def _open_lot(self,trade,evidence,wallet,key):
         debit=int(trade['cost'])+int(trade['fee'])
         with self.store.connect() as db:
             db.execute('BEGIN IMMEDIATE')
-            blocked_pause=buy_pause_reason(db,wallet,self.clock())
+            blocked_pause=self._buy_block(db,wallet,self.clock())
             if blocked_pause:
                 self._set_copy_reason(db,wallet,key,blocked_pause,evidence)
                 return False
@@ -931,7 +972,7 @@ class WalletCopy:
         debit=int(fill['cost'])+int(fill['fee'])
         with self.store.connect() as db:
             db.execute('BEGIN IMMEDIATE')
-            blocked_pause=buy_pause_reason(db,wallet,now)
+            blocked_pause=self._buy_block(db,wallet,now)
             if blocked_pause:
                 self._set_copy_reason(db,wallet,key,blocked_pause,evidence)
                 return False
@@ -1154,8 +1195,8 @@ class WalletCopy:
             while True:
                 self.store.wallet_activity_ready.clear()
                 try:n=await self.step()
-                except CopyLedgerError:
-                    log.error('copy ledger mismatch; retrying in 30s')
+                except CopyLedgerError as error:
+                    log.error('copy ledger mismatch %s; retrying in 30s',error)
                     await self.sleep(30)
                     continue
                 except Exception:

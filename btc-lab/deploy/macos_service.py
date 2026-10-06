@@ -9,6 +9,18 @@ import subprocess
 import sys
 import time
 
+def launch_decision(attempts, now, window=600, limit=5):
+    """Start, or wait until one of the recent launches ages out.
+
+    Returning success from the wrapper tells launchd to leave the job down.
+    The wait stays inside this process so the service comes back on its own.
+    """
+    fresh=[x for x in attempts if now-x<window]
+    if len(fresh)<limit:
+        return 'start', fresh
+    return 'wait', fresh
+
+
 def main():
     root=Path(sys.argv[1])
     config=json.loads((root/'config.json').read_text())
@@ -16,12 +28,36 @@ def main():
     now=time.time()
     attempts=json.loads(attempts_path.read_text()) if attempts_path.exists() else []
     attempts=[x for x in attempts if now-x<600]
+    (root/'logs').mkdir(parents=True, exist_ok=True)
     log=logging.getLogger('btc-lab-service');log.setLevel(logging.INFO)
     handler=RotatingFileHandler(root/'logs/service.log',maxBytes=2_000_000,backupCount=4)
     handler.setFormatter(logging.Formatter('%(asctime)s %(message)s'));log.addHandler(handler)
-    if len(attempts)>=5:
-        log.error('Stopped after five launches in ten minutes. Operator review required.')
-        return 0 # SuccessfulExit=False prevents launchd restarting this stopped state.
+    stopping=False
+    proc=None
+    def stop(*args):
+        nonlocal stopping
+        stopping=True
+        if proc is not None and proc.poll() is None:proc.terminate()
+    signal.signal(signal.SIGTERM,stop);signal.signal(signal.SIGINT,stop)
+    decision, attempts=launch_decision(attempts, now)
+    alarm=root/'logs'/'service-stopped.json'
+    while decision=='wait':
+        retry_at=min(attempts)+600
+        alarm.write_text(json.dumps({
+            'at':time.time(),'status':'waiting',
+            'reason':'five launches in ten minutes',
+            'retry_at':retry_at,
+            'recovery':'The wrapper stays up and starts the service when a launch ages out of the ten-minute window.',
+        }))
+        log.error('Launch limit reached. Waiting until %.0f, then starting. Not exiting.', retry_at)
+        for _ in range(15):
+            if stopping:
+                return 0
+            time.sleep(1)
+        now=time.time()
+        decision, attempts=launch_decision(attempts, now)
+    if alarm.exists():
+        alarm.unlink()
     attempts_path.write_text(json.dumps(attempts+[now]))
     env=os.environ.copy()
     env.pop('LAB_LOCAL_DEV',None)
@@ -31,13 +67,6 @@ def main():
                LAB_REVISION=str(config.get('revision') or ''))
     if config.get('alchemy_wss'):
         env['ALCHEMY_WSS']=config['alchemy_wss']
-    stopping=False
-    proc=None
-    def stop(*args):
-        nonlocal stopping
-        stopping=True
-        if proc is not None and proc.poll() is None:proc.terminate()
-    signal.signal(signal.SIGTERM,stop);signal.signal(signal.SIGINT,stop)
     proc=subprocess.Popen([sys.executable,'-m','lab.supervisor'],cwd=Path(config['release'])/'btc-lab',
                           env=env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
     awake=subprocess.Popen(['/usr/bin/caffeinate','-i','-w',str(proc.pid)])
