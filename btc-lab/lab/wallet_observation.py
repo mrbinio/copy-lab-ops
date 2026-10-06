@@ -263,11 +263,31 @@ async def settle_batch(copier, limit=8):
             _settle_close(copier.store, trade, now)
             closed += 1
     fetched = 0
-    for trade in rows:
+    # Retry the least recently checked markets first. Without this cursor, the
+    # same unresolved rows occupy every batch and starve later settlements.
+    for trade in sorted(rows, key=lambda item: (
+        item.get('settlement_checked_at', 0), item.get('end', 0), item.get('id', ''),
+    )):
         if fetched >= limit:
             break
         if trade.get('status') != 'OPEN' or now < float(trade.get('end') or now + 1):
             continue
+        if now - float(trade.get('settlement_checked_at') or 0) < 60:
+            continue
+        # Persist before network I/O so failures and process restarts do not
+        # immediately select the same row again.
+        with copier.store.connect() as db:
+            current = db.execute(
+                'SELECT body FROM wallet_observation_positions WHERE id=?', (trade['id'],)
+            ).fetchone()
+            if not current or json.loads(current[0]).get('status') != 'OPEN':
+                continue
+            trade = json.loads(current[0])
+            trade['settlement_checked_at'] = now
+            db.execute(
+                'UPDATE wallet_observation_positions SET body=? WHERE id=?',
+                (json.dumps(trade), trade['id']),
+            )
         fetched += 1
         try:
             condition = trade.get('condition')
