@@ -74,6 +74,16 @@ def _age(now, stamp):
     return None if not stamp else round(now - float(stamp), 1)
 
 
+def _this_process(stamp, process_age, now):
+    """Ignore a timestamp left by the previous process."""
+    if not stamp:
+        return 0.0
+    stamp = float(stamp)
+    if process_age is not None and now - stamp > float(process_age) + 30:
+        return 0.0
+    return stamp
+
+
 def assess(now, state, http_ok, launch_wait=None, process_age=None, http_failures=0):
     """A live heartbeat does not hide a stopped copier or a publish that never moved.
 
@@ -88,10 +98,10 @@ def assess(now, state, http_ok, launch_wait=None, process_age=None, http_failure
     copy_progress = state.get('wallet_copy_progress') or {}
     mitch_progress = state.get('mitch_progress') or {}
     heartbeat = float(worker.get('heartbeat') or 0)
-    copy_at = float(copy.get('updated_at') or 0)
-    mitch_at = float(mitch.get('updated_at') or 0)
-    copy_step = float(copy_progress.get('at') or 0)
-    mitch_step = float(mitch_progress.get('at') or 0)
+    copy_at = _this_process(copy.get('updated_at'), process_age, now)
+    mitch_at = _this_process(mitch.get('updated_at'), process_age, now)
+    copy_step = _this_process(copy_progress.get('at'), process_age, now)
+    mitch_step = _this_process(mitch_progress.get('at'), process_age, now)
     restart_problems = []
     noted = []
     old = process_age is not None and process_age >= 180
@@ -101,21 +111,25 @@ def assess(now, state, http_ok, launch_wait=None, process_age=None, http_failure
     elif not heartbeat or now - heartbeat > HEARTBEAT_LIMIT:
         if heartbeat or old or process_age is None:
             restart_problems.append('heartbeat')
+    # A fresh copier step means the process is working. A slow journal is noted.
+    # Missing progress restarts only after ten minutes, so the first pass over
+    # the live database is not killed and started again.
+    settled = process_age is not None and process_age >= 600
     if copy_at and now - copy_at > PUBLISH_LIMIT:
         restart_problems.append('copy_publish')
-    elif old and not copy_at:
+    elif settled and not copy_at:
         restart_problems.append('copy_publish_never')
     if mitch_at and now - mitch_at > PUBLISH_LIMIT:
         restart_problems.append('mitch_publish')
-    elif old and not mitch_at:
+    elif settled and not mitch_at:
         restart_problems.append('mitch_publish_never')
     if copy_step and now - copy_step > PUBLISH_LIMIT:
         restart_problems.append('copy_stalled')
-    elif old and not copy_step:
+    elif settled and not copy_step:
         restart_problems.append('copy_never_progressed')
     if mitch_step and now - mitch_step > PUBLISH_LIMIT:
         restart_problems.append('mitch_stalled')
-    elif old and not mitch_step:
+    elif settled and not mitch_step:
         restart_problems.append('mitch_never_progressed')
     if not http_ok:
         noted.append('connection')
