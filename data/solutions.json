@@ -1,30 +1,30 @@
 {
   "enable": false,
-  "source": "claude",
-  "model": "claude-sonnet-4-5",
+  "source": "lab",
+  "model": null,
   "verb_pl": "NIE WŁĄCZAJ",
   "verb_en": "DO NOT ENABLE",
-  "now_pl": "Gotówka $39, dziura -$13.58 (invorser esports). Antblack (tenis, 76d) i 86shin (polityka, cienki) są Paused — nie włączaj.",
-  "now_en": "Cash $39, hole -$13.58 (invorser esports). Antblack (tennis, 76d) and 86shin (politics, thin) are Paused — do not enable.",
-  "path_pl": "Żaden kandydat nie przechodzi. ps5: 90d tylko $1.17 (wymaga zysku w 60d I 90d). tiger105: <90d (77.9d). S55: conc 0.54 > 0.45, tylko 5 kopii, 90d $1.41 za słaby. Ścieżka = poluj dalej.",
-  "path_en": "No candidate clears. ps5: 90d only $1.17 (requires profit in 60d AND 90d). tiger105: <90d (77.9d). S55: conc 0.54 > 0.45, only 5 copies, 90d $1.41 too weak. Path = hunt further.",
-  "hunt_next_pl": "Następny cykl: sport (tiger105 blisko na 90d za 12d), ekonomia (ps5 potrzebuje 90d odbicia), inne kategorie z >90d, conc ≤0.45, ≥6 kopii <$15, zysk w obu oknach.",
-  "hunt_next_en": "Next cycle: sport (tiger105 near 90d in 12d), economics (ps5 needs 90d rebound), other cats with >90d, conc ≤0.45, ≥6 copies <$15, profit both windows.",
+  "now_pl": "Żaden tor nie przeszedł sitów do włączenia. $39 zostaje. Najbliższa ścieżka to hunt pod książkę $5 / $15, nie dokupowanie i nie All Copy.",
+  "now_en": "No lane cleared the gates. Leave the $39. Closest path is hunt for a $5 / $15 book, not more cash and not All Copy.",
+  "path_pl": "Najbliżej: ps5 (ECONOMICS). Brakuje: sity prawie — nadal WAIT, nie enable. Patrz w Symulacji. W Telegramie nic nie klikasz.",
+  "path_en": "Closest: ps5 (ECONOMICS). Missing: sity prawie — nadal WAIT, nie enable. Look in Simulation. Do nothing in Telegram.",
+  "hunt_next_pl": "Następny bieg: głębiej ECONOMICS (offset 250/300), potem SPORTS, POLITICS. Pomijamy Top 8, świece 5 min, esport, conc=1.0 jako pick.",
+  "hunt_next_en": "Next run: deeper ECONOMICS (offset 250/300), then SPORTS, POLITICS. Skip Top 8, 5-min candles, esports, conc=1.0 picks.",
   "closest": {
-    "name": "tiger105",
-    "lane": "sport",
-    "missing": "12 days to 90d history (currently 77.9d)"
+    "name": "ps5",
+    "lane": "ECONOMICS",
+    "missing": "sity prawie — nadal WAIT, nie enable"
   },
   "next_cats": [
-    "SPORTS",
     "ECONOMICS",
+    "SPORTS",
     "POLITICS",
+    "FINANCE",
     "CULTURE",
-    "TECH",
-    "FINANCE"
+    "TECH"
   ],
   "extra_offsets": {
-    "SPORTS": [
+    "ECONOMICS": [
       250,
       300
     ]
@@ -35,12 +35,13 @@
   "dead_en": [
     "S55 · ECONOMICS · jeden event / veto"
   ],
-  "updated_at": "2026-10-06T06:26:25.311997+00:00",
-  "hunt_updated_at": "2026-10-06T06:26:12.062095+00:00",
+  "error": "http 404 claude-sonnet-4-20250514",
+  "updated_at": "2026-10-06T16:05:06.274037+00:00",
+  "hunt_updated_at": "2026-10-06T16:04:51.817054+00:00",
   "x_source": "error",
   "x_model": null,
   "x_error": "http 403 grok-4.6 {\"code\":\"permission-denied\",\"error\":\"Your newly created team doesn't have any credits or licenses yet. You can purchase those on https://conso",
   "x_pl": "Filtr X: błąd API. Zostają sity. Copy off.",
   "x_en": "X filter: API error. Gates stand. Copy off.",
-  "x_updated_at": "2026-10-06T06:26:25.427855+00:00"
+  "x_updated_at": "2026-10-06T16:05:06.432813+00:00"
 }
