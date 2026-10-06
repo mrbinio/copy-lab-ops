@@ -458,7 +458,6 @@ class WalletCopy:
               CREATE TABLE IF NOT EXISTS wallet_copy_positions(id TEXT PRIMARY KEY,wallet TEXT,body TEXT);
               CREATE TABLE IF NOT EXISTS wallet_copy_ledger(id TEXT PRIMARY KEY,wallet TEXT,amount INTEGER NOT NULL);
             ''')
-            for wallet in get_active_wallets(store):db.execute('INSERT OR IGNORE INTO wallet_copy_accounts VALUES (?,?)',(wallet,INITIAL))
             db.execute("UPDATE wallet_copy_events SET reason='ABORTED_ON_RESTART' WHERE reason='PROCESSING'")
         if not store.get('wallet_copy_start',{}):store.set('wallet_copy_start',{'at':clock()})
         self.started=store.get('wallet_copy_start',{})['at']
@@ -467,6 +466,7 @@ class WalletCopy:
             roster_tick(store, clock())
         except Exception:
             pass
+        self._ensure_copy_accounts()
         self.last_publish=0
         self._scan_at=0
         self._scan={}
@@ -500,7 +500,8 @@ class WalletCopy:
                 pnl=sum(t['pnl_micro'] for t in closed);exposure=sum(t['cost']+t['fee'] for t in rows if t['status'] in ('OPEN','RESOLVED'))
                 cash=db.execute('SELECT cash FROM wallet_copy_accounts WHERE wallet=?',(wallet,)).fetchone()[0]
                 ledger=db.execute('SELECT COALESCE(SUM(amount),0) FROM wallet_copy_ledger WHERE wallet=?',(wallet,)).fetchone()[0]
-                if cash<0 or cash!=INITIAL+ledger or cash+exposure!=INITIAL+pnl:raise CopyLedgerError('COPY_LEDGER_MISMATCH')
+                if cash<0 or cash!=INITIAL+ledger or cash+exposure!=INITIAL+pnl:
+                    raise CopyLedgerError('COPY_LEDGER_MISMATCH %s'%wallet[-8:])
                 curve=[];total=peak=dd=0
                 for t in closed:
                     total+=t['pnl_micro'];peak=max(peak,total);dd=max(dd,peak-total);curve.append({'ts':t['closed_at'],'pnl':total/1e6})
@@ -601,7 +602,11 @@ class WalletCopy:
     def risk_reason(self,db,wallet,now,extra_position=True):
         rows=[t for t in self.positions(db) if t['wallet']==wallet]
         if extra_position and sum(1 for t in rows if t['status'] in ('OPEN','RESOLVED'))>=MAX_OPEN_POSITIONS:return 'COPY_POSITION_ALREADY_OPEN'
-        if db.execute('SELECT cash FROM wallet_copy_accounts WHERE wallet=?',(wallet,)).fetchone()[0]<BUDGET:return 'COPY_CASH_LIMIT'
+        cash_row=db.execute('SELECT cash FROM wallet_copy_accounts WHERE wallet=?',(wallet,)).fetchone()
+        if cash_row is None:
+            db.execute('INSERT OR IGNORE INTO wallet_copy_accounts VALUES (?,?)',(wallet,INITIAL))
+            cash_row=db.execute('SELECT cash FROM wallet_copy_accounts WHERE wallet=?',(wallet,)).fetchone()
+        if cash_row[0]<BUDGET:return 'COPY_CASH_LIMIT'
         return None
 
     def risk(self,db,wallet,now,extra_position=True):return self.risk_reason(db,wallet,now,extra_position) is None
@@ -1035,6 +1040,7 @@ class WalletCopy:
             try:
                 from .wallet_roster import tick as roster_tick
                 await asyncio.to_thread(roster_tick, self.store, self.clock())
+                await asyncio.to_thread(self._ensure_copy_accounts)
             except Exception as error:
                 self.store.set('wallet_roster_error', {'at': self.clock(), 'error': str(error)[:200]})
             for job, key, width in ((self.settle, 'wallet_copy_settlement_error', 400),
@@ -1045,6 +1051,11 @@ class WalletCopy:
                 except Exception as error:
                     self.store.set(key, {'at': self.clock(), 'error': str(error)[:width]})
             await self.sleep(30)
+
+    def _ensure_copy_accounts(self):
+        with self.store.connect() as db:
+            for wallet in get_active_wallets(self.store):
+                db.execute('INSERT OR IGNORE INTO wallet_copy_accounts VALUES (?,?)',(wallet,INITIAL))
 
     def _load_pending(self, active):
         with self.store.connect() as db:
@@ -1065,6 +1076,9 @@ class WalletCopy:
             # The full decision-table scan is cached inside publish.
             task=self._publish_task
             if task is not None and task.done():
+                # Drop the finished task before reading its error. Otherwise one
+                # failed publish is re-raised forever and the dashboard stays frozen.
+                self._publish_task=None
                 task.result()
             if (rows or self.clock()-self.last_publish>=2) and (task is None or task.done()):
                 self._publish_task=asyncio.create_task(self._publish_bg())

@@ -639,3 +639,21 @@ class CopyTests(unittest.TestCase):
         with self.store.connect() as db:
             reasons=[row[0] for row in db.execute('SELECT reason FROM wallet_copy_events ORDER BY event_key')]
         self.assertEqual(reasons,['COPY_PAUSED','COPY_PAUSED'])
+
+    def test_missing_copy_account_does_not_crash_the_buy_check(self):
+        wallet='0x'+'ab'*20
+        with self.store.connect() as db:
+            self.engine.risk_reason(db, wallet, self.now)
+            cash=db.execute('SELECT cash FROM wallet_copy_accounts WHERE wallet=?',(wallet,)).fetchone()[0]
+        self.assertEqual(cash,500_000_000)
+
+    def test_failed_publish_does_not_stick(self):
+        async def boom():
+            raise CopyLedgerError('COPY_LEDGER_MISMATCH')
+        async def run():
+            self.engine._publish_task=asyncio.create_task(boom())
+            await asyncio.sleep(0)
+            with self.assertRaises(CopyLedgerError):
+                await self.engine.step()
+            self.assertIsNone(self.engine._publish_task)
+        asyncio.run(run())
