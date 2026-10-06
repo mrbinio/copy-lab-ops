@@ -51,6 +51,13 @@ class WatchdogSplitTests(unittest.TestCase):
         self.assertEqual(restart, [])
         self.assertEqual(noted, ['ledger_mismatch'])
 
+    def test_a_starting_process_is_not_restarted_during_the_open(self):
+        now = 1_000_000
+        state = {'worker': {'heartbeat': now - 200, 'status': 'STARTING'}}
+        restart, noted, _ages = watchdog.assess(now, state, False, process_age=200)
+        self.assertEqual(restart, [])
+        self.assertIn('starting', noted)
+
     def test_only_a_stale_heartbeat_is_a_restart(self):
         now = 1_000_000
         state = {'worker': {'heartbeat': now - 200}}

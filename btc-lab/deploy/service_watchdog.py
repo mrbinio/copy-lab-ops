@@ -125,6 +125,12 @@ def assess(now, state, http_ok, launch_wait=None, process_age=None, http_failure
         noted.append('ledger_mismatch')
     if waiting:
         restart_problems = []
+    # A large database can spend several minutes in STARTING while the
+    # process is on CPU. That is not a dead copier. After ten minutes it is.
+    if (worker.get('status') == 'STARTING' and process_age is not None
+            and process_age < 600):
+        restart_problems = []
+        noted.append('starting')
     return restart_problems, noted, {
         'heartbeat_age_s': _age(now, heartbeat),
         'copy_publish_age_s': _age(now, copy_at),
