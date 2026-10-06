@@ -85,6 +85,27 @@ def assess(now, state, http_ok):
     }
 
 
+def process_age(now):
+    """Seconds since the paper wrapper started. A slow open is not a hang yet."""
+    try:
+        proc = subprocess.run(
+            ['/bin/ps', '-axo', 'etime,command'],
+            capture_output=True, text=True, timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    for line in proc.stdout.splitlines():
+        if 'macos_service.py' not in line:
+            continue
+        etime = line.split(None, 1)[0]
+        parts = [int(p) for p in etime.replace('-', ':').split(':')]
+        seconds = 0
+        for part in parts:
+            seconds = seconds * 60 + part
+        return seconds
+    return None
+
+
 def main():
     now = time.time()
     http_ok = False
@@ -103,9 +124,13 @@ def main():
     else:
         read_error = None
     problems, ages = assess(now, state, http_ok)
+    age = process_age(now)
     action = 'ok'
-    if problems:
+    if problems and age is not None and age < 180:
+        action = 'starting'
+    elif problems:
         action = restart(now, ','.join(problems))
+    ages['process_age_s'] = age
     body = {
         'at': now,
         'status': 'ok' if action == 'ok' else 'recovering' if action == 'restarted' else 'failed',

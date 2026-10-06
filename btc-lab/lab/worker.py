@@ -511,6 +511,7 @@ class Worker:
                 'errors':errors,'version':'0.6.7','asset':self.asset,'clock_skew':self.clock_skew()})
 
     async def run(self):
+        self.store.set('worker', {'status':'STARTING','heartbeat':time.time(),'version':'0.6.7','asset':self.asset,'execution':'PAPER ONLY'})
         self.store.audit()
         reference=asyncio.create_task(self.reference_stream())
         observer=WalletObserver(self.store,get_json) if self.asset=="BTC" else None
