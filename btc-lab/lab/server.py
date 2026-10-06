@@ -16,27 +16,69 @@ from urllib.parse import parse_qs, urlsplit
 _SNAP = {}
 _SNAP_LOCK = threading.Lock()
 _SNAP_TTL = 2.0
+_SNAP_BUILDING = set()
+_SNAP_READY = {}
+
+def _decorate(store, value):
+    watch = Path(store.path).resolve().parent.parent / 'logs' / 'watchdog-status.json'
+    try:
+        value['service_watch'] = json.loads(watch.read_text()) if watch.exists() else value.get('service_watch') or {}
+    except (OSError, ValueError):
+        value['service_watch'] = {'status': 'unknown'}
+    value['revision'] = os.environ.get('LAB_REVISION') or None
+    value['view'] = 'live'
+    value['dashboard_port'] = 8769
+    return value
 
 def dashboard_state(store):
-    """One live snapshot at a time. The raw build takes ~8s and the page waits 7s,
-    so overlapping polls never received Atomforge / honey-spot."""
-    now = time.time()
+    """Return a snapshot without making every poll rebuild it.
+
+    The page asks every 2 seconds. A build that holds the lock, or a failure
+    that raises, leaves the browser with no payload and the screen says
+    there is no data. Waiters reuse the last finished snapshot.
+    """
     key = store.asset
     with _SNAP_LOCK:
+        now = time.time()
         hit = _SNAP.get(key)
         if hit and now - hit[0] < _SNAP_TTL:
             return hit[1]
-        value = store.snapshot()
-        watch = Path(store.path).resolve().parent.parent / 'logs' / 'watchdog-status.json'
-        try:
-            value['service_watch'] = json.loads(watch.read_text()) if watch.exists() else value.get('service_watch') or {}
-        except (OSError, ValueError):
-            value['service_watch'] = {'status': 'unknown'}
-        value['revision'] = os.environ.get('LAB_REVISION') or None
-        value['view'] = 'live'
-        value['dashboard_port'] = 8769
+        if key in _SNAP_BUILDING:
+            ready = _SNAP_READY.get(key)
+            cached = hit
+        else:
+            ready = threading.Event()
+            _SNAP_READY[key] = ready
+            _SNAP_BUILDING.add(key)
+            cached = None
+    if cached is not None or (ready is not None and key not in _SNAP_BUILDING):
+        if ready is not None and not ready.is_set():
+            ready.wait(8)
+        with _SNAP_LOCK:
+            hit = _SNAP.get(key)
+        if hit:
+            return hit[1]
+        if cached is not None:
+            return cached[1]
+    try:
+        value = _decorate(store, store.snapshot())
+    except Exception:
+        with _SNAP_LOCK:
+            hit = _SNAP.get(key)
+            _SNAP_BUILDING.discard(key)
+            ready = _SNAP_READY.pop(key, None)
+        if ready is not None:
+            ready.set()
+        if hit:
+            return hit[1]
+        raise
+    with _SNAP_LOCK:
         _SNAP[key] = (time.time(), value)
-        return value
+        _SNAP_BUILDING.discard(key)
+        ready = _SNAP_READY.pop(key, None)
+    if ready is not None:
+        ready.set()
+    return value
 
 def drop_dashboard_state(asset=None):
     with _SNAP_LOCK:
