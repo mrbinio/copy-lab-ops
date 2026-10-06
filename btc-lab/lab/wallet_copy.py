@@ -1051,6 +1051,33 @@ class WalletCopy:
             has=db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='wallet_activity'").fetchone()
             return self.pending_activity(db, active) if has else []
 
+    def _assert_ledger(self, wallets):
+        """Fast invariant check before a fresh signal can mutate the copy book."""
+        with self.store.connect() as db:
+            trades = self.positions(db)
+            for wallet in wallets:
+                account = db.execute(
+                    'SELECT cash FROM wallet_copy_accounts WHERE wallet=?', (wallet,)
+                ).fetchone()
+                if account is None:
+                    continue
+                cash = account[0]
+                ledger = db.execute(
+                    'SELECT COALESCE(SUM(amount),0) FROM wallet_copy_ledger WHERE wallet=?',
+                    (wallet,),
+                ).fetchone()[0]
+                rows = [trade for trade in trades if trade['wallet'] == wallet]
+                exposure = sum(
+                    trade['cost'] + trade['fee']
+                    for trade in rows if trade['status'] in ('OPEN', 'RESOLVED')
+                )
+                pnl = sum(
+                    trade['pnl_micro']
+                    for trade in rows if trade['status'] in ('CLOSED', 'SETTLED')
+                )
+                if cash < 0 or cash != INITIAL + ledger or cash + exposure != INITIAL + pnl:
+                    raise CopyLedgerError('COPY_LEDGER_MISMATCH')
+
     async def _publish_bg(self):
         await asyncio.to_thread(self.publish,'RUNNING')
 
@@ -1059,6 +1086,7 @@ class WalletCopy:
             # Observer wakes this loop immediately after persisting new activity.
             # The read runs off the event loop so a slow query cannot freeze RTDS.
             active=list(get_active_wallets(self.store))
+            await asyncio.to_thread(self._assert_ledger, active)
             rows=await asyncio.to_thread(self._load_pending, active)
             await self._apply_batch(rows)
             # A hypothetical ticket stays on the direct process() path.
