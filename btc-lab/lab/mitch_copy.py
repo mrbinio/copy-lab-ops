@@ -411,11 +411,13 @@ class MitchCopy:
         start = self.started()
         marks = ','.join('?' * len(WALLETS))
         return [dict(r) for r in db.execute(
-            f'''SELECT a.* FROM wallet_activity a
-                LEFT JOIN mitch_events e ON a.wallet=e.wallet AND a.event_key=e.event_key
-                WHERE e.event_key IS NULL AND a.wallet IN ({marks}) AND a.first_seen>=?
+            f'''SELECT a.* FROM wallet_activity a INDEXED BY wallet_activity_seen
+                WHERE a.first_seen>=? AND a.wallet IN ({marks})
+                AND NOT EXISTS (
+                    SELECT 1 FROM mitch_events e
+                    WHERE e.wallet=a.wallet AND e.event_key=a.event_key)
                 ORDER BY a.first_seen ASC LIMIT 10''',
-            (*WALLETS, start),
+            (start, *WALLETS),
         )]
 
     def publish(self):
@@ -509,17 +511,25 @@ class MitchCopy:
             try:
                 await self.step()
                 if self.clock() - last_publish >= 2:
-                    self.publish()
+                    await asyncio.to_thread(self.publish)
                     last_publish = self.clock()
             except Exception as error:
                 log.warning('mitch step: %s', error)
-                self.store.set('mitch_copy_error', {'at': self.clock(), 'error': str(error)[:300]})
+                try:
+                    await asyncio.to_thread(
+                        self.store.set, 'mitch_copy_error',
+                        {'at': self.clock(), 'error': str(error)[:300]},
+                    )
+                except Exception:
+                    pass
             await asyncio.sleep(0.2)
 
-    async def step(self):
-        now = self.clock()
+    def _load_pending(self):
         with self.store.connect() as db:
-            rows = self.pending(db, now)
+            return self.pending(db, self.clock())
+
+    async def step(self):
+        rows = await asyncio.to_thread(self._load_pending)
         for row in rows:
             await self.handle(row)
 

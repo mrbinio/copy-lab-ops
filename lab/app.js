@@ -640,7 +640,9 @@ function renderOpsBar(s){
   const age=beat?now-beat:null;
   const generated=Number(s.generated_at||0);
   const genAge=generated?now-generated:null;
-  const stale=!connected||age==null||age>30||(genAge!=null&&genAge>25);
+  const pageLate=!connected||genAge==null||genAge>20;
+  const collectorLate=age==null||age>45;
+  const stale=pageLate;
   const watch=s.service_watch||{};
   const clock=s.clock_status||{};
   const mitch=s.mitch_copy||{};
@@ -650,7 +652,7 @@ function renderOpsBar(s){
   const moneyMs=v=>v==null?'brak danych':(Number(v).toFixed(0)+' ms');
   const sec=v=>v==null?'brak danych':(Number(v).toFixed(0)+' s');
   const parts=[
-    stale?'AWARIA — ekran nie dostał świeżej odpowiedzi':'DZIAŁA',
+    pageLate?'AWARIA — ekran nie dostał świeżej odpowiedzi':(collectorLate?'DZIAŁA · sprawdzenie kolektora jest późne':'DZIAŁA'),
     'sprawdzenie '+sec(age),
     'kopiowanie '+sec(copyAge),
     'Mitch '+sec(mitchAge),
