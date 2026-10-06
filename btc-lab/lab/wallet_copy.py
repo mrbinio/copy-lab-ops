@@ -460,6 +460,7 @@ class WalletCopy:
               CREATE TABLE IF NOT EXISTS wallet_copy_ledger(id TEXT PRIMARY KEY,wallet TEXT,amount INTEGER NOT NULL);
             ''')
             db.execute("UPDATE wallet_copy_events SET reason='ABORTED_ON_RESTART' WHERE reason='PROCESSING'")
+            db.execute('CREATE INDEX IF NOT EXISTS wallet_copy_events_wallet_ts ON wallet_copy_events(wallet, ts)')
         if not store.get('wallet_copy_start',{}):store.set('wallet_copy_start',{'at':clock()})
         self.started=store.get('wallet_copy_start',{})['at']
         try:
@@ -491,7 +492,7 @@ class WalletCopy:
             trades=self.positions(db);accounts=[]
             if now-self._last_decision_load>=30:
                 for wallet in wallets:
-                    last=db.execute('SELECT ts,reason FROM wallet_copy_events WHERE wallet=? ORDER BY ts DESC,rowid DESC LIMIT 1',(wallet,)).fetchone()
+                    last=db.execute('SELECT ts,reason FROM wallet_copy_events WHERE wallet=? ORDER BY ts DESC LIMIT 1',(wallet,)).fetchone()
                     if last and (wallet not in self._last_decision or last['ts']>=self._last_decision[wallet][0]):
                         self._last_decision[wallet]=(last['ts'], last['reason'])
                 self._last_decision_load=now
@@ -513,7 +514,7 @@ class WalletCopy:
                     fees=sum(t['fee']+t.get('exit_fee',0) for t in rows)/1e6,open_cost=exposure/1e6,pending=0,
                     trades=len(rows),settled=len(closed),wins=sum(t['pnl_micro']>0 for t in closed),curve=curve[-300:],
                     max_drawdown_usd=dd/1e6,independent_windows=len({t['market'] for t in closed}),
-                    current_block=self.risk_reason(db,wallet,now),last_reason=cached[1] if cached else 'NO_NEW_SOURCE_TRADE',last_decision_at=cached[0] if cached else None))
+                    current_block=self.risk_reason(db,wallet,now,trades=trades),last_reason=cached[1] if cached else 'NO_NEW_SOURCE_TRADE',last_decision_at=cached[0] if cached else None))
             if now-self._scan_at>=30 or not self._scan:
                 reasons=[dict(r) for r in db.execute('SELECT wallet,reason,COUNT(*) AS count FROM wallet_copy_events GROUP BY wallet,reason')]
                 recent=[]
@@ -600,8 +601,10 @@ class WalletCopy:
                 db.execute('UPDATE wallet_copy_skip_reviews SET checked=?,body=? WHERE wallet=? AND event_key=?',
                     (1e30 if review['status']=='RESOLVED' else now,json.dumps(review),row['wallet'],row['event_key']))
 
-    def risk_reason(self,db,wallet,now,extra_position=True):
-        rows=[t for t in self.positions(db) if t['wallet']==wallet]
+    def risk_reason(self,db,wallet,now,extra_position=True,trades=None):
+        # Caller passes the positions it already loaded. Reading them again
+        # once per wallet held the publish, and the screen, for minutes.
+        rows=[t for t in (self.positions(db) if trades is None else trades) if t['wallet']==wallet]
         if extra_position and sum(1 for t in rows if t['status'] in ('OPEN','RESOLVED'))>=MAX_OPEN_POSITIONS:return 'COPY_POSITION_ALREADY_OPEN'
         cash_row=db.execute('SELECT cash FROM wallet_copy_accounts WHERE wallet=?',(wallet,)).fetchone()
         if cash_row is None:
