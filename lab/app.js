@@ -350,7 +350,13 @@ function fillWalletTiles(s,board,period){
     stats.append(pnl,closed);
     card.append(stats,node('p',watchShort(account),'watch-line'));
     const openCount=opensBy[wallet]||0;
-    if(openCount)card.append(node('p',t('Open copy','Otwarta kopia')+' · '+openCount+' · '+t('not a closed result','to nie jest zamknięty wynik'),'watch-line'));
+    const openCost=(openCopyTrades(s).filter(t=>String(t.strategy).replace(/^copy-/,'')===wallet)
+      .reduce((sum,t)=>sum+(Number(t.cost)||0)+(Number(t.fee)||0),0));
+    const rosterRow=((s.wallet_roster||{}).wallets||{})[wallet]||{};
+    if(rosterRow.state==='paused'&&rosterRow.since){
+      card.append(node('p','Pauza od '+formatTime(rosterRow.since)+(rosterRow.period_id?' · '+rosterRow.period_id:'')+(rosterRow.sample?' · próba '+rosterRow.sample:''),'watch-line'));
+    }
+    if(openCount)card.append(node('p',t('Open copy','Otwarta kopia')+' · '+openCount+' · koszt '+money(openCost/1e6)+' · '+t('not a closed result','to nie jest zamknięty wynik'),'watch-line'));
     else if(row&&row.pause_reason)card.append(node('p',row.pause_reason,'watch-line'));
     else if(!(account.trades>0))card.append(node('p',t('No closed copy. Watching is not a result.','Brak zamkniętej kopii. Śledzenie nie jest wynikiem.'),'watch-line'));
     card.onclick=()=>{localStorage.setItem('btc-lab-open-wallet',wallet);openWalletDetail(s,account,row,openCount);};
@@ -687,11 +693,19 @@ function renderOpsBar(s){
   const mitchAge=mitch.updated_at?now-Number(mitch.updated_at):null;
   const moneyMs=v=>v==null?'brak danych':(Number(v).toFixed(0)+' ms');
   const sec=v=>v==null?'brak danych':(Number(v).toFixed(0)+' s');
+  const copyStep=s.wallet_copy_progress||{};
+  const mitchStep=s.mitch_progress||{};
+  const copyStepAge=copyStep.at?now-Number(copyStep.at):null;
+  const mitchStepAge=mitchStep.at?now-Number(mitchStep.at):null;
+  const lat=((s.wallet_copy_execution||{}).latency)||{};
+  const exec=lat.total||lat.exec||{};
   const parts=[
-    ledgerBad?ledgerLine(s):(pageLate?('AWARIA — ekran nie dostał świeżej odpowiedzi'+(fetchError?' · '+fetchError:'')):(collectorLate?'DZIAŁA · sprawdzenie kolektora jest późne':'DZIAŁA')),
-    'sprawdzenie '+sec(age),
-    'kopiowanie '+sec(copyAge),
-    'Mitch '+sec(mitchAge),
+    ledgerBad?ledgerLine(s):(pageLate?('AWARIA — ekran nie dostał świeżej odpowiedzi'+(fetchError?' · '+fetchError:'')):(collectorLate?'kolektor późny':'kolektor świeży')),
+    'sprawdzenie kolektora '+sec(age),
+    'ostatnia publikacja wyników: '+(copyAge==null?'brak publikacji':(Number(copyAge).toFixed(0)+' s temu')),
+    'kolejka kopii '+(copyStep.queue==null?'brak danych':String(copyStep.queue))+' · ostatnie sprawdzenie kopiarki '+sec(copyStepAge),
+    'opóźnienie wykonania '+(exec.median_ms==null?'brak pomiaru':(exec.median_ms+' ms, n='+(exec.n==null?'brak':exec.n))),
+    'Mitch publikacja '+(mitchAge==null?'brak publikacji':(Number(mitchAge).toFixed(0)+' s temu'))+' · kolejka '+(mitchStep.queue==null?'brak':String(mitchStep.queue))+' · krok '+sec(mitchStepAge),
     'nadzór '+(watch.status||'brak danych')+(watch.noted&&watch.noted.length?' · '+watch.noted.join(','):'')+(watch.problems&&watch.problems.length?' · restart: '+watch.problems.join(','):'')+(watch.launch_wait&&watch.launch_wait.reason?' · '+watch.launch_wait.reason:''),
     'restarty '+(watch.restarts_in_window==null?'brak danych':String(watch.restarts_in_window)),
     'zegar '+(clock.status||'brak pomiaru')+' · '+moneyMs(clock.offset_ms)+' · '+(clock.source||'brak źródła')+' · '+(clock.checked_at?formatTime(clock.checked_at):'brak sprawdzenia')+' · niepewność '+moneyMs(clock.uncertainty_ms)
@@ -741,8 +755,8 @@ function renderMitch(s){
       const card=node('article',undefined,'strategy-card wallet-tile'+(net>0?' profit':net<0?' loss':''));
       card.append(node('h3',row.label||String(row.wallet||'').slice(-8)));
       card.append(node('p','Wynik: '+(net==null?missing():money(net/1e6,true))));
-      card.append(node('p','Kopie: '+(row.copies==null?missing():String(row.copies))+' · limit okien łącznie: '+(row.spent_micro==null?missing():money(row.spent_micro/1e6))+' / '+(row.limit_usd||'brak')+' na okno'));
-      card.append(node('p','Otwarte: '+(row.open==null?missing():String(row.open))));
+      card.append(node('p','Kopie: '+(row.copies==null?missing():String(row.copies))+' · wykorzystanie limitu okien: '+(row.spent_micro==null?missing():money(row.spent_micro/1e6))+' / '+(row.limit_usd||'brak')+' na okno'));
+      card.append(node('p','Otwarte: '+(row.open==null?missing():String(row.open))+' · koszt '+(row.open_cost_micro==null?missing():money(row.open_cost_micro/1e6))+(row.buy_hold?' · zakupy wstrzymane, księga się nie zgadza':'')));
       card.onclick=()=>{
         const detail=$('mitch-detail');
         if(!detail)return;
@@ -756,6 +770,12 @@ function renderMitch(s){
   if(!extra)return;
   extra.replaceChildren();
   if(!m){extra.append(node('p','Brak danych. Założenia i opóźnienia pojawią się po pierwszym zapisie projektu.'));return;}
+  extra.append(node('p','Księga Mitcha: '+(m.health||'brak kontroli')+(m.breaks&&m.breaks.length?' · '+m.breaks.map(b=>String(b.wallet||'').slice(-8)+' różnica gotówki '+(b.cash_minus_capital_ledger)+', księgi '+(b.book_minus_capital_pnl)).join('; '):'')));
+  extra.append(node('p','Oczekiwanie na potwierdzenie ceny: '+(m.awaiting_price==null?missing():String(m.awaiting_price))));
+  const reasons=m.reasons||{};
+  const reasonText=Object.keys(reasons).length?Object.entries(reasons).map(([k,v])=>k+' '+v).join(' · '):'brak decyzji';
+  extra.append(node('p','Decyzje: '+reasonText));
+  extra.append(node('p','Historyczne spóźnione zakupy (osobno od nowych sygnałów): '+(reasons.LATE_BUY_NOT_COPIED==null?'brak':String(reasons.LATE_BUY_NOT_COPIED))+' · przed startem: '+(reasons.HISTORICAL_BEFORE_START==null?'brak':String(reasons.HISTORICAL_BEFORE_START))));
   extra.append(node('p','Wersja: '+(m.spec||missing())+' · kapitał PAPER: '+(m.capital_usd_per_wallet==null?missing():money(m.capital_usd_per_wallet))+' na portfel. '+String(m.capital_note||'')));
   extra.append(node('p',m.sum_matches?'Suma portfeli zgadza się z wynikiem projektu.':'Suma portfeli nie zgadza się z wynikiem projektu albo brakuje danych.'));
   for(const line of m.assumptions||[])extra.append(node('p',line));

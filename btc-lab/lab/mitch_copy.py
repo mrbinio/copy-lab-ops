@@ -181,7 +181,17 @@ class MitchCopy:
                 CREATE TABLE IF NOT EXISTS mitch_seen_tx (
                     wallet TEXT, tx TEXT, side TEXT, token TEXT,
                     PRIMARY KEY (wallet, tx, side, token));
+                CREATE TABLE IF NOT EXISTS mitch_source_events (
+                    wallet TEXT, event_key TEXT, token TEXT, source_ts REAL,
+                    size TEXT, buy INTEGER,
+                    PRIMARY KEY (wallet, event_key));
             ''')
+            columns = [row[1] for row in db.execute('PRAGMA table_info(mitch_source)')]
+            if 'as_of' not in columns:
+                db.execute('ALTER TABLE mitch_source ADD COLUMN as_of REAL')
+            columns = [row[1] for row in db.execute('PRAGMA table_info(mitch_source)')]
+            if 'baseline' not in columns:
+                db.execute('ALTER TABLE mitch_source ADD COLUMN baseline TEXT')
             for wallet in WALLETS:
                 db.execute(
                     'INSERT OR IGNORE INTO mitch_accounts VALUES (?,?)',
@@ -213,7 +223,15 @@ class MitchCopy:
         ).fetchone()
         return int(row[0]) if row else 0
 
-    def plan_buy(self, event, asks, fee_rate, tick, min_shares, remaining_micro):
+    def plan_buy(self, event, asks, fee_rate, tick, min_shares, remaining_micro, fee_verified=True):
+        if fee_verified is not True:
+            return 'FEE_UNCONFIRMED', None
+        try:
+            rate = Decimal(str(fee_rate))
+        except Exception:
+            return 'FEE_UNCONFIRMED', None
+        if not rate.is_finite() or rate < 0 or rate > 1:
+            return 'FEE_UNCONFIRMED', None
         dollars = source_dollars(event)
         paid = source_price(event)
         if dollars is None or paid is None:
@@ -230,7 +248,7 @@ class MitchCopy:
             return 'PRICE_WORSE_THAN_10C', None
         limit = min(Decimal('0.999999'), paid + PRICE_WORSE)
         try:
-            fill = simulate_fill(asks, str(budget), str(limit), str(fee_rate), str(min_shares), str(tick))
+            fill = simulate_fill(asks, str(budget), str(limit), str(rate), str(min_shares), str(tick))
         except ValueError:
             return 'NO_LIQUIDITY', None
         if not fill:
@@ -242,7 +260,20 @@ class MitchCopy:
             return 'WINDOW_LIMIT', None
         return None, fill
 
+    def _held(self, db, wallet):
+        row = db.execute("SELECT body FROM state WHERE key='mitch_buy_hold'").fetchone()
+        if not row:
+            return False
+        try:
+            held = json.loads(row[0]).get('wallets') or {}
+        except (TypeError, ValueError):
+            return False
+        return wallet in held
+
     def apply_buy(self, db, wallet, key, event, fill, timing):
+        if self._held(db, wallet):
+            self._mark(db, wallet, key, 'MITCH_LEDGER_HOLD', self._case(None, event, {'timing': timing}))
+            return 'MITCH_LEDGER_HOLD'
         slug = str(event.get('slug'))
         debit = int(fill['cost']) + int(fill['fee'])
         limit = int(WALLETS[wallet]['limit_usd'] * 1_000_000)
@@ -295,24 +326,52 @@ class MitchCopy:
         )
         if tx:
             db.execute('INSERT OR IGNORE INTO mitch_seen_tx VALUES (?,?,?,?)', (wallet, tx, 'BUY', token))
-        self._add_source(db, wallet, token, event.get('size'), buy=True)
-        self._mark(db, wallet, key, reason, {
+        self._record_source(db, wallet, token, key, event, buy=True)
+        self._mark(db, wallet, key, reason, self._case(None, event, {
             'timing': timing, 'source_price': str(source_price(event)), 'copy_vwap': fill['vwap'],
             'cost': fill['cost'], 'fee': fill['fee'], 'shares': fill['shares'],
-        })
+            'source_ts': event.get('timestamp'),
+        }))
         return reason
 
+    def _record_source(self, db, wallet, token, key, event, buy):
+        """Remember the source trade once, then rebuild the book from the anchor."""
+        size = event.get('size') if isinstance(event, dict) else event
+        source_ts = None
+        if isinstance(event, dict):
+            try:
+                source_ts = float(event.get('timestamp') or 0) or None
+            except (TypeError, ValueError):
+                source_ts = None
+        db.execute(
+            'INSERT OR IGNORE INTO mitch_source_events VALUES (?,?,?,?,?,?)',
+            (wallet, key, token, source_ts, str(size or ''), 1 if buy else 0),
+        )
+        self._recompute_source(db, wallet, token)
+
     def _add_source(self, db, wallet, token, size, buy):
+        self._record_source(db, wallet, token, 'legacy:' + token + ':' + str(size) + ':' + str(buy), {'size': size, 'timestamp': 0}, buy)
+
+    def _recompute_source(self, db, wallet, token):
         row = db.execute(
-            'SELECT shares, known FROM mitch_source WHERE wallet=? AND token=?',
+            'SELECT baseline, known, as_of FROM mitch_source WHERE wallet=? AND token=?',
             (wallet, token),
         ).fetchone()
-        if not row or not row[1]:
+        if not row or not row[1] or row[0] in (None, ''):
             return
-        shares = Decimal(row[0] or '0')
-        delta = Decimal(str(size or 0))
-        shares = shares + delta if buy else shares - delta
-        if shares < 0:
+        total = Decimal(row[0])
+        as_of = float(row[2] or 0)
+        for source_ts, size, is_buy in db.execute(
+            'SELECT source_ts, size, buy FROM mitch_source_events WHERE wallet=? AND token=? ORDER BY source_ts, event_key',
+            (wallet, token),
+        ):
+            if source_ts is not None and float(source_ts) <= as_of:
+                continue
+            delta = Decimal(str(size or '0'))
+            if delta <= 0:
+                continue
+            total = total + delta if is_buy else total - delta
+        if total < 0:
             db.execute(
                 'UPDATE mitch_source SET known=0, shares=? WHERE wallet=? AND token=?',
                 ('', wallet, token),
@@ -320,11 +379,24 @@ class MitchCopy:
             return
         db.execute(
             'UPDATE mitch_source SET shares=? WHERE wallet=? AND token=?',
-            (format(shares, 'f'), wallet, token),
+            (format(total, 'f'), wallet, token),
         )
 
-    def apply_sell(self, db, wallet, key, event, bids, fraction, timing, delayed):
+    def _case(self, row, event, extra=None):
+        body = {
+            'transactionHash': (event or {}).get('transactionHash'),
+            'token': (event or {}).get('asset'),
+            'market': (event or {}).get('slug'),
+            'source_ts': None if not row else row.get('source_ts'),
+            'side': (event or {}).get('side'),
+        }
+        if extra:
+            body.update(extra)
+        return body
+
+    def apply_sell(self, db, wallet, key, event, bids, fraction, timing, delayed, fee_rate='0', fee_verified=True):
         token = str(event.get('asset') or '')
+        self._record_source(db, wallet, token, key, event, buy=False)
         open_trade = None
         for (pid, body) in db.execute('SELECT id, body FROM mitch_positions WHERE wallet=?', (wallet,)):
             current = json.loads(body)
@@ -332,14 +404,13 @@ class MitchCopy:
                 open_trade = current
                 break
         if fraction is None:
-            self._mark(db, wallet, key, 'SOURCE_PROPORTION_UNKNOWN', {'timing': timing, 'delayed': delayed})
+            self._mark(db, wallet, key, 'SOURCE_PROPORTION_UNKNOWN', self._case(None, event, {'timing': timing, 'delayed': delayed}))
             return 'SOURCE_PROPORTION_UNKNOWN'
         if not open_trade:
-            self._add_source(db, wallet, token, event.get('size'), buy=False)
-            self._mark(db, wallet, key, 'NO_MITCH_POSITION', {'timing': timing})
+            self._mark(db, wallet, key, 'NO_MITCH_POSITION', self._case(None, event, {'timing': timing}))
             return 'NO_MITCH_POSITION'
         cut = our_sell_shares(open_trade['shares'], fraction)
-        fill = self._sell_fill(bids, cut)
+        fill = self._sell_fill(bids, cut, fee_rate, fee_verified)
         if not cut or not fill:
             self._mark(db, wallet, key, 'NO_LIQUIDITY' if fraction is not None else 'SOURCE_PROPORTION_UNKNOWN', {'timing': timing})
             return 'NO_LIQUIDITY'
@@ -367,7 +438,6 @@ class MitchCopy:
             db.execute('UPDATE mitch_positions SET body=? WHERE id=?', (json.dumps(open_trade), open_trade['id']))
         db.execute('UPDATE mitch_accounts SET cash=cash+? WHERE wallet=?', (credit, wallet))
         db.execute('INSERT OR IGNORE INTO mitch_ledger VALUES (?,?,?)', ('sell:' + key, wallet, credit))
-        self._add_source(db, wallet, token, event.get('size'), buy=False)
         self._mark(db, wallet, key, 'MITCH_SELL', {
             'timing': timing, 'delayed': delayed, 'fraction': str(fraction),
             'source_price': str(source_price(event) or ''), 'copy_vwap': fill.get('vwap'),
@@ -401,11 +471,16 @@ class MitchCopy:
         token = str(event.get('asset') or '')
         self._add_source(db, wallet, token, event.get('size'), buy=True)
 
-    def anchor_source(self, db, wallet, token, shares):
+    def anchor_source(self, db, wallet, token, shares, as_of=0):
+        baseline = format(Decimal(str(shares)), 'f')
         db.execute(
-            'INSERT INTO mitch_source VALUES (?,?,?,1) ON CONFLICT(wallet, token) DO UPDATE SET shares=?, known=1',
-            (wallet, token, format(Decimal(str(shares)), 'f'), format(Decimal(str(shares)), 'f')),
+            '''INSERT INTO mitch_source (wallet, token, shares, known, as_of, baseline)
+               VALUES (?,?,?,1,?,?)
+               ON CONFLICT(wallet, token) DO UPDATE SET
+                 shares=excluded.shares, known=1, as_of=excluded.as_of, baseline=excluded.baseline''',
+            (wallet, token, baseline, float(as_of or 0), baseline),
         )
+        self._recompute_source(db, wallet, token)
 
     def pending(self, db, now):
         start = self.started()
@@ -415,7 +490,8 @@ class MitchCopy:
                 WHERE a.first_seen>=? AND a.wallet IN ({marks})
                 AND NOT EXISTS (
                     SELECT 1 FROM mitch_events e
-                    WHERE e.wallet=a.wallet AND e.event_key=a.event_key)
+                    WHERE e.wallet=a.wallet AND e.event_key=a.event_key
+                      AND e.reason != 'AWAITING_SOURCE_PRICE')
                 ORDER BY a.first_seen ASC LIMIT 10''',
             (start, *WALLETS),
         )]
@@ -435,8 +511,8 @@ class MitchCopy:
                 (r[0], r[1]): int(r[2])
                 for r in db.execute('SELECT wallet, window, spent FROM mitch_windows')
             }
-        closed = [p for p in positions if p.get('status') == 'CLOSED' and p.get('pnl_micro') is not None]
-        unknown_closed = [p for p in positions if p.get('status') == 'CLOSED' and p.get('pnl_micro') is None]
+        closed = [p for p in positions if p.get('status') in ('CLOSED', 'SETTLED') and p.get('pnl_micro') is not None]
+        unknown_closed = [p for p in positions if p.get('status') in ('CLOSED', 'SETTLED') and p.get('pnl_micro') is None]
         opens = [p for p in positions if p.get('status') == 'OPEN']
         def day_of(ts):
             if not ts:
@@ -448,7 +524,7 @@ class MitchCopy:
         wallets = []
         for wallet, meta in WALLETS.items():
             mine = [p for p in closed if p.get('wallet') == wallet]
-            missing = any(p.get('wallet') == wallet and p.get('pnl_micro') is None for p in positions if p.get('status') == 'CLOSED')
+            missing = any(p.get('wallet') == wallet and p.get('pnl_micro') is None for p in positions if p.get('status') in ('CLOSED', 'SETTLED'))
             net = None if missing else sum(int(p['pnl_micro']) for p in mine)
             copies = sum(1 for e in events if e['wallet'] == wallet and e['reason'] in ('MITCH_BUY', 'MITCH_ADD'))
             # counts from the full table, not the 40-row preview
@@ -499,12 +575,70 @@ class MitchCopy:
             'sum_matches': all_net is None or all_net == sum(
                 (w['net_micro'] or 0) for w in wallets if w['net_micro'] is not None
             ) and all(w['net_micro'] is not None for w in wallets),
+            'open_positions': [{
+                'wallet': p.get('wallet'), 'token': p.get('token'), 'slug': p.get('slug'),
+                'shares': p.get('shares'), 'cost': p.get('cost'), 'fee': p.get('fee'),
+                'end': p.get('end'), 'status': p.get('status'),
+            } for p in opens],
         }
+        with self.store.connect() as db:
+            breaks = self._ledger_breaks(db)
+            held = {item['wallet']: item for item in breaks}
+            db.execute(
+                "INSERT INTO state VALUES ('mitch_buy_hold', ?) ON CONFLICT(key) DO UPDATE SET body=excluded.body",
+                (json.dumps({'wallets': held, 'at': now}),),
+            )
+            reasons = {
+                reason: int(count) for reason, count in db.execute(
+                    'SELECT reason, COUNT(*) FROM mitch_events GROUP BY reason'
+                )
+            }
+            awaiting = int(reasons.get('AWAITING_SOURCE_PRICE') or 0)
+        payload['health'] = 'mismatch' if breaks else 'ok'
+        payload['breaks'] = breaks
+        payload['reasons'] = reasons
+        payload['awaiting_price'] = awaiting
+        for row in wallets:
+            row['buy_hold'] = row['wallet'] in held
         self.store.set('mitch_copy', payload)
         return payload
 
+    async def ensure_anchors(self):
+        """One confirmed data-api size per token. Later source trades move that baseline."""
+        if self.fetch is None:
+            return
+        for wallet in WALLETS:
+            try:
+                raw = await asyncio.to_thread(
+                    self.fetch, 'https://data-api.polymarket.com/positions?user=' + wallet,
+                )
+            except Exception:
+                continue
+            if isinstance(raw, list):
+                await asyncio.to_thread(self._apply_anchor, wallet, raw)
+
+    def _apply_anchor(self, wallet, rows):
+        now = self.clock()
+        with self.store.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                token = str(row.get('asset') or row.get('token') or '')
+                size = row.get('size')
+                if not token or size is None:
+                    continue
+                existing = db.execute(
+                    'SELECT known, baseline FROM mitch_source WHERE wallet=? AND token=?',
+                    (wallet, token),
+                ).fetchone()
+                if existing and existing[0] and existing[1] not in (None, ''):
+                    continue
+                self.anchor_source(db, wallet, token, size, as_of=now)
+
     async def run(self):
         self.ensure()
+        await self.ensure_anchors()
         self.publish()
         last_publish = self.clock()
         while True:
@@ -530,111 +664,318 @@ class MitchCopy:
 
     async def step(self):
         rows = await asyncio.to_thread(self._load_pending)
+        grouped = {}
         for row in rows:
-            await self.handle(row)
+            grouped.setdefault(row['wallet'], []).append(row)
+        async def drain(wallet_rows):
+            for row in wallet_rows:
+                await self.handle(row)
+        await asyncio.gather(*(drain(wallet_rows) for wallet_rows in grouped.values()))
+        try:
+            await self.settle_open()
+        except Exception as error:
+            log.warning('mitch settle: %s', error)
+        await asyncio.to_thread(self._progress, len(rows))
+        return len(rows)
+
+    def _progress(self, queue):
+        self.store.set('mitch_progress', {
+            'at': self.clock(), 'queue': queue, 'status': 'running',
+        })
 
     async def handle(self, row):
         wallet = row['wallet']
         key = row['event_key']
         event = json.loads(row['body']) if isinstance(row['body'], str) else row['body']
-        received = time.monotonic()
+        queued = time.monotonic()
         if wallet not in WALLETS:
             return
-        if float(row['first_seen']) < self.started():
+        if float(row.get('source_ts') or 0) < self.started() and event.get('_source') != 'chain_fast':
+            with self.store.connect() as db:
+                if not self._seen(db, wallet, key):
+                    self._mark(db, wallet, key, 'HISTORICAL_BEFORE_START', self._case(row, event))
             return
-        with self.store.connect() as db:
-            if self._seen(db, wallet, key):
-                return
+        source = event.get('_source')
+        if source == 'chain_fast' and self.clock() - float(row['first_seen']) < 3:
+            return
+        if source == 'chain_fast':
+            with self.store.connect() as db:
+                self._mark(db, wallet, key, 'AWAITING_SOURCE_PRICE', self._case(row, event, {
+                    'timing': self._timing(row, queued, self.clock(), self.clock(), 'local_detect', False),
+                }))
+            return
         if not is_btc_15m(event) or event.get('type') != 'TRADE' or event.get('side') not in ('BUY', 'SELL'):
             with self.store.connect() as db:
-                self._mark(db, wallet, key, 'NOT_BTC_15M', {})
+                self._mark(db, wallet, key, 'NOT_BTC_15M', self._case(row, event))
             return
-        source_basis = 'local_detect' if event.get('_source') == 'chain_fast' else 'source_second'
+        basis = 'source_subsecond' if source == 'market_trade' else 'source_second'
         clock = self.store.get('clock_status') or {}
         clock_ok = clock.get('status') == 'synced'
-        decision_at = self.clock()
-        if event.get('_source') == 'chain_fast' and self.clock() - float(row['first_seen']) < 3:
-            return
-        if event['side'] == 'BUY' and source_basis == 'local_detect':
-            with self.store.connect() as db:
-                self._mark(db, wallet, key, 'SOURCE_PRICE_UNCONFIRMED', {
-                    'timing': self._timing(row, received, decision_at, decision_at, source_basis, clock_ok),
-                })
-            return
         age = self.clock() - float(row['source_ts'])
-        delayed = age > 2
-        if event['side'] == 'BUY' and (age > 90 or float(row['first_seen']) < self.started()):
+        if event['side'] == 'BUY' and age > 90:
             with self.store.connect() as db:
-                self._mark(db, wallet, key, 'LATE_BUY_NOT_COPIED', {})
+                db.execute('BEGIN IMMEDIATE')
+                self._record_source(db, wallet, str(event.get('asset') or ''), key, event, buy=True)
+                self._mark(db, wallet, key, 'LATE_BUY_NOT_COPIED', self._case(row, event, {
+                    'class': 'historical' if float(row['source_ts']) < self.started() else 'queue',
+                }))
             return
-        exec_started = time.monotonic()
-        book = await self._book(str(event.get('asset') or ''))
-        exec_done = time.monotonic()
-        timing = self._timing(row, received, decision_at, self.clock(), source_basis, clock_ok, exec_started, exec_done)
-        asks = [(level.get('price'), level.get('size')) for level in (book or {}).get('asks') or [] if isinstance(level, dict)]
-        bids = [(level.get('price'), level.get('size')) for level in (book or {}).get('bids') or [] if isinstance(level, dict)]
+        if event['side'] == 'SELL' and age > 90:
+            with self.store.connect() as db:
+                db.execute('BEGIN IMMEDIATE')
+                self._record_source(db, wallet, str(event.get('asset') or ''), key, event, buy=False)
+                self._mark(db, wallet, key, 'LATE_SELL_RECONCILED', self._case(row, event))
+            return
+        book_started = time.monotonic()
+        checked = await self._book(str(event.get('asset') or ''))
+        terms = await self._terms(event)
+        book_done = time.monotonic()
+        timing = self._timing(row, queued, self.clock(), self.clock(), basis, clock_ok, book_started, book_done, clock)
         with self.store.connect() as db:
             db.execute('BEGIN IMMEDIATE')
             if self._seen(db, wallet, key):
+                fresh = db.execute(
+                    'SELECT reason FROM mitch_events WHERE wallet=? AND event_key=?',
+                    (wallet, key),
+                ).fetchone()
+                if not fresh or fresh[0] != 'AWAITING_SOURCE_PRICE':
+                    return
+            current = db.execute(
+                'SELECT body, source_ts FROM wallet_activity WHERE wallet=? AND event_key=?',
+                (wallet, key),
+            ).fetchone()
+            if current:
+                event = json.loads(current[0])
+                row = dict(row, body=current[0], source_ts=current[1])
+            if event.get('_source') == 'chain_fast' or source_price(event) is None and event['side'] == 'BUY':
+                self._mark(db, wallet, key, 'AWAITING_SOURCE_PRICE', self._case(row, event, {'timing': timing}))
+                return
+            if float(row['source_ts']) < self.started():
+                self._mark(db, wallet, key, 'HISTORICAL_BEFORE_START', self._case(row, event, {'timing': timing}))
+                return
+            if event['side'] == 'BUY' and self.clock() - float(row['source_ts']) > 90:
+                self._record_source(db, wallet, str(event.get('asset') or ''), key, event, buy=True)
+                self._mark(db, wallet, key, 'LATE_BUY_NOT_COPIED', self._case(row, event, {'timing': timing}))
+                return
+            if book_done - book_started > 3:
+                self._mark(db, wallet, key, 'BOOK_WAIT_TOO_LONG', self._case(row, event, {'timing': timing}))
+                return
+            if not checked or checked.get('error'):
+                self._mark(db, wallet, key, checked.get('error') if checked else 'NO_BOOK', self._case(row, event, {'timing': timing}))
+                return
+            if not terms or not terms.get('fee_verified'):
+                self._record_source(db, wallet, str(event.get('asset') or ''), key, event, buy=(event['side'] == 'BUY'))
+                self._mark(db, wallet, key, 'FEE_UNCONFIRMED', self._case(row, event, {'timing': timing}))
+                return
+            if event['side'] == 'BUY' and not terms.get('accepting'):
+                self._record_source(db, wallet, str(event.get('asset') or ''), key, event, buy=True)
+                self._mark(db, wallet, key, 'MARKET_CLOSED', self._case(row, event, {'timing': timing}))
                 return
             if event['side'] == 'BUY':
                 limit = int(WALLETS[wallet]['limit_usd'] * 1_000_000)
                 remaining = limit - self._window_spent(db, wallet, str(event.get('slug')))
-                minimum = str((book or {}).get('min_order_size') or '5')
-                tick = str((book or {}).get('tick_size') or '0.01')
-                why, fill = self.plan_buy(event, asks, '0', tick, minimum, remaining)
+                why, fill = self.plan_buy(
+                    event, checked['asks'], terms['fee_rate'], checked['tick'], checked['min_shares'],
+                    remaining, fee_verified=True,
+                )
                 if why:
-                    if event.get('size'):
-                        self.note_source_buy(db, wallet, event)
-                    self._mark(db, wallet, key, why, {'timing': timing, 'source_price': str(source_price(event) or '')})
+                    self._record_source(db, wallet, str(event.get('asset') or ''), key, event, buy=True)
+                    self._mark(db, wallet, key, why, self._case(row, event, {
+                        'timing': timing, 'source_price': str(source_price(event) or ''),
+                    }))
                     return
                 self.apply_buy(db, wallet, key, event, fill, timing)
                 return
             fraction = self.fraction_for(db, wallet, event)
-            self.apply_sell(db, wallet, key, event, bids, fraction, timing, delayed)
+            self.apply_sell(
+                db, wallet, key, event, checked, fraction, timing, age > 2,
+                fee_rate=terms['fee_rate'], fee_verified=True,
+            )
 
-    def _sell_fill(self, bids, shares_micro):
-        if not bids or not shares_micro:
+    def _sell_fill(self, bids, shares_micro, fee_rate='0', fee_verified=True):
+        if fee_verified is not True or not shares_micro:
             return None
+        if isinstance(bids, dict) and 'bids' in bids:
+            book = bids
+        else:
+            book = {'bids': list(bids or []), 'tick': '0.01', 'min_shares': '0.000001'}
+        from .mid_window import simulate_sale
         try:
-            price = max(Decimal(str(p)) for p, _s in bids)
-        except Exception:
+            fill = simulate_sale(book, shares_micro, fee_rate)
+        except ValueError:
             return None
-        if price <= 0:
+        if not fill:
             return None
-        proceeds = int((price * Decimal(int(shares_micro))).to_integral_value(rounding=ROUND_FLOOR))
-        return {'proceeds': proceeds, 'fee': 0, 'vwap': float(price)}
+        fill['vwap'] = float(Decimal(fill['proceeds']) / Decimal(int(shares_micro))) if int(shares_micro) else None
+        return fill
 
-    def _timing(self, row, received_mono, decision_at, finished_at, basis, clock_ok, exec_started=None, exec_done=None):
+    def _timing(self, row, received_mono, decision_at, finished_at, basis, clock_ok, exec_started=None, exec_done=None, clock=None):
         source_ts = float(row['source_ts'])
         first_seen = float(row['first_seen'])
         detect = None if basis == 'local_detect' else (first_seen - source_ts) * 1000
-        process = None
+        book_ms = None
         if exec_started is not None and exec_done is not None:
-            process = (exec_done - exec_started) * 1000
+            book_ms = (exec_done - exec_started) * 1000
+        queue_ms = (decision_at - first_seen) * 1000
         total = None
         confirmed = False
-        if basis == 'source_subsecond' and clock_ok and detect is not None and process is not None:
-            total = detect + process
+        # One wall-clock span. Stage medians are not added together.
+        if basis == 'source_subsecond' and clock_ok:
+            total = (finished_at - source_ts) * 1000
             confirmed = True
+        clock = clock or {}
         return {
             'source_ts': source_ts,
             'source_precision': basis,
+            'source_limit': 'one_second_api' if basis == 'source_second' else basis,
             'received_at': first_seen,
             'decision_at': decision_at,
             'exec_finished_at': finished_at,
+            'queue_ms': round(queue_ms, 1),
             'detect_ms': None if detect is None else round(detect, 1),
-            'process_ms': None if process is None else round(process, 1),
+            'book_ms': None if book_ms is None else round(book_ms, 1),
+            'process_ms': None if book_ms is None else round(book_ms, 1),
             'total_ms': None if total is None else round(total, 1),
             'total_confirmed': confirmed,
+            'clock_status': clock.get('status'),
+            'clock_offset_ms': clock.get('offset_ms'),
+            'clock_uncertainty_ms': clock.get('uncertainty_ms'),
+            'mono_book_start': exec_started,
+            'mono_book_done': exec_done,
         }
 
     async def _book(self, token):
         if not token or self.fetch is None:
-            return None
+            return {'error': 'NO_BOOK'}
         import urllib.parse
         url = 'https://clob.polymarket.com/book?token_id=' + urllib.parse.quote(token, safe='')
         try:
-            return await asyncio.to_thread(self.fetch, url)
+            raw = await asyncio.to_thread(self.fetch, url)
+        except Exception:
+            return {'error': 'NO_BOOK'}
+        from .worker import normalize_book
+        try:
+            return normalize_book(raw, token, self.clock(), max_age=3)
+        except ValueError as error:
+            text = str(error)
+            if 'token' in text:
+                return {'error': 'BOOK_TOKEN_MISMATCH'}
+            return {'error': 'BOOK_STALE'}
+
+    async def _terms(self, event):
+        slug = str((event or {}).get('slug') or '')
+        if self.fetch is None or not slug.startswith('btc-updown-15m-'):
+            return None
+        try:
+            raw = await asyncio.to_thread(
+                self.fetch, 'https://gamma-api.polymarket.com/markets/slug/' + slug,
+            )
         except Exception:
             return None
+        if not isinstance(raw, dict):
+            return None
+        from .worker import normalize_market
+        try:
+            market = normalize_market(raw, int(slug.rsplit('-', 1)[-1]), 'BTC')
+        except (ValueError, KeyError, TypeError):
+            return None
+        if str(event.get('asset') or '') not in set(map(str, market['tokens'].values())):
+            return {'fee_verified': False, 'error': 'TOKEN_MISMATCH'}
+        return market
+
+    def _due_open(self):
+        now = self.clock()
+        found = []
+        with self.store.connect() as db:
+            if not db.execute("SELECT 1 FROM sqlite_master WHERE name='mitch_positions'").fetchone():
+                return found
+            for body in db.execute('SELECT body FROM mitch_positions'):
+                trade = json.loads(body[0])
+                end = trade.get('end')
+                if trade.get('status') == 'OPEN' and end and now >= float(end) and trade.get('condition'):
+                    found.append(trade)
+        return found
+
+    async def settle_open(self):
+        if self.fetch is None:
+            return
+        for trade in await asyncio.to_thread(self._due_open):
+            try:
+                raw = await asyncio.to_thread(
+                    self.fetch, 'https://clob.polymarket.com/markets/' + str(trade['condition']),
+                )
+            except Exception:
+                continue
+            await asyncio.to_thread(self._settle_one, trade['id'], raw)
+
+    def _settle_one(self, trade_id, raw):
+        if not isinstance(raw, dict) or raw.get('closed') is not True:
+            return
+        winners = [token for token in raw.get('tokens') or [] if token.get('winner') is True]
+        if len(winners) != 1:
+            return
+        with self.store.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            row = db.execute('SELECT body FROM mitch_positions WHERE id=?', (trade_id,)).fetchone()
+            if not row:
+                return
+            current = json.loads(row[0])
+            if current.get('status') != 'OPEN':
+                return
+            if raw.get('condition_id') != current.get('condition'):
+                return
+            known = {str(token.get('token_id')) for token in raw.get('tokens') or []}
+            if str(current.get('token')) not in known:
+                return
+            won = str(winners[0].get('token_id')) == str(current.get('token'))
+            shares = int(current['shares'])
+            payout = shares if won else 0
+            ledger_id = 'settle:' + current['id']
+            inserted = db.execute(
+                'INSERT OR IGNORE INTO mitch_ledger VALUES (?,?,?)',
+                (ledger_id, current['wallet'], payout),
+            ).rowcount
+            if not inserted:
+                return
+            db.execute(
+                'UPDATE mitch_accounts SET cash=cash+? WHERE wallet=?',
+                (payout, current['wallet']),
+            )
+            pnl = payout - int(current['cost']) - int(current['fee'])
+            current.update(
+                status='SETTLED', payout=payout, exit_fee=0, closed_at=self.clock(),
+                pnl_micro=pnl, official_winner=str(winners[0].get('token_id')),
+                official_seen_at=self.clock(),
+            )
+            db.execute('UPDATE mitch_positions SET body=? WHERE id=?', (json.dumps(current), current['id']))
+
+    def _ledger_breaks(self, db):
+        breaks = []
+        if not db.execute("SELECT 1 FROM sqlite_master WHERE name='mitch_accounts'").fetchone():
+            return breaks
+        for wallet in WALLETS:
+            cash_row = db.execute('SELECT cash FROM mitch_accounts WHERE wallet=?', (wallet,)).fetchone()
+            if not cash_row:
+                continue
+            cash = int(cash_row[0])
+            ledger = int(db.execute(
+                'SELECT COALESCE(SUM(amount),0) FROM mitch_ledger WHERE wallet=?', (wallet,),
+            ).fetchone()[0])
+            bodies = [
+                json.loads(body) for (body,) in db.execute(
+                    'SELECT body FROM mitch_positions WHERE wallet=?', (wallet,),
+                )
+            ]
+            exposure = sum(int(t['cost']) + int(t['fee']) for t in bodies if t.get('status') == 'OPEN')
+            closed = [t for t in bodies if t.get('status') in ('CLOSED', 'SETTLED') and t.get('pnl_micro') is not None]
+            pnl = sum(int(t['pnl_micro']) for t in closed)
+            cash_delta = cash - (CAPITAL_MICRO + ledger)
+            book_delta = cash + exposure - (CAPITAL_MICRO + pnl)
+            if cash < 0 or cash_delta != 0 or book_delta != 0:
+                breaks.append({
+                    'wallet': wallet, 'cash': cash, 'ledger': ledger,
+                    'exposure': exposure, 'pnl': pnl,
+                    'cash_minus_capital_ledger': cash_delta,
+                    'book_minus_capital_pnl': book_delta,
+                })
+        return breaks

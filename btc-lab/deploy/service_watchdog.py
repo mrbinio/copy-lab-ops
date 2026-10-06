@@ -57,7 +57,12 @@ def read_state(db_path):
     db = sqlite3.connect(uri, uri=True, timeout=5)
     try:
         out = {}
-        for key in ('worker', 'wallet_copy_execution', 'mitch_copy', 'clock_status', 'wallet_copy_health'):
+        keys = (
+            'worker', 'wallet_copy_execution', 'mitch_copy', 'clock_status',
+            'wallet_copy_health', 'wallet_copy_progress', 'mitch_progress',
+            'task_health', 'mitch_health',
+        )
+        for key in keys:
             row = db.execute('SELECT body FROM state WHERE key=?', (key,)).fetchone()
             out[key] = json.loads(row[0]) if row else {}
         return out
@@ -65,40 +70,91 @@ def read_state(db_path):
         db.close()
 
 
-def assess(now, state, http_ok, launch_wait=None):
-    """Split a dead process from a publish, a connection, and a bad book.
+def _age(now, stamp):
+    return None if not stamp else round(now - float(stamp), 1)
 
-    Only a stale heartbeat restarts the service. A late journal, a refused
-    HTTP check, or a ledger hold stays on the status line. Restarting would
-    not repair those, and a launch-limit wait must not be kicked again.
+
+def assess(now, state, http_ok, launch_wait=None, process_age=None, http_failures=0):
+    """A live heartbeat does not hide a stopped copier or a publish that never moved.
+
+    A ledger mismatch holds buys and is not restarted. A launch-limit wait is
+    not kicked again. HTTP is noted, then restarted only after repeated failures.
     """
     worker = state.get('worker') or {}
     copy = state.get('wallet_copy_execution') or {}
     mitch = state.get('mitch_copy') or {}
     health = state.get('wallet_copy_health') or {}
+    mitch_health = state.get('mitch_health') or {}
+    copy_progress = state.get('wallet_copy_progress') or {}
+    mitch_progress = state.get('mitch_progress') or {}
     heartbeat = float(worker.get('heartbeat') or 0)
     copy_at = float(copy.get('updated_at') or 0)
     mitch_at = float(mitch.get('updated_at') or 0)
+    copy_step = float(copy_progress.get('at') or 0)
+    mitch_step = float(mitch_progress.get('at') or 0)
     restart_problems = []
     noted = []
+    old = process_age is not None and process_age >= 180
     waiting = bool(launch_wait and float(launch_wait.get('retry_at') or 0) > now)
     if waiting:
         noted.append('launch_wait')
-    elif now - heartbeat > HEARTBEAT_LIMIT:
-        restart_problems.append('heartbeat')
+    elif not heartbeat or now - heartbeat > HEARTBEAT_LIMIT:
+        if heartbeat or old or process_age is None:
+            restart_problems.append('heartbeat')
     if copy_at and now - copy_at > PUBLISH_LIMIT:
-        noted.append('copy_publish')
+        restart_problems.append('copy_publish')
+    elif old and not copy_at:
+        restart_problems.append('copy_publish_never')
     if mitch_at and now - mitch_at > PUBLISH_LIMIT:
-        noted.append('mitch_publish')
+        restart_problems.append('mitch_publish')
+    elif old and not mitch_at:
+        restart_problems.append('mitch_publish_never')
+    if copy_step and now - copy_step > PUBLISH_LIMIT:
+        restart_problems.append('copy_stalled')
+    elif old and not copy_step:
+        restart_problems.append('copy_never_progressed')
+    if mitch_step and now - mitch_step > PUBLISH_LIMIT:
+        restart_problems.append('mitch_stalled')
+    elif old and not mitch_step:
+        restart_problems.append('mitch_never_progressed')
     if not http_ok:
         noted.append('connection')
-    if health.get('status') == 'ledger_mismatch':
+        if http_failures >= 3 and not waiting:
+            restart_problems.append('connection')
+    if health.get('status') == 'ledger_mismatch' or mitch_health.get('status') == 'mismatch':
         noted.append('ledger_mismatch')
+    if waiting:
+        restart_problems = []
     return restart_problems, noted, {
-        'heartbeat_age_s': None if not heartbeat else round(now - heartbeat, 1),
-        'copy_publish_age_s': None if not copy_at else round(now - copy_at, 1),
-        'mitch_publish_age_s': None if not mitch_at else round(now - mitch_at, 1),
+        'heartbeat_age_s': _age(now, heartbeat),
+        'copy_publish_age_s': _age(now, copy_at),
+        'mitch_publish_age_s': _age(now, mitch_at),
+        'copy_step_age_s': _age(now, copy_step),
+        'mitch_step_age_s': _age(now, mitch_step),
+        'copy_queue': copy_progress.get('queue'),
+        'mitch_queue': mitch_progress.get('queue'),
     }
+
+
+def notify(body):
+    """One optional webhook. The address is environment-only and is never stored."""
+    url = os.environ.get('BTC_LAB_ALERT_URL', '').strip()
+    if not url:
+        return 'unconfigured'
+    if body.get('status') == 'ok':
+        return 'quiet'
+    try:
+        import urllib.request
+        data = json.dumps({
+            'status': body.get('status'),
+            'problems': body.get('problems'),
+            'action': body.get('action'),
+        }).encode()
+        req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json'})
+        with urllib.request.urlopen(req, timeout=5):
+            return 'sent'
+    except Exception:
+        return 'failed'
 
 
 def process_age(now):
@@ -140,13 +196,29 @@ def main():
     else:
         read_error = None
     launch_wait = load(ROOT / 'logs' / 'service-stopped.json', None)
-    restart_problems, noted, ages = assess(now, state, http_ok, launch_wait)
+    previous = load(STATUS, {})
+    http_failures = int(previous.get('http_failures') or 0)
+    http_failures = 0 if http_ok else http_failures + 1
     age = process_age(now)
+    restart_problems, noted, ages = assess(
+        now, state, http_ok, launch_wait, process_age=age, http_failures=http_failures,
+    )
     action = 'ok'
+    proof = load(ROOT / 'logs' / 'watchdog-restart.json', None)
+    if proof and not proof.get('verified') and age is not None and age >= 180 and not restart_problems:
+        proof['verified'] = True
+        proof['verified_at'] = now
+        (ROOT / 'logs' / 'watchdog-restart.json').write_text(json.dumps(proof))
     if restart_problems and age is not None and age < 180:
         action = 'starting'
     elif restart_problems:
         action = restart(now, ','.join(restart_problems))
+        if action == 'restarted':
+            (ROOT / 'logs').mkdir(parents=True, exist_ok=True)
+            (ROOT / 'logs' / 'watchdog-restart.json').write_text(json.dumps({
+                'at': now, 'problems': restart_problems, 'verified': False,
+            }))
+            action = 'restart_requested'
     elif noted:
         action = 'degraded'
     ages['process_age_s'] = age
@@ -169,8 +241,11 @@ def main():
         'read_error': read_error,
         'restarts_in_window': len(recent_attempts(now)),
         'launch_wait': launch_wait if launch_wait else None,
-        'note': 'Restart only when the heartbeat is stale. A late publish, a connection error, or a ledger hold is reported and left running. After five launches the wrapper waits out the ten-minute window and starts again.',
+        'http_failures': http_failures,
+        'restart_proof': proof,
+        'note': 'A stale heartbeat, a stalled copier, or a publish that is late or missing restarts the service after the startup grace. A ledger mismatch holds buys and is not restarted. launchctl is recorded as requested until the next check sees progress.',
     }
+    body['alert'] = notify(body)
     save_status(body)
     # The dashboard reads this from the database when the worker is up.
     # A dead worker cannot write it, so the page also watches response age.

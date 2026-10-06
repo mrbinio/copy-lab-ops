@@ -26,17 +26,20 @@ service = load('macos_service')
 
 
 class WatchdogSplitTests(unittest.TestCase):
-    def test_a_late_publish_or_a_dead_connection_does_not_restart(self):
+    def test_a_late_publish_restarts_even_when_the_heartbeat_is_fresh(self):
         now = 1_000_000
         state = {
             'worker': {'heartbeat': now - 10},
             'wallet_copy_execution': {'updated_at': now - 400},
             'mitch_copy': {'updated_at': now - 10},
+            'wallet_copy_progress': {'at': now - 5, 'queue': 0},
+            'mitch_progress': {'at': now - 5, 'queue': 0},
         }
-        restart, noted, _ages = watchdog.assess(now, state, False)
-        self.assertEqual(restart, [])
-        self.assertIn('copy_publish', noted)
+        restart, noted, _ages = watchdog.assess(now, state, False, process_age=1000)
+        self.assertIn('copy_publish', restart)
+        self.assertNotIn('heartbeat', restart)
         self.assertIn('connection', noted)
+        self.assertNotIn('connection', restart)
 
     def test_a_ledger_hold_is_not_a_restart(self):
         now = 1_000_000
@@ -97,6 +100,7 @@ class IsolatedWatchdogTests(unittest.TestCase):
             watchdog.ATTEMPTS = root / 'watchdog-attempts.json'
             watchdog.STATUS = root / 'logs' / 'watchdog-status.json'
             watchdog.PORT = 8774
+            watchdog.process_age = lambda _now: 1000
 
             class Handler(BaseHTTPRequestHandler):
                 def do_GET(self):
@@ -118,8 +122,9 @@ class IsolatedWatchdogTests(unittest.TestCase):
             finally:
                 server.shutdown()
             status = json.loads((root / 'logs' / 'watchdog-status.json').read_text())
-            self.assertEqual(status['action'], 'degraded')
-            self.assertEqual(status['problems'], [])
-            self.assertIn('copy_publish', status['noted'])
+            self.assertEqual(status['action'], 'restart_requested')
+            self.assertIn('copy_publish', status['problems'])
             self.assertIn('connection', status['noted'])
-            self.assertFalse((root / 'watchdog-attempts.json').exists())
+            self.assertTrue((root / 'watchdog-attempts.json').exists())
+            proof = json.loads((root / 'logs' / 'watchdog-restart.json').read_text())
+            self.assertFalse(proof['verified'])

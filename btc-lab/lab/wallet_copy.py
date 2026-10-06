@@ -673,7 +673,29 @@ class WalletCopy:
         rows=self._pending_query(db,copying,now,20)
         if len(rows)<20:rows.extend(self._pending_query(db,paused,now,20-len(rows)))
         if len(rows)<20:rows.extend(self._pending_query(db,lo,now,20-len(rows)))
+        seen={(r['wallet'], r['event_key']) for r in rows}
+        for row in self._late_sell_query(db, copying, now, 5):
+            if (row['wallet'], row['event_key']) not in seen:
+                rows.append(row)
         return rows
+
+    def _late_sell_query(self, db, wallets, now, limit):
+        """Sells missed during an outage. They update the source book and are
+        recorded. They are not filled at a historical price."""
+        if not wallets or limit<=0: return []
+        marks=','.join('?'*len(wallets))
+        oldest=max(self.started, now-86400)
+        return [dict(r) for r in db.execute(
+            f"""SELECT a.* FROM wallet_activity a
+                LEFT JOIN wallet_copy_events e
+                ON a.wallet=e.wallet AND a.event_key=e.event_key
+                WHERE e.event_key IS NULL
+                  AND json_extract(a.body,'$.side')='SELL'
+                  AND json_extract(a.body,'$.type')='TRADE'
+                  AND a.source_ts>=? AND a.source_ts<?
+                  AND a.wallet IN ({marks})
+                ORDER BY a.source_ts ASC LIMIT ?""",
+            (oldest, now-90, *wallets, limit))]
 
     async def process(self,row,shadow=True,sell_proportion=None):
         await self._process(row,sell_proportion=sell_proportion)
@@ -796,7 +818,19 @@ class WalletCopy:
                     db.execute('BEGIN IMMEDIATE')
                     source_note=note_source_event(db,wallet,key,event,self.started,row['source_ts'],row['first_seen'])
             if row['first_seen']<self.started or row['source_ts']<self.started:self.reason(row,'PRE_ACTIVATION');return
-            if not 0<=now-row['source_ts']<=90 or not 0<=now-row['first_seen']<=90:self.reason(row,'SOURCE_TOO_OLD');return
+            fresh=0<=now-row['source_ts']<=90 and 0<=now-row['first_seen']<=90
+            if not fresh:
+                if (event.get('type')=='TRADE' and event.get('side')=='SELL'
+                    and row['source_ts']>=self.started and 0<=now-row['source_ts']<=86400):
+                    self.reason(row,'LATE_SELL_NOT_FILLED',{
+                        'source_copy':'reconciled_not_filled',
+                        'transactionHash':event.get('transactionHash'),
+                        'token':event.get('asset'),
+                        'market':event.get('slug'),
+                        'source_ts':row['source_ts'],
+                    })
+                    return
+                self.reason(row,'SOURCE_TOO_OLD');return
             if not identity_ok:
                 self.reason(row,'SOURCE_IDENTITY_MISMATCH');return
             if event.get('type')!='TRADE' or event.get('side') not in ('BUY','SELL'):self.reason(row,'NOT_BUY_OR_SELL');return
@@ -1143,6 +1177,11 @@ class WalletCopy:
                 self._publish_task=asyncio.create_task(self._publish_bg())
                 self.last_publish=self.clock()
             self.store.set('wallet_copy_error',{})
+            oldest=min((row['first_seen'] for row in rows), default=None)
+            self.store.set('wallet_copy_progress',{
+                'at':self.clock(),'queue':len(rows),
+                'oldest_first_seen':oldest,'status':'running',
+            })
             return len(rows)
         except Exception as error:
             # A ledger mismatch blocks further execution until process/operator review.
@@ -1196,8 +1235,8 @@ class WalletCopy:
                 self.store.wallet_activity_ready.clear()
                 try:n=await self.step()
                 except CopyLedgerError as error:
-                    log.error('copy ledger mismatch %s; retrying in 30s',error)
-                    await self.sleep(30)
+                    log.error('copy ledger mismatch %s; buys stay held, retrying in 1s',error)
+                    await self.sleep(1)
                     continue
                 except Exception:
                     await self.sleep(10)

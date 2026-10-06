@@ -119,6 +119,9 @@ class CopyTests(unittest.TestCase):
         with self.store.connect() as db:
             second=db.execute('SELECT reason FROM wallet_copy_events WHERE event_key=?',('two',)).fetchone()[0]
         self.assertEqual(second,'COPY_EXPOSURE_LIMIT')
+        roster=self.store.get('wallet_roster')
+        roster['wallets'][WALLETS[1]]['state']='paper_test'
+        self.store.set('wallet_roster', roster)
         self.process(self.row('other',wallet=WALLETS[1]));self.assertEqual([a['trades'] for a in self.state()['accounts']][:4],[1,1,0,0])
     def test_settlement_runs_beside_copy_not_inside_it(self):
         """A fresh copy must not wait for ended windows to settle."""
@@ -137,8 +140,14 @@ class CopyTests(unittest.TestCase):
 
     def test_cash_corruption_blocks_before_processing(self):
         with self.store.connect() as db:db.execute('UPDATE wallet_copy_accounts SET cash=cash-1 WHERE wallet=?',(WALLETS[0],))
-        with self.assertRaises(CopyLedgerError):asyncio.run(self.engine.step())
+        async def go():
+            await self.engine.step()
+            task=self.engine._publish_task
+            if task:await task
+        with self.assertRaises(CopyLedgerError):asyncio.run(go())
         self.assertEqual(self.book_calls,0)
+        held=(self.store.get('wallet_copy_buy_hold') or {}).get('wallets') or {}
+        self.assertIn(WALLETS[0], held)
     def test_five_minute_metadata_and_daily_export(self):
         self.now=1102;event=json.loads(self.row()['body']);event['slug']='btc-updown-5m-1000'
         raw=copy.deepcopy(self.raw);raw.update(slug=event['slug'],endDate=datetime.fromtimestamp(1300,timezone.utc).isoformat())
@@ -150,6 +159,21 @@ class CopyTests(unittest.TestCase):
         self.assertEqual(report['wallet_copy_daily'][0]['closed'],1)
         self.assertEqual(report['wallet_copy_daily'][0]['net_pnl_usd'],self.state()['accounts'][0]['pnl'])
         self.assertNotIn('entry_evidence',report['wallet_copy_daily'][0]['period_trades'][0])
+    def test_a_sell_after_the_fresh_window_is_recorded_and_not_filled(self):
+        self.confirm_source(0, 1000)
+        self.buy()
+        self.now += 200
+        row = self.row('late-sell', 'SELL')
+        row['source_ts'] = self.now - 120
+        row['first_seen'] = self.now - 120
+        body = json.loads(row['body'])
+        body['timestamp'] = row['source_ts']
+        body['size'] = 10
+        row['body'] = json.dumps(body)
+        self.process(row)
+        self.assertEqual(self.reason(), 'LATE_SELL_NOT_FILLED')
+        self.assertEqual(self.state()['recent_trades'][0]['status'], 'OPEN')
+
     def test_observer_backlog_skipped_without_replay(self):
         observer=WalletObserver(self.store,None)
         old=json.loads(self.row()['body']);old['timestamp']=1050
@@ -256,12 +280,11 @@ class CopyTests(unittest.TestCase):
     def test_source_identity_and_daily_loss_cap(self):
         self.now=1102;row=self.row('wrong-identity');body=json.loads(row['body']);body['proxyWallet']=WALLETS[1];row['body']=json.dumps(body)
         self.process(row);self.assertEqual(self.reason(),'SOURCE_IDENTITY_MISMATCH')
-        for i in range(3):
-            self.now+=2;self.process(self.row('loss'+str(i)))
-            with self.store.connect() as db:trade=next(t for t in self.engine.positions(db) if t['status']=='OPEN')
-            self.engine.close(trade,0,0,self.now,'SETTLED',{})
+        self.now+=2;self.process(self.row('loss0'))
+        with self.store.connect() as db:trade=next(t for t in self.engine.positions(db) if t['status']=='OPEN')
+        self.engine.close(trade,0,0,self.now,'SETTLED',{})
         self.now+=2;self.process(self.row('blocked'))
-        self.assertEqual(self.reason(),'COPIED_BUY')
+        self.assertEqual(self.reason(),'COPY_PAUSED')
 
     def test_cheap_and_expensive_source_prices_are_skipped(self):
         """A $5 ticket on a 10-cent side died almost every time (−$157 on 40 trades)."""

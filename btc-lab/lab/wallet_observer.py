@@ -81,8 +81,23 @@ def get_active_wallets(store):
     return tuple(seen)
 
 
+def _fill_id(row):
+    """Stable id of one execution. Size and price are not an id."""
+    if not isinstance(row, dict):
+        return None
+    for key in ('id', 'tradeId', 'tradeID', 'fillId'):
+        if row.get(key) not in (None, ''):
+            return 'id:' + str(row[key])
+    if row.get('logIndex') not in (None, ''):
+        return 'log:' + str(row.get('transactionHash') or '') + ':' + str(row['logIndex'])
+    return None
+
+
 def _fill_sig(row):
-    return '|'.join(str(row.get(k) if row.get(k) is not None else '') for k in ('size', 'usdcSize', 'price'))
+    found = _fill_id(row)
+    if found:
+        return found
+    return 'anon:' + '|'.join(str(row.get(k) if row.get(k) is not None else '') for k in ('size', 'usdcSize', 'price'))
 
 
 def _money(value):
@@ -97,40 +112,78 @@ def _money(value):
     return number
 
 
-def merge_activity_body(existing_body, row):
-    """Add a later fill of the same trade exactly once.
+def _as_fill(row, fallback):
+    return {
+        'id': _fill_id(row) or fallback,
+        'size': str(row.get('size') if row.get('size') is not None else ''),
+        'usdcSize': str(row.get('usdcSize') if row.get('usdcSize') is not None else ''),
+        'price': str(row.get('price') if row.get('price') is not None else ''),
+    }
 
-    A chain-fast book quote is replaced by the confirmed row. It is never
-    added to the price the source paid. Fetching the same fill again does
-    not change the stored dollars or shares.
+
+def _sum_fills(fills):
+    size = Decimal(0)
+    usdc = Decimal(0)
+    for fill in fills:
+        part = _money(fill.get('size'))
+        paid = _money(fill.get('usdcSize'))
+        if part is None or paid is None or part < 0 or paid < 0:
+            return None
+        size += part
+        usdc += paid
+    if size <= 0 or usdc <= 0:
+        return None
+    return size, usdc
+
+
+def merge_activity_body(existing_body, row):
+    """Combine executions of one trade without depending on arrival order.
+
+    A fill id that arrives again replaces that fill. A new id is added.
+    Two executions with the same size are not the same fill. A chain-fast
+    book quote is replaced and is never added to the price he paid.
     """
     existing = json.loads(existing_body)
     if existing.get('_source') == 'chain_fast':
         merged = dict(row)
         merged.pop('_source', None)
-        merged['_fills'] = [_fill_sig(row)]
+        merged['_fills'] = [_as_fill(row, 'anon:0')]
         return json.dumps(merged, allow_nan=False), True
-    fills = list(existing.get('_fills') or [_fill_sig(existing)])
-    sig = _fill_sig(row)
-    same_totals = (
-        str(existing.get('size') or '') == str(row.get('size') or '')
-        and str(existing.get('usdcSize') or '') == str(row.get('usdcSize') or '')
-    )
-    if sig in fills or same_totals:
+    fills = [dict(item) for item in (existing.get('_fills') or []) if isinstance(item, dict)]
+    if not fills:
+        fills = [_as_fill(existing, 'anon:0')]
+    incoming_id = _fill_id(row)
+    if incoming_id is None:
+        if len(fills) == 1 and str(fills[0].get('id', '')).startswith('anon:'):
+            replacement = _as_fill(row, 'anon:0')
+            if replacement['size'] == fills[0].get('size') and replacement['usdcSize'] == fills[0].get('usdcSize'):
+                return existing_body, False
+            fills = [replacement]
+        else:
+            return existing_body, False
+    else:
+        replaced = False
+        for fill in fills:
+            if fill.get('id') == incoming_id:
+                fill.update(_as_fill(row, incoming_id))
+                replaced = True
+                break
+        if not replaced:
+            fills.append(_as_fill(row, incoming_id))
+    summed = _sum_fills(fills)
+    if summed is None:
         return existing_body, False
-    size0, size1 = _money(existing.get('size')), _money(row.get('size'))
-    usdc0, usdc1 = _money(existing.get('usdcSize')), _money(row.get('usdcSize'))
-    if size0 is None or size1 is None or usdc0 is None or usdc1 is None or size0 + size1 <= 0:
-        return existing_body, False
-    size = size0 + size1
-    usdc = usdc0 + usdc1
+    size, usdc = summed
     merged = dict(existing)
     merged['size'] = format(size, 'f')
     merged['usdcSize'] = format(usdc, 'f')
     merged['price'] = format(usdc / size, 'f')
-    merged['_fills'] = fills + [sig]
+    merged['_fills'] = fills
     merged.pop('_source', None)
-    return json.dumps(merged, allow_nan=False), True
+    body = json.dumps(merged, allow_nan=False)
+    if body == existing_body:
+        return existing_body, False
+    return body, True
 
 
 class WalletObserver:
@@ -145,6 +198,7 @@ class WalletObserver:
     def ingest(self, wallet, rows, now):
         if not isinstance(rows, list): raise ValueError('activity response must be a list')
         inserted = 0
+        updated = 0
         with self.store.connect() as db:
             for row in rows:
                 if not isinstance(row, dict): raise ValueError('invalid activity row')
@@ -158,7 +212,7 @@ class WalletObserver:
                 key = _row_key(row)
                 stored = dict(row)
                 if row.get('_source') != 'chain_fast':
-                    stored['_fills'] = [_fill_sig(row)]
+                    stored['_fills'] = [_as_fill(row, 'anon:0')]
                 body = json.dumps(stored, allow_nan=False)
                 cur = db.execute('INSERT OR IGNORE INTO wallet_activity VALUES (?,?,?,?,?)',
                                  (wallet, key, now, ts, body))
@@ -173,13 +227,15 @@ class WalletObserver:
                         (wallet, key),
                     ).fetchone()
                     if existing:
-                        merged, changed = merge_activity_body(existing[0], row)
-                        if changed:
+                        merged, did_change = merge_activity_body(existing[0], row)
+                        if did_change:
                             db.execute(
                                 'UPDATE wallet_activity SET source_ts=?, body=? WHERE wallet=? AND event_key=?',
                                 (ts, merged, wallet, key),
                             )
-        if inserted:self.store.wallet_activity_ready.set()
+                            updated += 1
+        if inserted or updated:
+            self.store.wallet_activity_ready.set()
         return inserted
 
     def _poll_sync(self, wallet, previous):

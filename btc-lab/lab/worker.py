@@ -565,24 +565,56 @@ class Worker:
                 LOG.info('chain monitor: detect on-chain → copy without waiting for the public list')
             else:
                 LOG.info('ALCHEMY_WSS not set; REST-only polling')
+        prints=None
+        if self.asset=='BTC':
+            from .wallet_chain_monitor import run_market_prints
+            prints=asyncio.create_task(run_market_prints(get_json))
+        jobs={
+            'reference': reference, 'wallets': wallets, 'discovery': discovery,
+            'copier': copier, 'mitch': mitch, 'clock': clock_task,
+            'chain': chain_task, 'prints': prints,
+        }
+        births={}
         last_wallet_refresh=time.time()
         try:
             while True:
                 await self.iteration()
+                dead=[]
+                for name, task in list(jobs.items()):
+                    if task is None or not task.done():
+                        continue
+                    error=None
+                    if not task.cancelled():
+                        caught=task.exception()
+                        error=None if caught is None else str(caught)[:200]
+                    births[name]=births.get(name, 0)+1
+                    dead.append({'name': name, 'error': error, 'restarts': births[name]})
+                    if births[name]<=5 and name in ('copier', 'mitch', 'wallets', 'chain', 'prints'):
+                        LOG.warning('restarting %s after it stopped (%s)', name, error)
+                        if name=='copier':
+                            jobs[name]=asyncio.create_task(WalletCopy(self.store,get_json,self.is_paused,clob_client=clob_client).run())
+                        elif name=='mitch':
+                            from .mitch_copy import MitchCopy
+                            jobs[name]=asyncio.create_task(MitchCopy(self.store,get_json).run())
+                        elif name=='wallets' and observer:
+                            jobs[name]=asyncio.create_task(observer.run())
+                        elif name=='chain' and monitor:
+                            jobs[name]=asyncio.create_task(monitor.run())
+                        elif name=='prints':
+                            from .wallet_chain_monitor import run_market_prints
+                            jobs[name]=asyncio.create_task(run_market_prints(get_json))
+                if dead or births:
+                    self.store.set('task_health', {'at': time.time(), 'dead': dead, 'restarts': births})
                 # Refresh chain monitor wallet set every 60s
                 if monitor and time.time()-last_wallet_refresh>=60:
                     monitor.update_wallets(get_active_wallets(self.store))
                     last_wallet_refresh=time.time()
                 await asyncio.sleep(2)
         finally:
-            reference.cancel()
-            if wallets:wallets.cancel()
-            if discovery:discovery.cancel()
-            if copier:copier.cancel()
-            if mitch:mitch.cancel()
-            if clock_task:clock_task.cancel()
-            if chain_task:chain_task.cancel()
-            await asyncio.gather(reference,*([wallets] if wallets else []),*([discovery] if discovery else []),*([copier] if copier else []),*([mitch] if mitch else []),*([clock_task] if clock_task else []),*([chain_task] if chain_task else []),return_exceptions=True)
+            for task in jobs.values():
+                if task is not None and not task.done():
+                    task.cancel()
+            await asyncio.gather(*[task for task in jobs.values() if task is not None], return_exceptions=True)
 
     async def clock_loop(self):
         """Measure the Mac clock against NTP. A settings toggle is not a measurement."""

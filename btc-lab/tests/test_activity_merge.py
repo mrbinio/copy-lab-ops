@@ -12,7 +12,7 @@ from lab.wallet_observer import WalletObserver
 WALLET = '0x16217458b59b3458149918058754cd234096b159'
 
 
-def trade(size, usdc, price, source=None):
+def trade(size, usdc, price, source=None, fill_id=None):
     row = {
         'proxyWallet': WALLET, 'type': 'TRADE', 'side': 'BUY', 'asset': 'token-a',
         'transactionHash': '0xabc', 'timestamp': 100, 'size': size, 'usdcSize': usdc, 'price': price,
@@ -20,6 +20,8 @@ def trade(size, usdc, price, source=None):
     }
     if source:
         row['_source'] = source
+    if fill_id:
+        row['id'] = fill_id
     return row
 
 
@@ -37,19 +39,26 @@ class ActivityMergeTests(unittest.TestCase):
             raw = db.execute('SELECT body FROM wallet_activity').fetchone()[0]
         return json.loads(raw)
 
-    def test_several_fills_sum_once_and_a_refetch_does_not_add_them_again(self):
-        self.observer.ingest(WALLET, [trade('10', '3', '0.30')], 200)
-        self.observer.ingest(WALLET, [trade('2', '1', '0.50')], 201)
-        self.observer.ingest(WALLET, [trade('2', '1', '0.50')], 202)
+    def test_identical_fills_stay_separate_and_a_refetch_does_not_add(self):
+        self.observer.ingest(WALLET, [trade('10', '3', '0.30', fill_id='a')], 200)
+        self.observer.ingest(WALLET, [trade('10', '3', '0.30', fill_id='b')], 201)
+        self.observer.ingest(WALLET, [trade('10', '3', '0.30', fill_id='a')], 202)
         body = self.body()
-        self.assertEqual(Decimal(body['size']), Decimal('12'))
-        self.assertEqual(Decimal(body['usdcSize']), Decimal('4'))
-        self.assertEqual(Decimal(body['price']), Decimal('4') / Decimal('12'))
+        self.assertEqual(Decimal(body['size']), Decimal('20'))
+        self.assertEqual(Decimal(body['usdcSize']), Decimal('6'))
         self.assertEqual(len(body['_fills']), 2)
-        self.assertEqual(source_dollars(body), Decimal('4'))
-        self.assertEqual(source_price(body), Decimal('4') / Decimal('12'))
-        with self.store.connect() as db:
-            self.assertEqual(db.execute('SELECT COUNT(*) FROM wallet_activity').fetchone()[0], 1)
+        self.observer.ingest(WALLET, [trade('12', '4', '0.333', fill_id='a')], 203)
+        grown = self.body()
+        self.assertEqual(Decimal(grown['size']), Decimal('22'))
+        self.assertEqual(len(grown['_fills']), 2)
+
+    def test_anonymous_refetch_does_not_sum_and_a_changed_total_replaces(self):
+        self.observer.ingest(WALLET, [trade('10', '3', '0.30')], 200)
+        self.observer.ingest(WALLET, [trade('10', '3', '0.30')], 201)
+        self.assertEqual(Decimal(self.body()['size']), Decimal('10'))
+        self.observer.ingest(WALLET, [trade('12', '4', '0.333')], 202)
+        self.assertEqual(Decimal(self.body()['size']), Decimal('12'))
+        self.assertEqual(len(self.body()['_fills']), 1)
 
     def test_chain_fast_quote_is_replaced_by_the_confirmed_price(self):
         self.observer.ingest(WALLET, [trade('10', '9.9', '0.99', 'chain_fast')], 200)

@@ -9,6 +9,7 @@ import logging
 import threading
 import time
 import urllib.parse
+from decimal import Decimal
 
 LOG = logging.getLogger('btc-lab.chain')
 
@@ -27,6 +28,67 @@ ZERO_ADDRESS = '0x' + '0' * 40
 
 POLL_TIMEOUT = 2
 POLL_INTERVAL = 0.5
+_TRADE_LOCK = threading.Lock()
+_TRADES = {}
+
+
+def note_market_trade(message):
+    """Remember a public last_trade_price so a wallet's chain transfer can use it.
+
+    The print has a price and a transaction hash. It does not name the wallet.
+    It is used only when the hash and the token amount match that wallet's transfer.
+    """
+    if not isinstance(message, dict):
+        return
+    tx = str(message.get('transaction_hash') or message.get('transactionHash') or '').lower()
+    if not tx:
+        return
+    try:
+        price = Decimal(str(message.get('price')))
+        size = Decimal(str(message.get('size')))
+        ts = float(message.get('timestamp') or 0)
+    except Exception:
+        return
+    if not price.is_finite() or not size.is_finite() or price <= 0 or size <= 0:
+        return
+    if ts > 10_000_000_000:
+        ts = ts / 1000
+    item = {
+        'asset': str(message.get('asset_id') or message.get('asset') or ''),
+        'price': price, 'size': size, 'ts': ts,
+        'side': message.get('side'),
+    }
+    with _TRADE_LOCK:
+        bucket = _TRADES.setdefault(tx, [])
+        bucket.append(item)
+        if len(_TRADES) > 4000:
+            for old in list(_TRADES)[:1000]:
+                _TRADES.pop(old, None)
+
+
+def confirmed_print(tx, token, shares):
+    """VWAP of prints for this transaction and token, only if the size matches."""
+    try:
+        wanted = Decimal(str(shares))
+    except Exception:
+        return None
+    if wanted <= 0:
+        return None
+    with _TRADE_LOCK:
+        rows = list(_TRADES.get(str(tx).lower(), []))
+    rows = [row for row in rows if row['asset'] == str(token)]
+    if not rows:
+        return None
+    total = sum((row['size'] for row in rows), Decimal(0))
+    if abs(total - wanted) > Decimal('0.000001'):
+        return None
+    usdc = sum((row['price'] * row['size'] for row in rows), Decimal(0))
+    return {
+        'price': usdc / total,
+        'size': total,
+        'usdc': usdc,
+        'ts': min(row['ts'] for row in rows if row['ts']),
+    }
 # A seed can fill ten times inside one block. Off-market events now return at
 # once, so the queue only holds short book lookups.
 MAX_PENDING_TASKS = 30
@@ -253,6 +315,27 @@ class ChainBridge:
 
     def _fast_row(self, event, meta):
         token = str(event.get('token_id') or '')
+        shares = event.get('value', 0) / 1e6
+        printed = confirmed_print(event.get('tx_hash'), token, shares)
+        detected_at = event.get('detected_at', self.clock())
+        base = {
+            'transactionHash': event['tx_hash'],
+            'type': 'TRADE',
+            'side': event['side'],
+            'proxyWallet': event['wallet'],
+            'slug': meta['slug'],
+            'conditionId': meta['conditionId'],
+            'asset': token,
+            'size': shares,
+        }
+        if printed:
+            base.update(
+                timestamp=printed['ts'] or detected_at,
+                price=format(printed['price'], 'f'),
+                usdcSize=format(printed['usdc'], 'f'),
+                _source='market_trade',
+            )
+            return base
         try:
             book = self.fetch('https://clob.polymarket.com/book?token_id=' + urllib.parse.quote(token, safe=''))
         except Exception:
@@ -266,20 +349,39 @@ class ChainBridge:
             price = min(float(a['price']) for a in asks if isinstance(a, dict) and a.get('price') is not None)
         except ValueError:
             return None
-        detected_at = event.get('detected_at', self.clock())
-        return {
-            'transactionHash': event['tx_hash'],
-            'type': 'TRADE',
-            'side': event['side'],
-            'proxyWallet': event['wallet'],
-            'timestamp': detected_at,
-            'slug': meta['slug'],
-            'conditionId': meta['conditionId'],
-            'asset': token,
-            'price': price,
-            'size': event.get('value', 0) / 1e6,
-            '_source': 'chain_fast',
-        }
+        base.update(timestamp=detected_at, price=price, _source='chain_fast')
+        return base
+
+    def _confirm(self, wallet, source_row, detected_at):
+        """Replace a book quote with the API row, or insert the API row."""
+        from .wallet_observer import merge_activity_body
+        now = self.clock()
+        ts = float(source_row.get('timestamp', now))
+        key = _row_key(source_row)
+        source_row['_detected_at'] = detected_at
+        with self.store.connect() as db:
+            existing = db.execute(
+                'SELECT body FROM wallet_activity WHERE wallet=? AND event_key=?',
+                (wallet, key),
+            ).fetchone()
+            if not existing:
+                db.execute(
+                    'INSERT INTO wallet_activity VALUES (?,?,?,?,?)',
+                    (wallet, key, now, ts, json.dumps(source_row, allow_nan=False)),
+                )
+                self.bridged += 1
+            else:
+                merged, did = merge_activity_body(existing[0], source_row)
+                if not did:
+                    return False
+                db.execute(
+                    'UPDATE wallet_activity SET source_ts=?, body=? WHERE wallet=? AND event_key=?',
+                    (ts, merged, wallet, key),
+                )
+        ready = getattr(self.store, 'wallet_activity_ready', None)
+        if ready is not None and hasattr(ready, 'set'):
+            ready.set()
+        return True
 
     async def on_event(self, event):
         wallet = event['wallet']
@@ -298,8 +400,9 @@ class ChainBridge:
 
         try:
             fast = await asyncio.to_thread(self._fast_row, event, meta)
-            if fast and self._insert(wallet, fast, detected_at, 'chain-fast'):
-                return
+            if fast:
+                # A book quote only wakes the copier. Confirmation still runs.
+                self._insert(wallet, fast, detected_at, 'chain-fast')
         except Exception as e:
             LOG.debug('fast path miss: %s', str(e)[:120])
 
@@ -316,7 +419,11 @@ class ChainBridge:
                     break
             except Exception as e:
                 LOG.debug('poll retry: %s', str(e)[:100])
+            before = self.clock()
             await self.sleep(POLL_INTERVAL)
+            # A frozen clock must not spin. Production time moves during the wait.
+            if self.clock() <= before:
+                break
 
         if not source_rows:
             self.timeouts += 1
@@ -328,7 +435,7 @@ class ChainBridge:
         for source_row in source_rows:
             source_row['_source'] = 'chain_accelerated'
             source_row['_chain_to_api_seconds'] = now - detected_at
-            self._insert(wallet, source_row, detected_at, 'chain→api')
+            self._confirm(wallet, source_row, detected_at)
 
     def _poll_activity(self, wallet, since):
         start = max(0, int(since) - 30)
@@ -340,3 +447,54 @@ class ChainBridge:
     def status(self):
         return {'bridged': self.bridged, 'skipped': self.skipped, 'timeouts': self.timeouts,
                 'off_market': self.off_market}
+
+
+async def run_market_prints(fetch, sleep=asyncio.sleep):
+    """Public market channel. A print is a price, not a wallet, until a transfer matches it."""
+    import websockets
+    url = 'wss://ws-subscriptions-clob.polymarket.com/ws/market'
+    while True:
+        try:
+            now = int(time.time())
+            start = now - (now % 900)
+            ids = []
+            for stamp in (start, start + 900):
+                raw = await asyncio.to_thread(
+                    fetch, 'https://gamma-api.polymarket.com/markets/slug/btc-updown-15m-%s' % stamp,
+                )
+                if not isinstance(raw, dict):
+                    continue
+                from .worker import normalize_market
+                try:
+                    market = normalize_market(raw, stamp, 'BTC')
+                except (ValueError, KeyError, TypeError):
+                    continue
+                ids.extend(str(token) for token in market['tokens'].values())
+            if not ids:
+                await sleep(5)
+                continue
+            async with websockets.connect(url, open_timeout=10, ping_interval=None) as ws:
+                await ws.send(json.dumps({
+                    'assets_ids': ids[:8], 'type': 'market', 'custom_feature_enabled': True,
+                }))
+                deadline = time.monotonic() + 60
+                while time.monotonic() < deadline:
+                    raw = await asyncio.wait_for(ws.recv(), timeout=12)
+                    if raw == 'PONG':
+                        continue
+                    if raw == 'PING':
+                        await ws.send('PONG')
+                        continue
+                    try:
+                        msg = json.loads(raw)
+                    except ValueError:
+                        continue
+                    rows = msg if isinstance(msg, list) else [msg]
+                    for item in rows:
+                        if isinstance(item, dict) and item.get('event_type') == 'last_trade_price':
+                            note_market_trade(item)
+                    if time.monotonic() % 10 < 1:
+                        await ws.send('PING')
+        except Exception as error:
+            LOG.debug('market prints: %s', str(error)[:160])
+            await sleep(2)

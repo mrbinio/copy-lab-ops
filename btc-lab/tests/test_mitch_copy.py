@@ -155,6 +155,55 @@ class MitchBookTests(unittest.TestCase):
         self.assertEqual(source_dollars(paid), Decimal('4.20'))
         self.assertEqual(source_price(paid), Decimal('0.42'))
 
+    def test_unconfirmed_fee_and_a_thin_book_do_not_invent_a_fill(self):
+        event = self.event(10)
+        why, fill = self.engine.plan_buy(event, asks('0.50'), '0', '0.01', '1', 20_000_000, fee_verified=False)
+        self.assertEqual(why, 'FEE_UNCONFIRMED')
+        self.assertIsNone(fill)
+        why, fill = self.engine.plan_buy(event, asks('0.50', '0.01'), '0', '0.01', '1', 20_000_000)
+        self.assertEqual(why, 'NO_LIQUIDITY')
+        self.assertIsNone(fill)
+
+    def test_partial_sell_then_official_settlement_pays_the_remainder_once(self):
+        with self.store.connect() as db:
+            self.engine.anchor_source(db, FIRST, 'token-a', '0')
+            event = dict(self.event(10, '0.40'), conditionId='cond-1', timestamp=1_800_000_000)
+            _why, fill = self.engine.plan_buy(event, asks('0.40'), '0', '0.01', '1', 20_000_000)
+            self.assertEqual(self.engine.apply_buy(db, FIRST, 'buy1', event, fill, {}), 'MITCH_BUY')
+            add = dict(event, transactionHash='0xadd', size=5, usdcSize=2)
+            _why, fill2 = self.engine.plan_buy(add, asks('0.40'), '0', '0.01', '1', 20_000_000)
+            self.assertEqual(self.engine.apply_buy(db, FIRST, 'add1', add, fill2, {}), 'MITCH_ADD')
+            sell = dict(event, side='SELL', size=1, transactionHash='0xsell')
+            fraction = self.engine.fraction_for(db, FIRST, sell)
+            self.assertIsNotNone(fraction)
+            self.assertLess(float(fraction), 1)
+            reason = self.engine.apply_sell(db, FIRST, 'sell1', sell, asks('0.30'), fraction, {}, False)
+            self.assertEqual(reason, 'MITCH_SELL')
+            open_row = db.execute('SELECT id, body FROM mitch_positions').fetchall()
+            still = [json.loads(body) for _pid, body in open_row if json.loads(body)['status'] == 'OPEN']
+            self.assertEqual(len(still), 1)
+            trade_id = still[0]['id']
+            cash_before = db.execute('SELECT cash FROM mitch_accounts WHERE wallet=?', (FIRST,)).fetchone()[0]
+        official = {
+            'condition_id': 'cond-1', 'closed': True,
+            'tokens': [
+                {'token_id': 'token-a', 'winner': True},
+                {'token_id': 'token-b', 'winner': False},
+            ],
+        }
+        self.engine._settle_one(trade_id, {'closed': False, 'condition_id': 'cond-1', 'tokens': official['tokens']})
+        self.engine._settle_one(trade_id, {'closed': True, 'condition_id': 'cond-1', 'tokens': [{'token_id': 'other', 'winner': True}]})
+        self.engine._settle_one(trade_id, official)
+        self.engine._settle_one(trade_id, official)
+        with self.store.connect() as db:
+            body = json.loads(db.execute('SELECT body FROM mitch_positions WHERE id=?', (trade_id,)).fetchone()[0])
+            cash = db.execute('SELECT cash FROM mitch_accounts WHERE wallet=?', (FIRST,)).fetchone()[0]
+            pays = db.execute("SELECT COUNT(*) FROM mitch_ledger WHERE id=?", ('settle:' + trade_id,)).fetchone()[0]
+        self.assertEqual(body['status'], 'SETTLED')
+        self.assertEqual(pays, 1)
+        self.assertEqual(cash, cash_before + int(body['payout']))
+        self.assertGreater(int(body['payout']), 0)
+
     def test_restart_keeps_the_start_and_does_not_replay(self):
         self.store.set('mitch_copy_start', {'at': 100, 'spec': 'mitch-copy-wallets-v1'})
         again = MitchCopy(self.store, fetch=None, clock=lambda: 200)

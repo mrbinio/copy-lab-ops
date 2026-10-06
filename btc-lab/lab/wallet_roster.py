@@ -344,6 +344,25 @@ def _write_state(db, key, value):
     )
 
 
+def _close_period(row, now, book, ended):
+    """Keep the finished period id. Positions stay assigned by their open time."""
+    start = float(row.get('since') or now)
+    period_id = row.get('period_id') or ('p-' + str(row.get('wallet', ''))[-8:] + '-' + str(int(start * 1000)))
+    history = list(row.get('periods') or [])
+    history.append({
+        'id': period_id,
+        'from': start,
+        'until': now,
+        'ended': ended,
+        'net_usd': None if not book else book.get('net_usd'),
+        'trades': None if not book else book.get('trades'),
+    })
+    row['periods'] = history[-30:]
+    row['period_id'] = 'p-' + str(row.get('wallet', ''))[-8:] + '-' + str(int(now * 1000))
+    row['sample_size'] = 'small'
+    return period_id
+
+
 def pause_if_period_negative(db, wallet, now):
     """Pause on this connection as soon as the current period net is negative.
 
@@ -366,6 +385,7 @@ def pause_if_period_negative(db, wallet, now):
     if not book['should_pause']:
         return False
     row['state'] = 'paused'
+    _close_period(row, now, book, 'pause')
     row['since'] = now
     row['reason'] = PAUSE_REASON
     wallets[wallet] = row
@@ -599,6 +619,7 @@ def tick(store, now=None, candidate_stats=None):
             )
             if hyp_book['can_retest'] and now - pause_since >= RULES['paused_to_paper_test']['min_pause_days'] * 86400:
                 row['state'] = 'paper_test'
+                _close_period(row, now, hyp_book, 'retest')
                 row['since'] = now
                 row['confidence'] = 'low' if hyp_book['uncertain'] else 'medium'
                 row['sample'] = 'uncertain' if hyp_book['uncertain'] else 'enough'
@@ -630,6 +651,7 @@ def tick(store, now=None, candidate_stats=None):
         ) else None
         if row['state'] in ('paper_active', 'paper_test') and period and period['should_pause']:
             row['state'] = 'paused'
+            _close_period(row, now, period, 'pause')
             row['since'] = now
             row['reason'] = PAUSE_REASON
             changed.append(w)
