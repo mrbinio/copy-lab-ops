@@ -132,9 +132,8 @@ def assess(now, state, http_ok, launch_wait=None, process_age=None, http_failure
     elif settled and not mitch_step:
         restart_problems.append('mitch_never_progressed')
     if not http_ok:
+        # 503 with a fresh heartbeat is a degraded check, not a dead process.
         noted.append('connection')
-        if http_failures >= 3 and not waiting:
-            restart_problems.append('connection')
     if health.get('status') == 'ledger_mismatch' or mitch_health.get('status') == 'mismatch':
         noted.append('ledger_mismatch')
     if waiting:
