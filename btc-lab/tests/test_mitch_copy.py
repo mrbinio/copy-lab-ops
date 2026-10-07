@@ -204,6 +204,53 @@ class MitchBookTests(unittest.TestCase):
         self.assertEqual(cash, cash_before + int(body['payout']))
         self.assertGreater(int(body['payout']), 0)
 
+    def test_anchor_as_of_keeps_events_already_inside_the_balance(self):
+        with self.store.connect() as db:
+            self.engine.anchor_source(db, FIRST, 'token-a', '6', as_of=500)
+            self.engine._record_source(
+                db, FIRST, 'token-a', 'inside', {'size': '4', 'timestamp': 400}, buy=False,
+            )
+            shares = db.execute(
+                'SELECT shares FROM mitch_source WHERE wallet=? AND token=?',
+                (FIRST, 'token-a'),
+            ).fetchone()[0]
+            self.assertEqual(Decimal(shares), Decimal('6'))
+            self.engine._record_source(
+                db, FIRST, 'token-a', 'after', {'size': '1', 'timestamp': 600}, buy=False,
+            )
+            shares = db.execute(
+                'SELECT shares FROM mitch_source WHERE wallet=? AND token=?',
+                (FIRST, 'token-a'),
+            ).fetchone()[0]
+            self.assertEqual(Decimal(shares), Decimal('5'))
+
+    def test_fresh_signals_are_ahead_of_older_history(self):
+        now = self.engine.clock()
+        self.store.set('mitch_copy_start', {'at': now - 1000, 'spec': 'mitch-copy-wallets-v1'})
+        with self.store.connect() as db:
+            db.execute(
+                '''CREATE TABLE wallet_activity (
+                    wallet TEXT, event_key TEXT, first_seen REAL, source_ts REAL, body TEXT,
+                    PRIMARY KEY(wallet, event_key))'''
+            )
+            old = {'side': 'BUY', 'type': 'TRADE', 'slug': 'btc-updown-15m-1'}
+            fresh = {'side': 'BUY', 'type': 'TRADE', 'slug': 'btc-updown-15m-2'}
+            db.execute(
+                'INSERT INTO wallet_activity VALUES (?,?,?,?,?)',
+                (FIRST, 'old', now - 10, now - 400, json.dumps(old)),
+            )
+            db.execute(
+                'INSERT INTO wallet_activity VALUES (?,?,?,?,?)',
+                (FIRST, 'fresh', now - 1, now - 2, json.dumps(fresh)),
+            )
+            rows = self.engine.pending(db, now)
+            depth = self.engine.backlog(db, now)
+        self.assertEqual([row['event_key'] for row in rows], ['fresh', 'old'])
+        self.assertEqual(depth['backlog'], 2)
+        self.assertEqual(depth['fresh'], 1)
+        self.assertEqual(depth['history'], 1)
+        self.assertEqual(depth['buys'], 1)
+
     def test_restart_keeps_the_start_and_does_not_replay(self):
         self.store.set('mitch_copy_start', {'at': 100, 'spec': 'mitch-copy-wallets-v1'})
         again = MitchCopy(self.store, fetch=None, clock=lambda: 200)

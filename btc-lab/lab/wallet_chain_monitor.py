@@ -40,8 +40,15 @@ def note_market_trade(message):
     """
     if not isinstance(message, dict):
         return
-    tx = str(message.get('transaction_hash') or message.get('transactionHash') or '').lower()
+    nested = message.get('trade') if isinstance(message.get('trade'), dict) else {}
+    tx = str(
+        message.get('transaction_hash') or message.get('transactionHash') or message.get('tx_hash')
+        or nested.get('transaction_hash') or nested.get('transactionHash') or ''
+    ).lower()
     if not tx:
+        if not getattr(note_market_trade, 'shape_logged', False):
+            note_market_trade.shape_logged = True
+            LOG.info('last_trade_price has no transaction hash; keys=%s', sorted(message)[:24])
         return
     try:
         price = Decimal(str(message.get('price')))
@@ -197,7 +204,17 @@ class ChainMonitor:
                         result = data.get('params', {}).get('result')
                         if not isinstance(result, dict): continue
                         event = parse_transfer_single(result)
-                        if event is None or event.get('removed'): continue
+                        if event is None:
+                            continue
+                        if event.get('removed'):
+                            wallet, side = classify_transfer(event, self.wallets)
+                            drop = getattr(self, 'on_removed', None)
+                            if wallet is not None and drop is not None:
+                                event.update(wallet=wallet, side=side, detected_at=self.clock())
+                                task = asyncio.create_task(self._safe_drop(event))
+                                self._tasks.add(task)
+                                task.add_done_callback(self._tasks.discard)
+                            continue
                         self.events_seen += 1
                         self.last_block = max(self.last_block, event['block_number'])
                         wallet, side = classify_transfer(event, self.wallets)
@@ -207,7 +224,9 @@ class ChainMonitor:
                         # Bounded queue: drop if too many pending
                         if len(self._tasks) >= MAX_PENDING_TASKS:
                             self.events_dropped += 1
-                            LOG.warning('queue full (%d), dropping %s', len(self._tasks), event['tx_hash'][:12])
+                            if self.clock() - getattr(self, '_drop_logged', 0) >= 5:
+                                self._drop_logged = self.clock()
+                                LOG.warning('queue full (%d), dropped %d', len(self._tasks), self.events_dropped)
                             continue
                         task = asyncio.create_task(self._safe_handle(event))
                         self._tasks.add(task)
@@ -225,10 +244,22 @@ class ChainMonitor:
 
     async def _safe_handle(self, event):
         try:
-            await self.on_event(event)
+            await asyncio.wait_for(self.on_event(event), timeout=6)
+        except asyncio.TimeoutError:
+            self.errors += 1
         except Exception as e:
             self.errors += 1
             LOG.warning('handler: %s', str(e)[:200])
+
+    async def _safe_drop(self, event):
+        drop = getattr(self, 'on_removed', None)
+        if drop is None:
+            return
+        try:
+            await asyncio.wait_for(drop(event), timeout=2)
+        except Exception as e:
+            self.errors += 1
+            LOG.warning('reorg: %s', str(e)[:200])
 
 
 class ChainBridge:
@@ -313,6 +344,96 @@ class ChainBridge:
                 return True
         return False
 
+    def _order_fill_row(self, event, meta):
+        """Price and size from OrderFilled in this transaction. None falls back."""
+        from .order_fill import execution_from_receipt
+        from .source_chain import TokenBalanceReader, _post, reader_from_env
+        reader = reader_from_env()
+        url = reader.url if reader is not None else 'https://rpc-polygon.blockmachine.io'
+
+        def post(target, payload, timeout=8):
+            return _post(target, payload, timeout=1.0)
+
+        try:
+            parsed = execution_from_receipt(TokenBalanceReader(url, post=post), event)
+        except Exception:
+            return None
+        if not parsed:
+            return None
+        fill, block_ts, rpc_ms = parsed
+        detected_at = event.get('detected_at', self.clock())
+        if block_ts and 0 <= detected_at - block_ts <= 30:
+            stamp = float(block_ts)
+            provider = detected_at - stamp
+        else:
+            stamp = detected_at
+            provider = None
+        return {
+            'transactionHash': event['tx_hash'],
+            'type': 'TRADE',
+            'side': fill['side'],
+            'proxyWallet': event['wallet'],
+            'slug': meta['slug'],
+            'conditionId': meta['conditionId'],
+            'asset': str(event.get('token_id') or ''),
+            'size': format(fill['size'], 'f'),
+            'usdcSize': format(fill['usdc'], 'f'),
+            'price': format(fill['price'], 'f'),
+            'timestamp': stamp,
+            '_source': 'order_filled',
+            '_fee': format(fill['fee'], 'f'),
+            '_fills': fill['fills'],
+            '_rpc_ms': round(rpc_ms, 1),
+            '_provider_delay_s': None if provider is None else round(provider, 3),
+            '_block': event.get('block_number'),
+        }
+
+    async def on_removed(self, event):
+        from .hot_path import DB
+        await asyncio.get_running_loop().run_in_executor(DB, self._drop_reorg, event)
+
+    def _drop_reorg(self, event):
+        """A removed log is not an execution. An undecided row is dropped.
+
+        A copy that already ran stays in the paper book. It is noted, not replayed.
+        """
+        token = str(event.get('token_id') or '')
+        key = _row_key({
+            'transactionHash': event.get('tx_hash'),
+            'type': 'TRADE',
+            'asset': token,
+            'side': event.get('side'),
+        })
+        wallet = event['wallet']
+        note = None
+        with self.store.connect() as db:
+            decided = None
+            if db.execute("SELECT 1 FROM sqlite_master WHERE name='mitch_events'").fetchone():
+                decided = db.execute(
+                    'SELECT reason FROM mitch_events WHERE wallet=? AND event_key=?',
+                    (wallet, key),
+                ).fetchone()
+            copied = None
+            if db.execute("SELECT 1 FROM sqlite_master WHERE name='wallet_copy_events'").fetchone():
+                copied = db.execute(
+                    "SELECT reason FROM wallet_copy_events WHERE wallet=? AND event_key=? AND reason!='PROCESSING'",
+                    (wallet, key),
+                ).fetchone()
+            if decided or copied:
+                note = (decided or copied)[0]
+            else:
+                db.execute(
+                    'DELETE FROM wallet_activity WHERE wallet=? AND event_key=?',
+                    (wallet, key),
+                )
+        if note:
+            self.store.set('chain_reorg_after_copy', {
+                'at': self.clock(), 'wallet': wallet, 'tx': event.get('tx_hash'),
+                'reason': note,
+            })
+            return False
+        return True
+
     def _fast_row(self, event, meta):
         token = str(event.get('token_id') or '')
         shares = event.get('value', 0) / 1e6
@@ -336,10 +457,15 @@ class ChainBridge:
                 _source='market_trade',
             )
             return base
-        try:
-            book = self.fetch('https://clob.polymarket.com/book?token_id=' + urllib.parse.quote(token, safe=''))
-        except Exception:
-            return None
+        from .hot_path import cached_book, remember_book
+        book = cached_book(token, 1.0, self.clock())
+        if book is None:
+            try:
+                book = self.fetch('https://clob.polymarket.com/book?token_id=' + urllib.parse.quote(token, safe=''))
+            except Exception:
+                return None
+            if book.get('asks'):
+                remember_book(token, book, self.clock())
         if not isinstance(book, dict):
             return None
         asks = book.get('asks') or []
@@ -370,6 +496,9 @@ class ChainBridge:
                     (wallet, key, now, ts, json.dumps(source_row, allow_nan=False)),
                 )
                 self.bridged += 1
+            elif json.loads(existing[0]).get('_source') == 'order_filled':
+                # The receipt is the execution. A later public row does not replace it.
+                return False
             else:
                 merged, did = merge_activity_body(existing[0], source_row)
                 if not did:
@@ -383,26 +512,59 @@ class ChainBridge:
             ready.set()
         return True
 
+    def _worth_accelerating(self, wallet):
+        """Chain inserts only for a wallet we would actually copy.
+
+        Paused and observed names stay on the slower public list. Their
+        transfers do not take a database write ahead of a live copy.
+        """
+        from .mitch_copy import WALLETS
+        if wallet in WALLETS:
+            return True
+        now = self.clock()
+        if now - getattr(self, '_roster_at', 0) >= 5:
+            roster = (self.store.get('wallet_roster') or {}).get('wallets') or {}
+            self._copying = {
+                name for name, row in roster.items()
+                if (row or {}).get('state') in ('paper_test', 'paper_active')
+            }
+            self._roster_at = now
+        return wallet in getattr(self, '_copying', ())
+
     async def on_event(self, event):
         wallet = event['wallet']
         tx_hash = event.get('tx_hash', '')
         if not tx_hash:
             self.skipped += 1; return
+        if not self._worth_accelerating(wallet):
+            self.off_market += 1
+            return
 
         detected_at = event.get('detected_at', self.clock())
 
         # Only trades on an open 5m/15m window can be copied. Everything else
         # (hourly markets, share transfers) must not occupy the poll queue.
-        meta = await asyncio.to_thread(self._window_for, str(event.get('token_id') or ''))
+        from .hot_path import IO
+        loop = asyncio.get_running_loop()
+        meta = await loop.run_in_executor(IO, self._window_for, str(event.get('token_id') or ''))
         if meta is None:
             self.off_market += 1
             return
 
         try:
-            fast = await asyncio.to_thread(self._fast_row, event, meta)
+            fast = None
+            from .mitch_copy import WALLETS as MITCH_WALLETS
+            if wallet in MITCH_WALLETS:
+                from .hot_path import CHAIN
+                fast = await loop.run_in_executor(CHAIN, self._order_fill_row, event, meta)
+            if fast is None:
+                fast = await loop.run_in_executor(IO, self._fast_row, event, meta)
             if fast:
                 # A book quote only wakes the copier. Confirmation still runs.
-                self._insert(wallet, fast, detected_at, 'chain-fast')
+                from .hot_path import DB
+                await asyncio.get_running_loop().run_in_executor(
+                    DB, self._insert, wallet, fast, detected_at, 'chain-fast',
+                )
         except Exception as e:
             LOG.debug('fast path miss: %s', str(e)[:120])
 
@@ -412,7 +574,7 @@ class ChainBridge:
         # Poll until trade appears in Data API
         while self.clock() < deadline:
             try:
-                api_rows = await asyncio.to_thread(self._poll_activity, wallet, detected_at)
+                api_rows = await loop.run_in_executor(IO, self._poll_activity, wallet, detected_at)
                 source_rows = [r for r in (api_rows or [])
                                if isinstance(r, dict) and r.get('transactionHash') == tx_hash]
                 if source_rows:
@@ -435,7 +597,10 @@ class ChainBridge:
         for source_row in source_rows:
             source_row['_source'] = 'chain_accelerated'
             source_row['_chain_to_api_seconds'] = now - detected_at
-            self._confirm(wallet, source_row, detected_at)
+            from .hot_path import DB
+            await asyncio.get_running_loop().run_in_executor(
+                DB, self._confirm, wallet, source_row, detected_at,
+            )
 
     def _poll_activity(self, wallet, since):
         start = max(0, int(since) - 30)
@@ -449,41 +614,66 @@ class ChainBridge:
                 'off_market': self.off_market}
 
 
+def _print_tokens(raw, stamp):
+    if not isinstance(raw, dict):
+        return []
+    from .worker import normalize_market
+    try:
+        market = normalize_market(raw, stamp, 'BTC')
+    except (ValueError, KeyError, TypeError):
+        return []
+    return [str(token) for token in market['tokens'].values()]
+
+
+async def _window_tokens(fetch):
+    from .hot_path import IO
+    now = int(time.time())
+    start = now - (now % 900)
+    ids = []
+    loop = asyncio.get_running_loop()
+    for stamp in (start, start + 900):
+        raw = await loop.run_in_executor(
+            IO, fetch, 'https://gamma-api.polymarket.com/markets/slug/btc-updown-15m-%s' % stamp,
+        )
+        ids.extend(_print_tokens(raw, stamp))
+    return ids
+
+
 async def run_market_prints(fetch, sleep=asyncio.sleep):
-    """Public market channel. A print is a price, not a wallet, until a transfer matches it."""
+    """Public market channel. Stays up across windows. A print is not a wallet until the transfer matches."""
     import websockets
     url = 'wss://ws-subscriptions-clob.polymarket.com/ws/market'
     while True:
         try:
-            now = int(time.time())
-            start = now - (now % 900)
-            ids = []
-            for stamp in (start, start + 900):
-                raw = await asyncio.to_thread(
-                    fetch, 'https://gamma-api.polymarket.com/markets/slug/btc-updown-15m-%s' % stamp,
-                )
-                if not isinstance(raw, dict):
-                    continue
-                from .worker import normalize_market
-                try:
-                    market = normalize_market(raw, stamp, 'BTC')
-                except (ValueError, KeyError, TypeError):
-                    continue
-                ids.extend(str(token) for token in market['tokens'].values())
+            ids = await _window_tokens(fetch)
             if not ids:
                 await sleep(5)
                 continue
-            async with websockets.connect(url, open_timeout=10, ping_interval=None) as ws:
+            async with websockets.connect(url, open_timeout=15, ping_interval=None) as ws:
+                subscribed = tuple(ids[:8])
                 await ws.send(json.dumps({
-                    'assets_ids': ids[:8], 'type': 'market', 'custom_feature_enabled': True,
+                    'assets_ids': list(subscribed), 'type': 'market', 'custom_feature_enabled': True,
                 }))
-                deadline = time.monotonic() + 60
-                while time.monotonic() < deadline:
-                    raw = await asyncio.wait_for(ws.recv(), timeout=12)
-                    if raw == 'PONG':
-                        continue
-                    if raw == 'PING':
-                        await ws.send('PONG')
+                last_ping = time.monotonic()
+                last_refresh = last_ping
+                while True:
+                    raw = await asyncio.wait_for(ws.recv(), timeout=15)
+                    now_m = time.monotonic()
+                    if now_m - last_ping >= 10:
+                        await ws.send('PING')
+                        last_ping = now_m
+                    if now_m - last_refresh >= 20:
+                        last_refresh = now_m
+                        fresh = tuple((await _window_tokens(fetch))[:8])
+                        if fresh and fresh != subscribed:
+                            subscribed = fresh
+                            await ws.send(json.dumps({
+                                'assets_ids': list(subscribed), 'type': 'market',
+                                'custom_feature_enabled': True,
+                            }))
+                    if raw in ('PONG', 'PING', ''):
+                        if raw == 'PING':
+                            await ws.send('PONG')
                         continue
                     try:
                         msg = json.loads(raw)
@@ -493,8 +683,6 @@ async def run_market_prints(fetch, sleep=asyncio.sleep):
                     for item in rows:
                         if isinstance(item, dict) and item.get('event_type') == 'last_trade_price':
                             note_market_trade(item)
-                    if time.monotonic() % 10 < 1:
-                        await ws.send('PING')
         except Exception as error:
-            LOG.debug('market prints: %s', str(error)[:160])
+            LOG.info('market prints: %s', str(error)[:160])
             await sleep(2)

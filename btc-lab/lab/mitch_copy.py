@@ -383,18 +383,25 @@ class MitchCopy:
         )
 
     def _case(self, row, event, extra=None):
+        source_ts = None if not row else row.get('source_ts')
+        if source_ts is None and isinstance(event, dict) and event.get('_source') != 'chain_fast':
+            try:
+                stamp = float(event.get('timestamp') or 0)
+            except (TypeError, ValueError):
+                stamp = 0
+            source_ts = stamp or None
         body = {
             'transactionHash': (event or {}).get('transactionHash'),
             'token': (event or {}).get('asset'),
             'market': (event or {}).get('slug'),
-            'source_ts': None if not row else row.get('source_ts'),
+            'source_ts': source_ts,
             'side': (event or {}).get('side'),
         }
         if extra:
             body.update(extra)
         return body
 
-    def apply_sell(self, db, wallet, key, event, bids, fraction, timing, delayed, fee_rate='0', fee_verified=True):
+    def apply_sell(self, db, wallet, key, event, bids, fraction, timing, delayed, fee_rate='0', fee_verified=True, reason='MITCH_SELL'):
         token = str(event.get('asset') or '')
         self._record_source(db, wallet, token, key, event, buy=False)
         open_trade = None
@@ -438,12 +445,13 @@ class MitchCopy:
             db.execute('UPDATE mitch_positions SET body=? WHERE id=?', (json.dumps(open_trade), open_trade['id']))
         db.execute('UPDATE mitch_accounts SET cash=cash+? WHERE wallet=?', (credit, wallet))
         db.execute('INSERT OR IGNORE INTO mitch_ledger VALUES (?,?,?)', ('sell:' + key, wallet, credit))
-        self._mark(db, wallet, key, 'MITCH_SELL', {
+        self._mark(db, wallet, key, reason, {
             'timing': timing, 'delayed': delayed, 'fraction': str(fraction),
             'source_price': str(source_price(event) or ''), 'copy_vwap': fill.get('vwap'),
             'pnl_micro': pnl,
+            'price_basis': 'current_book' if reason == 'LATE_SELL_RECOVERED' else 'copy_book',
         })
-        return 'MITCH_SELL'
+        return reason
 
     @staticmethod
     def _end(slug):
@@ -482,19 +490,98 @@ class MitchCopy:
         )
         self._recompute_source(db, wallet, token)
 
-    def pending(self, db, now):
-        start = self.started()
-        marks = ','.join('?' * len(WALLETS))
-        return [dict(r) for r in db.execute(
-            f'''SELECT a.* FROM wallet_activity a INDEXED BY wallet_activity_seen
+    def _unseen_sql(self, marks):
+        return f'''SELECT a.* FROM wallet_activity a INDEXED BY wallet_activity_seen
                 WHERE a.first_seen>=? AND a.wallet IN ({marks})
                 AND NOT EXISTS (
                     SELECT 1 FROM mitch_events e
                     WHERE e.wallet=a.wallet AND e.event_key=a.event_key
-                      AND e.reason != 'AWAITING_SOURCE_PRICE')
-                ORDER BY a.first_seen ASC LIMIT 10''',
-            (start, *WALLETS),
+                      AND e.reason != 'AWAITING_SOURCE_PRICE')'''
+
+    def pending(self, db, now):
+        """Fresh copyable trades first. History drains behind them, not in front.
+
+        LIMIT here is one batch. backlog() is the length of the queue.
+        """
+        if not db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='wallet_activity'"
+        ).fetchone():
+            return []
+        if not db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='index' AND name='wallet_activity_seen'"
+        ).fetchone():
+            db.execute('CREATE INDEX IF NOT EXISTS wallet_activity_seen ON wallet_activity(first_seen)')
+        start = self.started()
+        marks = ','.join('?' * len(WALLETS))
+        base = self._unseen_sql(marks)
+        fresh_cut = now - 90
+        fresh = [dict(r) for r in db.execute(
+            base + ' AND a.source_ts>=? ORDER BY a.source_ts ASC, a.first_seen ASC LIMIT 8',
+            (start, *WALLETS, fresh_cut),
         )]
+        history_limit = 2 if fresh else 12
+        history = [dict(r) for r in db.execute(
+            base + ' AND (a.source_ts IS NULL OR a.source_ts<?) ORDER BY a.first_seen ASC LIMIT ?',
+            (start, *WALLETS, fresh_cut, history_limit),
+        )]
+        return fresh + history
+
+    def backlog(self, db, now):
+        """Real pending count and age. Not the batch limit."""
+        if not db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='wallet_activity'"
+        ).fetchone():
+            return {'backlog': 0}
+        start = self.started()
+        marks = ','.join('?' * len(WALLETS))
+        fresh_cut = now - 90
+        row = db.execute(
+            f'''SELECT COUNT(*) AS n,
+                       SUM(CASE WHEN a.source_ts>=? THEN 1 ELSE 0 END) AS fresh,
+                       SUM(CASE WHEN a.source_ts IS NULL OR a.source_ts<? THEN 1 ELSE 0 END) AS history,
+                       SUM(CASE WHEN a.source_ts>=? AND json_extract(a.body,'$.side')='BUY' THEN 1 ELSE 0 END) AS buys,
+                       SUM(CASE WHEN a.source_ts>=? AND json_extract(a.body,'$.side')='SELL' THEN 1 ELSE 0 END) AS sells,
+                       MIN(a.first_seen) AS oldest,
+                       MIN(CASE WHEN a.source_ts>=? THEN a.first_seen END) AS oldest_fresh
+                FROM wallet_activity a
+                WHERE a.first_seen>=? AND a.wallet IN ({marks})
+                AND NOT EXISTS (
+                    SELECT 1 FROM mitch_events e
+                    WHERE e.wallet=a.wallet AND e.event_key=a.event_key
+                      AND e.reason != 'AWAITING_SOURCE_PRICE')''',
+            (fresh_cut, fresh_cut, fresh_cut, fresh_cut, fresh_cut, start, *WALLETS),
+        ).fetchone()
+        arrivals = db.execute(
+            f'SELECT COUNT(*) FROM wallet_activity WHERE first_seen>=? AND wallet IN ({marks})',
+            (now - 60, *WALLETS),
+        ).fetchone()[0]
+        decisions = db.execute(
+            "SELECT COUNT(*) FROM mitch_events WHERE at>=? AND reason!='AWAITING_SOURCE_PRICE'",
+            (now - 60,),
+        ).fetchone()[0]
+        expired = db.execute(
+            "SELECT COUNT(*) FROM mitch_events WHERE reason='LATE_BUY_NOT_COPIED' AND at>=?",
+            (now - 120,),
+        ).fetchone()[0]
+        oldest = row['oldest'] if hasattr(row, 'keys') else row[5]
+        oldest_fresh = row['oldest_fresh'] if hasattr(row, 'keys') else row[6]
+        count = int(row[0] or 0)
+        def age(stamp):
+            if stamp is None:
+                return None
+            return round(now - float(stamp), 1)
+        return {
+            'backlog': count,
+            'fresh': int(row[1] or 0),
+            'history': int(row[2] or 0),
+            'buys': int(row[3] or 0),
+            'sells': int(row[4] or 0),
+            'oldest_age_s': age(oldest),
+            'oldest_fresh_age_s': age(oldest_fresh),
+            'arrivals_60s': int(arrivals or 0),
+            'decisions_60s': int(decisions or 0),
+            'expired_recent': int(expired or 0),
+        }
 
     def publish(self):
         now = self.clock()
@@ -607,15 +694,17 @@ class MitchCopy:
         """One confirmed data-api size per token. Later source trades move that baseline."""
         if self.fetch is None:
             return
+        from .hot_path import COPY, DB
+        loop = asyncio.get_running_loop()
         for wallet in WALLETS:
             try:
-                raw = await asyncio.to_thread(
-                    self.fetch, 'https://data-api.polymarket.com/positions?user=' + wallet,
+                raw = await loop.run_in_executor(
+                    COPY, self.fetch, 'https://data-api.polymarket.com/positions?user=' + wallet,
                 )
             except Exception:
                 continue
             if isinstance(raw, list):
-                await asyncio.to_thread(self._apply_anchor, wallet, raw)
+                await loop.run_in_executor(DB, self._apply_anchor, wallet, raw)
 
     def _apply_anchor(self, wallet, rows):
         now = self.clock()
@@ -637,16 +726,23 @@ class MitchCopy:
                 self.anchor_source(db, wallet, token, size, as_of=now)
 
     async def run(self):
-        self.ensure()
-        await self.ensure_anchors()
-        self.publish()
-        last_publish = self.clock()
+        from .hot_path import DB
+        loop = asyncio.get_running_loop()
+        # Schema first, then decisions. Anchors must not hold the first step.
+        await loop.run_in_executor(DB, self.ensure)
+        anchors = asyncio.create_task(self.ensure_anchors())
+        last_publish = 0
         while True:
             try:
                 await self.step()
                 if self.clock() - last_publish >= 2:
-                    await asyncio.to_thread(self.publish)
+                    await loop.run_in_executor(DB, self.publish)
                     last_publish = self.clock()
+                if anchors is not None and anchors.done():
+                    failed = anchors.exception()
+                    if failed:
+                        log.warning('mitch anchors: %s', failed)
+                    anchors = None
             except Exception as error:
                 log.warning('mitch step: %s', error)
                 try:
@@ -662,8 +758,14 @@ class MitchCopy:
         with self.store.connect() as db:
             return self.pending(db, self.clock())
 
+    def _load_backlog(self):
+        with self.store.connect() as db:
+            return self.backlog(db, self.clock())
+
     async def step(self):
-        rows = await asyncio.to_thread(self._load_pending)
+        from .hot_path import READ, DB, latest_stage, snapshot
+        loop = asyncio.get_running_loop()
+        rows = await loop.run_in_executor(READ, self._load_pending)
         grouped = {}
         for row in rows:
             grouped.setdefault(row['wallet'], []).append(row)
@@ -675,42 +777,78 @@ class MitchCopy:
             await self.settle_open()
         except Exception as error:
             log.warning('mitch settle: %s', error)
-        await asyncio.to_thread(self._progress, len(rows))
+        if self.clock() - getattr(self, '_depth_at', 0) >= 2:
+            self._depth = await loop.run_in_executor(READ, self._load_backlog)
+            self._depth_at = self.clock()
+        await loop.run_in_executor(
+            DB, self._progress, len(rows), getattr(self, '_depth', None), latest_stage(), snapshot(),
+        )
         return len(rows)
 
-    def _progress(self, queue):
+    def _progress(self, batch, depth, stage, pools):
+        depth = depth or {}
+        stage = stage or {}
+        pools = pools or {}
+        # queue is the real pending count. batch is only what this step took.
         self.store.set('mitch_progress', {
-            'at': self.clock(), 'queue': queue, 'status': 'running',
+            'at': self.clock(),
+            'batch': batch,
+            'queue': depth.get('backlog', batch),
+            'backlog': depth.get('backlog'),
+            'fresh': depth.get('fresh'),
+            'history': depth.get('history'),
+            'buys': depth.get('buys'),
+            'sells': depth.get('sells'),
+            'oldest_age_s': depth.get('oldest_age_s'),
+            'oldest_fresh_age_s': depth.get('oldest_fresh_age_s'),
+            'arrivals_60s': depth.get('arrivals_60s'),
+            'decisions_60s': depth.get('decisions_60s'),
+            'expired_recent': depth.get('expired_recent'),
+            'book_pool_ms': stage.get('pool_ms'),
+            'book_http_ms': stage.get('http_ms'),
+            'book_tries': stage.get('tries'),
+            'book_cache': stage.get('cache'),
+            'db_wait_ms': stage.get('db_wait_ms'),
+            'db_write_ms': stage.get('db_write_ms'),
+            'loop_lag_ms': pools.get('loop_lag_ms'),
+            'copy_queued': pools.get('copy_queued'),
+            'io_queued': pools.get('io_queued'),
+            'db_queued': pools.get('db_queued'),
+            'status': 'running',
         })
 
-    async def handle(self, row):
+    def _prefilter(self, row, queued):
+        """Marks that need no book. Runs on the database thread."""
         wallet = row['wallet']
         key = row['event_key']
         event = json.loads(row['body']) if isinstance(row['body'], str) else row['body']
-        queued = time.monotonic()
         if wallet not in WALLETS:
-            return
+            return {'stop': True}
         if float(row.get('source_ts') or 0) < self.started() and event.get('_source') != 'chain_fast':
             with self.store.connect() as db:
                 if not self._seen(db, wallet, key):
                     self._mark(db, wallet, key, 'HISTORICAL_BEFORE_START', self._case(row, event))
-            return
+            return {'stop': True}
         source = event.get('_source')
         if source == 'chain_fast' and self.clock() - float(row['first_seen']) < 3:
-            return
+            return {'stop': True}
         if source == 'chain_fast':
             with self.store.connect() as db:
                 self._mark(db, wallet, key, 'AWAITING_SOURCE_PRICE', self._case(row, event, {
                     'timing': self._timing(row, queued, self.clock(), self.clock(), 'local_detect', False),
                 }))
-            return
+            return {'stop': True}
         if not is_btc_15m(event) or event.get('type') != 'TRADE' or event.get('side') not in ('BUY', 'SELL'):
             with self.store.connect() as db:
                 self._mark(db, wallet, key, 'NOT_BTC_15M', self._case(row, event))
-            return
-        basis = 'source_subsecond' if source == 'market_trade' else 'source_second'
+            return {'stop': True}
+        if source == 'market_trade':
+            basis = 'source_subsecond'
+        elif source == 'order_filled':
+            basis = 'chain_fill'
+        else:
+            basis = 'source_second'
         clock = self.store.get('clock_status') or {}
-        clock_ok = clock.get('status') == 'synced'
         age = self.clock() - float(row['source_ts'])
         if event['side'] == 'BUY' and age > 90:
             with self.store.connect() as db:
@@ -719,19 +857,89 @@ class MitchCopy:
                 self._mark(db, wallet, key, 'LATE_BUY_NOT_COPIED', self._case(row, event, {
                     'class': 'historical' if float(row['source_ts']) < self.started() else 'queue',
                 }))
-            return
+            return {'stop': True}
         if event['side'] == 'SELL' and age > 90:
-            with self.store.connect() as db:
-                db.execute('BEGIN IMMEDIATE')
-                self._record_source(db, wallet, str(event.get('asset') or ''), key, event, buy=False)
-                self._mark(db, wallet, key, 'LATE_SELL_RECONCILED', self._case(row, event))
+            # Do not fill this at the historical price. The current book decides
+            # a recovery, or the open position stays until settlement.
+            return {
+                'stop': False, 'late_sell': True, 'row': row, 'event': event, 'queued': queued,
+                'basis': basis, 'clock': clock, 'clock_ok': clock.get('status') == 'synced', 'age': age,
+            }
+        return {
+            'stop': False, 'row': row, 'event': event, 'queued': queued,
+            'basis': basis, 'clock': clock, 'clock_ok': clock.get('status') == 'synced', 'age': age,
+        }
+
+    def _recover_late_sell(self, db, row, event, checked, terms, timing, book_started, book_done):
+        """A sell we received too late. Current bids, or the position stays open.
+
+        The source trade is recorded either way. His old price is not our fill.
+        """
+        wallet = row['wallet']
+        key = row['event_key']
+        token = str(event.get('asset') or '')
+        open_trade = None
+        for (body,) in db.execute('SELECT body FROM mitch_positions WHERE wallet=?', (wallet,)):
+            current = json.loads(body)
+            if current.get('status') == 'OPEN' and current.get('token') == token:
+                open_trade = current
+                break
+        fraction = self.fraction_for(db, wallet, event)
+        self._record_source(db, wallet, token, key, event, buy=False)
+        if not open_trade:
+            self._mark(db, wallet, key, 'LATE_SELL_RECONCILED', self._case(row, event, {
+                'timing': timing, 'position': 'none',
+            }))
             return
-        book_started = time.monotonic()
-        checked = await self._book(str(event.get('asset') or ''))
-        terms = await self._terms(event)
-        book_done = time.monotonic()
-        timing = self._timing(row, queued, self.clock(), self.clock(), basis, clock_ok, book_started, book_done, clock)
-        with self.store.connect() as db:
+        slow = (book_done - book_started) > 3
+        book_bad = (not checked) or checked.get('error') or (not terms) or (not terms.get('fee_verified'))
+        detail = {
+            'timing': timing,
+            'position': 'open_until_settlement',
+            'price_basis': 'current_book',
+            'source_price': str(source_price(event) or ''),
+        }
+        if slow or book_bad or fraction is None:
+            detail['fraction'] = None if fraction is None else str(fraction)
+            self._mark(db, wallet, key, 'LATE_SELL_EXPOSED', self._case(row, event, detail))
+            return
+        cut = our_sell_shares(open_trade['shares'], fraction)
+        fill = self._sell_fill(
+            checked, cut, terms.get('fee_rate') or '0', terms.get('fee_verified') is True,
+        )
+        if not cut or not fill:
+            self._mark(db, wallet, key, 'LATE_SELL_EXPOSED', self._case(row, event, detail))
+            return
+        self.apply_sell(
+            db, wallet, key, event, checked, fraction, timing, True,
+            fee_rate=terms['fee_rate'], fee_verified=True, reason='LATE_SELL_RECOVERED',
+        )
+
+    def _finish(self, pre, checked, terms, book_started, book_done, stage=None, db_submitted=None):
+        row = pre['row']
+        event = pre['event']
+        wallet = row['wallet']
+        key = row['event_key']
+        stage = dict(stage or {})
+        if db_submitted is not None:
+            stage['db_wait_ms'] = round((time.perf_counter() - db_submitted) * 1000, 1)
+        write_started = time.perf_counter()
+        timing = self._timing(
+            row, pre['queued'], self.clock(), self.clock(), pre['basis'], pre['clock_ok'],
+            book_started, book_done, pre['clock'], stage,
+        )
+        from .hot_path import note_stage
+        class _Write:
+            def __enter__(_self):
+                _self._ctx = self.store.connect()
+                return _self._ctx.__enter__()
+            def __exit__(_self, *exc):
+                try:
+                    return _self._ctx.__exit__(*exc)
+                finally:
+                    stage['db_write_ms'] = round((time.perf_counter() - write_started) * 1000, 1)
+                    note_stage(stage)
+        with _Write() as db:
             db.execute('BEGIN IMMEDIATE')
             if self._seen(db, wallet, key):
                 fresh = db.execute(
@@ -747,6 +955,11 @@ class MitchCopy:
             if current:
                 event = json.loads(current[0])
                 row = dict(row, body=current[0], source_ts=current[1])
+            if pre.get('late_sell'):
+                self._recover_late_sell(
+                    db, row, event, checked, terms, timing, book_started, book_done,
+                )
+                return
             if event.get('_source') == 'chain_fast' or source_price(event) is None and event['side'] == 'BUY':
                 self._mark(db, wallet, key, 'AWAITING_SOURCE_PRICE', self._case(row, event, {'timing': timing}))
                 return
@@ -788,9 +1001,29 @@ class MitchCopy:
                 return
             fraction = self.fraction_for(db, wallet, event)
             self.apply_sell(
-                db, wallet, key, event, checked, fraction, timing, age > 2,
+                db, wallet, key, event, checked, fraction, timing, pre['age'] > 2,
                 fee_rate=terms['fee_rate'], fee_verified=True,
             )
+
+    async def handle(self, row):
+        from .hot_path import DB
+        queued = time.monotonic()
+        pre = await asyncio.get_running_loop().run_in_executor(DB, self._prefilter, row, queued)
+        if not pre or pre.get('stop'):
+            return
+        book_started = time.monotonic()
+        checked, terms = await asyncio.gather(
+            self._book(str(pre['event'].get('asset') or '')),
+            self._terms(pre['event']),
+        )
+        book_done = time.monotonic()
+        stage = {}
+        if isinstance(checked, dict):
+            stage = checked.pop('_stage', None) or {}
+        db_submitted = time.perf_counter()
+        await asyncio.get_running_loop().run_in_executor(
+            DB, self._finish, pre, checked, terms, book_started, book_done, stage, db_submitted,
+        )
 
     def _sell_fill(self, bids, shares_micro, fee_rate='0', fee_verified=True):
         if fee_verified is not True or not shares_micro:
@@ -809,7 +1042,7 @@ class MitchCopy:
         fill['vwap'] = float(Decimal(fill['proceeds']) / Decimal(int(shares_micro))) if int(shares_micro) else None
         return fill
 
-    def _timing(self, row, received_mono, decision_at, finished_at, basis, clock_ok, exec_started=None, exec_done=None, clock=None):
+    def _timing(self, row, received_mono, decision_at, finished_at, basis, clock_ok, exec_started=None, exec_done=None, clock=None, stage=None):
         source_ts = float(row['source_ts'])
         first_seen = float(row['first_seen'])
         detect = None if basis == 'local_detect' else (first_seen - source_ts) * 1000
@@ -824,6 +1057,14 @@ class MitchCopy:
             total = (finished_at - source_ts) * 1000
             confirmed = True
         clock = clock or {}
+        stage = stage or {}
+        provider = None
+        try:
+            body = json.loads(row['body']) if isinstance(row.get('body'), str) else (row.get('body') or {})
+            if isinstance(body, dict) and body.get('_provider_delay_s') is not None:
+                provider = round(float(body['_provider_delay_s']) * 1000, 1)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            provider = None
         return {
             'source_ts': source_ts,
             'source_precision': basis,
@@ -833,8 +1074,15 @@ class MitchCopy:
             'exec_finished_at': finished_at,
             'queue_ms': round(queue_ms, 1),
             'detect_ms': None if detect is None else round(detect, 1),
+            # Wall time around the book task, including the wait for a free thread.
             'book_ms': None if book_ms is None else round(book_ms, 1),
+            'book_pool_ms': stage.get('pool_ms'),
+            'book_http_ms': stage.get('http_ms'),
+            'book_tries': stage.get('tries'),
+            'book_cache': stage.get('cache'),
+            'db_wait_ms': stage.get('db_wait_ms'),
             'process_ms': None if book_ms is None else round(book_ms, 1),
+            'provider_delay_ms': provider,
             'total_ms': None if total is None else round(total, 1),
             'total_confirmed': confirmed,
             'clock_status': clock.get('status'),
@@ -845,33 +1093,49 @@ class MitchCopy:
         }
 
     async def _book(self, token):
+        stage = {'pool_ms': 0, 'http_ms': 0, 'tries': 0, 'cache': False}
         if not token or self.fetch is None:
-            return {'error': 'NO_BOOK'}
-        import urllib.parse
-        url = 'https://clob.polymarket.com/book?token_id=' + urllib.parse.quote(token, safe='')
-        try:
-            raw = await asyncio.to_thread(self.fetch, url)
-        except Exception:
-            return {'error': 'NO_BOOK'}
+            return {'error': 'NO_BOOK', '_stage': stage}
+        from .hot_path import COPY, cached_book, remember_book, measured_call, note_stage
+        raw = cached_book(token, 1.0, self.clock())
+        if raw is not None:
+            stage = {'pool_ms': 0, 'http_ms': 0, 'tries': 0, 'cache': True}
+            note_stage(stage)
+        else:
+            import urllib.parse
+            url = 'https://clob.polymarket.com/book?token_id=' + urllib.parse.quote(token, safe='')
+            submitted = time.perf_counter()
+            try:
+                raw, stage = await asyncio.get_running_loop().run_in_executor(
+                    COPY, measured_call, self.fetch, url, submitted,
+                )
+            except Exception:
+                return {'error': 'NO_BOOK', '_stage': stage}
+            remember_book(token, raw, self.clock())
         from .worker import normalize_book
         try:
-            return normalize_book(raw, token, self.clock(), max_age=3)
+            checked = normalize_book(raw, token, self.clock(), max_age=3)
         except ValueError as error:
             text = str(error)
-            if 'token' in text:
-                return {'error': 'BOOK_TOKEN_MISMATCH'}
-            return {'error': 'BOOK_STALE'}
+            code = 'BOOK_TOKEN_MISMATCH' if 'token' in text else 'BOOK_STALE'
+            return {'error': code, '_stage': stage}
+        checked['_stage'] = stage
+        return checked
 
     async def _terms(self, event):
         slug = str((event or {}).get('slug') or '')
         if self.fetch is None or not slug.startswith('btc-updown-15m-'):
             return None
-        try:
-            raw = await asyncio.to_thread(
-                self.fetch, 'https://gamma-api.polymarket.com/markets/slug/' + slug,
-            )
-        except Exception:
-            return None
+        from .hot_path import COPY, cached_terms, remember_terms
+        raw = cached_terms(slug, 30.0, self.clock())
+        if raw is None:
+            try:
+                raw = await asyncio.get_running_loop().run_in_executor(
+                    COPY, self.fetch, 'https://gamma-api.polymarket.com/markets/slug/' + slug,
+                )
+            except Exception:
+                return None
+            remember_terms(slug, raw, self.clock())
         if not isinstance(raw, dict):
             return None
         from .worker import normalize_market

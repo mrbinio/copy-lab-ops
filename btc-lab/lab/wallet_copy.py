@@ -632,8 +632,16 @@ class WalletCopy:
         return sum(t['pnl_micro'] for t in self.positions(db) if t['wallet']==wallet and t['status'] in ('CLOSED','SETTLED'))
 
     async def book(self,token):
+        # Two reads, a quarter-second apart. A cached book would make the arrival
+        # snapshot the same as the decision snapshot. The pool wait is recorded
+        # separately from the HTTP time.
         from .worker import normalize_book
-        raw=await asyncio.to_thread(self.fetch,'https://clob.polymarket.com/book?token_id='+quote(token,safe=''))
+        from .hot_path import COPY, measured_call
+        submitted=time.perf_counter()
+        raw, stage=await asyncio.get_running_loop().run_in_executor(
+            COPY, measured_call, self.fetch,
+            'https://clob.polymarket.com/book?token_id='+quote(token,safe=''), submitted)
+        self._book_stage=stage
         return normalize_book(raw,token,self.clock(),max_age=15,venue_clock=self.book_clock)
 
     def _pending_query(self,db,wallets,now,limit):
@@ -671,10 +679,15 @@ class WalletCopy:
             elif state in ('paper_test','paper_active'):copying.append(wallet)
             else:paused.append(wallet)
         rows=self._pending_query(db,copying,now,20)
-        if len(rows)<20:rows.extend(self._pending_query(db,paused,now,20-len(rows)))
-        if len(rows)<20:rows.extend(self._pending_query(db,lo,now,20-len(rows)))
+        # A paused or observed backlog does not take a slot while a copying
+        # wallet still has a fresh signal. Those rows drain when the live lane is idle.
+        if not rows:
+            # The live lane is idle, so the paused and observed rows can drain.
+            rows.extend(self._pending_query(db,paused,now,20))
+            if len(rows)<20:rows.extend(self._pending_query(db,lo,now,20-len(rows)))
         seen={(r['wallet'], r['event_key']) for r in rows}
-        for row in self._late_sell_query(db, copying, now, 5):
+        late_limit=2 if rows else 5
+        for row in self._late_sell_query(db, copying, now, late_limit):
             if (row['wallet'], row['event_key']) not in seen:
                 rows.append(row)
         return rows
@@ -800,12 +813,14 @@ class WalletCopy:
                 await self.process(row,shadow=False,sell_proportion=proportion)
         await asyncio.gather(*(drain(wallet) for wallet in wallets))
 
-    async def _process(self,row,sell_proportion=None):
+    def _gate(self,row,sell_proportion):
+        """Decisions that do not need the network. Off the event loop."""
         queued_at=self.clock();wallet=row['wallet'];key=row['event_key'];event=json.loads(row['body'])
         now=queued_at
         with self.store.connect() as db:
             inserted=db.execute('INSERT OR IGNORE INTO wallet_copy_events VALUES (?,?,?,?,?)',(wallet,key,now,'PROCESSING','{}')).rowcount
-        if not inserted:return
+        if not inserted:
+            return {'stop':True}
         try:
             identity_ok=str(event.get('proxyWallet','')).lower()==wallet and float(event.get('timestamp',0))==row['source_ts']
             source_note=None
@@ -817,35 +832,54 @@ class WalletCopy:
                 with self.store.connect() as db:
                     db.execute('BEGIN IMMEDIATE')
                     source_note=note_source_event(db,wallet,key,event,self.started,row['source_ts'],row['first_seen'])
-            if row['first_seen']<self.started or row['source_ts']<self.started:self.reason(row,'PRE_ACTIVATION');return
+            if row['first_seen']<self.started or row['source_ts']<self.started:
+                self.reason(row,'PRE_ACTIVATION');return {'stop':True}
             fresh=0<=now-row['source_ts']<=90 and 0<=now-row['first_seen']<=90
+            late_recovery=False
             if not fresh:
                 if (event.get('type')=='TRADE' and event.get('side')=='SELL'
                     and row['source_ts']>=self.started and 0<=now-row['source_ts']<=86400):
-                    self.reason(row,'LATE_SELL_NOT_FILLED',{
-                        'source_copy':'reconciled_not_filled',
-                        'transactionHash':event.get('transactionHash'),
-                        'token':event.get('asset'),
-                        'market':event.get('slug'),
-                        'source_ts':row['source_ts'],
-                    })
-                    return
-                self.reason(row,'SOURCE_TOO_OLD');return
+                    # Continue to the current book. Do not fill at the old price.
+                    late_recovery=True
+                else:
+                    self.reason(row,'SOURCE_TOO_OLD');return {'stop':True}
             if not identity_ok:
-                self.reason(row,'SOURCE_IDENTITY_MISMATCH');return
-            if event.get('type')!='TRADE' or event.get('side') not in ('BUY','SELL'):self.reason(row,'NOT_BUY_OR_SELL');return
+                self.reason(row,'SOURCE_IDENTITY_MISMATCH');return {'stop':True}
+            if event.get('type')!='TRADE' or event.get('side') not in ('BUY','SELL'):
+                self.reason(row,'NOT_BUY_OR_SELL');return {'stop':True}
             kind=event['side']
             # A pause stops a new buy. It does not block a SELL of an open PAPER position
             # or the official settlement path, which never enters this function.
-            if kind=='BUY' and self.paused():self.reason(row,'PAUSED');return
+            if kind=='BUY' and self.paused():
+                self.reason(row,'PAUSED');return {'stop':True}
             if kind=='BUY':
                 roster_state=((self.store.get('wallet_roster') or {}).get('wallets') or {}).get(wallet,{}).get('state')
                 if roster_state not in ('paper_test','paper_active','paused','observed'):
-                    self.reason(row,'NOT_IN_COPY_ROSTER');return
-            if kind=='BUY' and copy_paused(self.store,'copy-'+wallet):self.reason(row,'COPY_PAUSED');return
-            if not re.fullmatch(r'(btc|eth)-updown-(5m|15m)-\d+',str(event.get('slug',''))):self.reason(row,'UNSUPPORTED_MARKET');return
+                    self.reason(row,'NOT_IN_COPY_ROSTER');return {'stop':True}
+            if kind=='BUY' and copy_paused(self.store,'copy-'+wallet):
+                self.reason(row,'COPY_PAUSED');return {'stop':True}
+            if not re.fullmatch(r'(btc|eth)-updown-(5m|15m)-\d+',str(event.get('slug',''))):
+                self.reason(row,'UNSUPPORTED_MARKET');return {'stop':True}
+            return {'stop':False,'queued_at':queued_at,'event':event,'kind':kind,
+                    'source_note':source_note,'wallet':wallet,'key':key,
+                    'late_recovery':late_recovery}
+        except Exception as error:
+            self.reason(row,'ERROR',{'error':str(error)[:400]})
+            return {'stop':True}
+
+    async def _process(self,row,sell_proportion=None):
+        from .hot_path import DB
+        gate=await asyncio.get_running_loop().run_in_executor(DB, self._gate, row, sell_proportion)
+        if gate['stop']:
+            return
+        queued_at=gate['queued_at'];event=gate['event'];kind=gate['kind']
+        source_note=gate['source_note'];wallet=gate['wallet'];key=gate['key']
+        late=bool(gate.get('late_recovery'))
+        try:
             slug=str(event['slug'])
-            raw=await asyncio.to_thread(self.fetch,'https://gamma-api.polymarket.com/markets/slug/'+quote(slug,safe=''))
+            from .hot_path import COPY
+            raw=await asyncio.get_running_loop().run_in_executor(
+                COPY, self.fetch, 'https://gamma-api.polymarket.com/markets/slug/'+quote(slug,safe=''))
             m=market_spec(raw,event,self.clock())
             with self.store.connect() as db:
                 held=self.positions(db)
@@ -872,8 +906,10 @@ class WalletCopy:
                 why=band_reason(source_price)
                 if why:self.reason(row,why);return
             t_book=self.clock();decision=await self.book(m['token']);at=self.clock()
+            decision_stage=dict(getattr(self, '_book_stage', {}) or {})
             await self.sleep(.25)
             arrival=await self.book(m['token'])
+            arrival_stage=dict(getattr(self, '_book_stage', {}) or {})
             arrival=dict(arrival);arrival['token']=m['token'];arrival['fee_rate']=m['fee_rate']
             if kind=='BUY':
                 why,fill=decide_buy(source_price,arrival,self._consumed,BUDGET)
@@ -881,10 +917,23 @@ class WalletCopy:
                 limit=fill['limit']
             else:
                 why,fill=decide_sell(arrival,sell_shares,self._consumed)
-                if why:self.reason(row,why,{'decision_book':decision,'arrival_book':arrival});return
+                if why:
+                    if late:
+                        self.reason(row,'LATE_SELL_EXPOSED',{
+                            'book_reason':why,'price_basis':'current_book',
+                            'position':'open_until_settlement',
+                            'decision_book':decision,'arrival_book':arrival,
+                        })
+                        return
+                    self.reason(row,why,{'decision_book':decision,'arrival_book':arrival});return
                 limit=fill.get('floor')
             now=self.clock()
             timing=path_record(event,row,queued_at,t_book,at,now)
+            timing['book_pool_ms']=decision_stage.get('pool_ms')
+            timing['book_http_ms']=decision_stage.get('http_ms')
+            timing['book_tries']=decision_stage.get('tries')
+            timing['arrival_pool_ms']=arrival_stage.get('pool_ms')
+            timing['arrival_http_ms']=arrival_stage.get('http_ms')
             # From the API timestamp only. chain_fast has no source-trade clock.
             copy_delay=None if timing['detect_from_trade_ms'] is None else now-row['source_ts']
             evidence=dict(source_event=event,source_timestamp=row['source_ts'],first_seen=row['first_seen'],decision_at=at,arrival_at=now,
@@ -912,12 +961,14 @@ class WalletCopy:
                             (json.dumps(evidence),wallet,key))
             else:
                 evidence['source_proportion']=format(Decimal(str(proportion)),'f')
-                evidence['source_copy']='matched'
+                evidence['source_copy']='current_book' if late else 'matched'
+                evidence['price_basis']='current_book'
                 remember_fill(self._consumed,arrival,fill)
+                label='LATE_SELL_RECOVERED' if late else 'COPIED_SELL'
                 if int(sell_shares)>=int(open_trade['shares']):
-                    self.close(open_trade,fill['proceeds'],fill['fee'],now,'CLOSED',{'fill':fill,'evidence':evidence},row)
+                    self.close(open_trade,fill['proceeds'],fill['fee'],now,'CLOSED',{'fill':fill,'evidence':evidence},row,event_reason=label)
                 else:
-                    self._partial_close(open_trade,sell_shares,fill,now,evidence,row)
+                    self._partial_close(open_trade,sell_shares,fill,now,evidence,row,event_reason=label)
         except Exception as error:self.reason(row,'ERROR',{'error':str(error)[:400]})
 
     async def place_clob_buy(self,wallet,token,limit,fill):
@@ -1032,7 +1083,7 @@ class WalletCopy:
             self._set_copy_reason(db,wallet,key,'COPIED_BUY',evidence)
         return True
 
-    def _partial_close(self,trade,sold_shares,fill,now,evidence,row):
+    def _partial_close(self,trade,sold_shares,fill,now,evidence,row,event_reason='COPIED_SELL'):
         with self.store.connect() as db:
             db.execute('BEGIN IMMEDIATE')
             current=json.loads(db.execute('SELECT body FROM wallet_copy_positions WHERE id=?',(trade['id'],)).fetchone()[0])
@@ -1058,10 +1109,10 @@ class WalletCopy:
             credit=payout-exit_fee
             db.execute('UPDATE wallet_copy_accounts SET cash=cash+? WHERE wallet=?',(credit,trade['wallet']))
             db.execute('INSERT INTO wallet_copy_ledger VALUES (?,?,?)',('close:'+slice_id,trade['wallet'],credit))
-            db.execute("UPDATE wallet_copy_events SET reason='COPIED_SELL',body=? WHERE wallet=? AND event_key=?",(json.dumps(evidence),row['wallet'],row['event_key']))
+            db.execute("UPDATE wallet_copy_events SET reason=?,body=? WHERE wallet=? AND event_key=?",(event_reason,json.dumps(evidence),row['wallet'],row['event_key']))
             pause_if_period_negative(db,trade['wallet'],now)
 
-    def close(self,trade,payout,fee,now,status,evidence,row=None):
+    def close(self,trade,payout,fee,now,status,evidence,row=None,event_reason='COPIED_SELL'):
         with self.store.connect() as db:
             db.execute('BEGIN IMMEDIATE')
             current=json.loads(db.execute('SELECT body FROM wallet_copy_positions WHERE id=?',(trade['id'],)).fetchone()[0])
@@ -1071,7 +1122,7 @@ class WalletCopy:
             db.execute('UPDATE wallet_copy_positions SET body=? WHERE id=?',(json.dumps(current),trade['id']))
             db.execute('UPDATE wallet_copy_accounts SET cash=cash+? WHERE wallet=?',(payout-fee,trade['wallet']))
             db.execute('INSERT INTO wallet_copy_ledger VALUES (?,?,?)',('close:'+trade['id'],trade['wallet'],payout-fee))
-            if row:db.execute("UPDATE wallet_copy_events SET reason='COPIED_SELL',body=? WHERE wallet=? AND event_key=?",(json.dumps(evidence),row['wallet'],row['event_key']))
+            if row:db.execute("UPDATE wallet_copy_events SET reason=?,body=? WHERE wallet=? AND event_key=?",(event_reason,json.dumps(evidence),row['wallet'],row['event_key']))
             pause_if_period_negative(db,trade['wallet'],now)
 
     async def settle(self):
@@ -1155,6 +1206,66 @@ class WalletCopy:
             has=db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='wallet_activity'").fetchone()
             return self.pending_activity(db, active) if has else []
 
+    def _load_backlog(self):
+        with self.store.connect() as db:
+            return self.activity_backlog(db, self.clock())
+
+    def activity_backlog(self, db, now):
+        """Unseen fresh rows, by roster state and side. Not the LIMIT 20 batch."""
+        if not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='wallet_activity'").fetchone():
+            return {'backlog': 0}
+        if not db.execute("SELECT 1 FROM sqlite_master WHERE type='index' AND name='wallet_activity_seen'").fetchone():
+            db.execute('CREATE INDEX IF NOT EXISTS wallet_activity_seen ON wallet_activity(first_seen)')
+        roster=(self.store.get('wallet_roster') or {}).get('wallets') or {}
+        grouped={'copying': 0, 'paused': 0, 'observed': 0, 'other': 0}
+        buys=sells=0
+        oldest=None
+        total=0
+        rows=db.execute(
+            '''SELECT a.wallet, COUNT(*) AS n, MIN(a.first_seen) AS oldest,
+                      SUM(CASE WHEN json_extract(a.body,'$.side')='BUY' THEN 1 ELSE 0 END) AS buys,
+                      SUM(CASE WHEN json_extract(a.body,'$.side')='SELL' THEN 1 ELSE 0 END) AS sells
+               FROM wallet_activity a INDEXED BY wallet_activity_seen
+               LEFT JOIN wallet_copy_events e
+                 ON a.wallet=e.wallet AND a.event_key=e.event_key
+               WHERE e.event_key IS NULL AND a.first_seen>=? AND a.source_ts>=?
+               GROUP BY a.wallet''',
+            (now-90, now-90),
+        )
+        for wallet, count, seen, buy_n, sell_n in rows:
+            total += int(count or 0)
+            buys += int(buy_n or 0)
+            sells += int(sell_n or 0)
+            if seen is not None and (oldest is None or seen < oldest):
+                oldest = seen
+            state=(roster.get(wallet) or {}).get('state')
+            if state in ('paper_test', 'paper_active'):
+                grouped['copying'] += int(count or 0)
+            elif state == 'observed':
+                grouped['observed'] += int(count or 0)
+            elif state == 'paused':
+                grouped['paused'] += int(count or 0)
+            else:
+                grouped['other'] += int(count or 0)
+        arrivals=db.execute(
+            'SELECT COUNT(*) FROM wallet_activity WHERE first_seen>=?', (now-60,),
+        ).fetchone()[0]
+        decisions=db.execute(
+            "SELECT COUNT(*) FROM wallet_copy_events WHERE ts>=? AND reason!='PROCESSING'",
+            (now-60,),
+        ).fetchone()[0] if db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='wallet_copy_events'"
+        ).fetchone() else 0
+        return {
+            'backlog': total,
+            'buys': buys,
+            'sells': sells,
+            'by_state': grouped,
+            'oldest_age_s': None if oldest is None else round(now-float(oldest), 1),
+            'arrivals_60s': int(arrivals or 0),
+            'decisions_60s': int(decisions or 0),
+        }
+
     async def _publish_bg(self):
         await asyncio.to_thread(self.publish,'RUNNING')
 
@@ -1163,7 +1274,8 @@ class WalletCopy:
             # Observer wakes this loop immediately after persisting new activity.
             # The read runs off the event loop so a slow query cannot freeze RTDS.
             active=list(get_active_wallets(self.store))
-            rows=await asyncio.to_thread(self._load_pending, active)
+            from .hot_path import READ
+            rows=await asyncio.get_running_loop().run_in_executor(READ, self._load_pending, active)
             await self._apply_batch(rows)
             # A hypothetical ticket stays on the direct process() path.
             # The full decision-table scan is cached inside publish.
@@ -1176,11 +1288,31 @@ class WalletCopy:
             if (rows or self.clock()-self.last_publish>=2) and (task is None or task.done()):
                 self._publish_task=asyncio.create_task(self._publish_bg())
                 self.last_publish=self.clock()
-            self.store.set('wallet_copy_error',{})
-            oldest=min((row['first_seen'] for row in rows), default=None)
-            self.store.set('wallet_copy_progress',{
-                'at':self.clock(),'queue':len(rows),
-                'oldest_first_seen':oldest,'status':'running',
+            from .hot_path import DB, READ, latest_stage, snapshot
+            loop=asyncio.get_running_loop()
+            await loop.run_in_executor(DB, self.store.set, 'wallet_copy_error', {})
+            if self.clock()-getattr(self, '_depth_at', 0)>=2:
+                self._depth=await loop.run_in_executor(READ, self._load_backlog)
+                self._depth_at=self.clock()
+            depth=getattr(self, '_depth', None) or {}
+            stage=latest_stage()
+            pools=snapshot()
+            await loop.run_in_executor(DB, self.store.set, 'wallet_copy_progress', {
+                'at':self.clock(),
+                'batch':len(rows),
+                'queue':depth.get('backlog', len(rows)),
+                'backlog':depth.get('backlog'),
+                'buys':depth.get('buys'),
+                'sells':depth.get('sells'),
+                'by_state':depth.get('by_state'),
+                'oldest_age_s':depth.get('oldest_age_s'),
+                'arrivals_60s':depth.get('arrivals_60s'),
+                'decisions_60s':depth.get('decisions_60s'),
+                'book_pool_ms':stage.get('pool_ms'),
+                'book_http_ms':stage.get('http_ms'),
+                'book_tries':stage.get('tries'),
+                'loop_lag_ms':pools.get('loop_lag_ms'),
+                'status':'running',
             })
             return len(rows)
         except Exception as error:

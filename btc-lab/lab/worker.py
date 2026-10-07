@@ -47,16 +47,23 @@ def error_detail(error):
     detail=re.sub(r'(://)[^/\s@]+@',r'\1[redacted]@',detail)
     return f'{type(error).__name__}: {detail}'[:400].replace('\n',' ')
 
-def get_json(url):
-    request=urllib.request.Request(url,headers={'User-Agent':'BTC-Lab-Paper/0.1','Accept':'application/json'})
-    try:
-        with urllib.request.urlopen(request,timeout=8) as response:
-            raw=response.read(2_000_001)
-            if len(raw)>2_000_000: raise ValueError('oversized public response')
-            return json.loads(raw)
-    except Exception as error:
-        endpoint=urllib.parse.urlsplit(url)
-        raise RuntimeError(f'{endpoint.hostname}{endpoint.path}: {error_detail(error)}') from error
+def get_json(url, timeout=8, attempts=1):
+    last=None
+    tries=max(1, int(attempts))
+    for attempt in range(tries):
+        request=urllib.request.Request(url,headers={'User-Agent':'BTC-Lab-Paper/0.1','Accept':'application/json'})
+        try:
+            with urllib.request.urlopen(request,timeout=timeout) as response:
+                raw=response.read(2_000_001)
+                if len(raw)>2_000_000: raise ValueError('oversized public response')
+                return json.loads(raw)
+        except Exception as error:
+            endpoint=urllib.parse.urlsplit(url)
+            last=RuntimeError(f'{endpoint.hostname}{endpoint.path}: {error_detail(error)}')
+            code=getattr(error, 'code', None)
+            if code in (429, 403) or attempt + 1 >= tries:
+                raise last from error
+    raise last
 
 def array(value):
     return json.loads(value) if isinstance(value,str) else value
@@ -127,6 +134,15 @@ class Worker:
         self.complete_set=CompleteSetObserver(store)
         self.opportunity_research=OpportunityResearch(store)
         self.value_execution=ValueExecution(store)
+        self._ref_pending=deque()
+
+    async def _db(self, func, *args):
+        from .hot_path import DB
+        return await asyncio.get_running_loop().run_in_executor(DB, func, *args)
+
+    async def _read(self, func, *args):
+        from .hot_path import READ
+        return await asyncio.get_running_loop().run_in_executor(READ, func, *args)
 
     def choose_entry(self, strategy, market, reference, model, now, paused=False):
         # Pause late entries only. BTC 3–7 is active. Existing exits and settlement
@@ -158,26 +174,41 @@ class Worker:
         else:
             market['opening']=next((v for t,v in self.history if abs(t-market['start'])<.001),None)
 
-    def accept_reference(self,event,now):
+    def accept_reference(self,event,now,persist=True):
         value=observation(event,now,self.asset)
         if value is None:return
         topic=value['topic']
         self.reference_clock.observe(value['source_ts'],now)
         previous=self.references.get(topic)
         if previous and value['source_ts']<=previous['source_ts']:return
+        notes=[]
         if previous and value['source_ts']-previous['source_ts']>10:
-            self.store.record('reference_gap',{'topic':topic,'from':previous['source_ts'],'to':value['source_ts']},now)
+            notes.append(('reference_gap',{'topic':topic,'from':previous['source_ts'],'to':value['source_ts']},now))
             if topic==SPOT:self.history.clear()
             if topic==TWAP60:self.twap_history.clear()
-        self.store.record('rtds',event,now)
+        notes.append(('rtds',event,now))
         self.references[topic]=value
         self.reference_topics[topic]=value['source_ts']
-        self.store.set('reference_topics',self.reference_topics)
         if topic==TWAP60:self.twap_history.append(value)
         if topic==SPOT:
             self.reference=value
             self.history.append((value['source_ts'],value['price']))
         self.feed_error=None
+        topics=dict(self.reference_topics)
+        if persist:
+            self._write_reference(notes, topics)
+        else:
+            self._ref_pending.append((notes, topics))
+
+    def _write_reference(self, notes, topics):
+        for kind, body, ts in notes:
+            self.store.record(kind, body, ts)
+        self.store.set('reference_topics', topics)
+
+    def note_feed_down(self, error):
+        """A dropped socket keeps the last tick. Five seconds of age is what marks it stale."""
+        self.feed_error=error_detail(error)
+        return {'error':self.feed_error}
 
     def decision(self,strategy,market,reason,body,now):
         # Persist changes immediately, repeated skip reasons at most once per minute.
@@ -212,24 +243,60 @@ class Worker:
                                 raise TimeoutError('controlled reference drop')
                             if message in ('PONG','PING',''): continue
                             e=json.loads(message)
-                            try:self.accept_reference(e,time.time())
+                            try:self.accept_reference(e,time.time(),persist=False)
                             except (ValueError,KeyError,TypeError) as error:
                                 self.feed_error=error_detail(error)
-                                self.store.record('reference_rejected',{'error':self.feed_error,'topic':e.get('topic')})
+                                self._ref_pending.append(([('reference_rejected',{'error':self.feed_error,'topic':e.get('topic')},time.time())], dict(self.reference_topics)))
                     finally:
                         task.cancel()
                         await asyncio.gather(task,return_exceptions=True)
             except Exception as e:
-                self.feed_error=error_detail(e)
+                detail=self.note_feed_down(e)
                 LOG.warning('reference halted: %s',self.feed_error)
-                self.store.record('reference_disconnect',{'error':self.feed_error})
-                self.reference=None
-                self.history.clear()
-                self.references.clear()
-                self.twap_history.clear()
-                self.reference_topics.clear()
+                self._ref_pending.append(([('reference_disconnect',detail,time.time())], dict(self.reference_topics)))
                 await asyncio.sleep(self._feed_backoff)
                 self._feed_backoff=next_backoff(self._feed_backoff)
+
+    async def flush_references(self):
+        from .hot_path import DB
+        while True:
+            await asyncio.sleep(0.05)
+            if not self._ref_pending:
+                continue
+            batch=list(self._ref_pending)
+            self._ref_pending.clear()
+            await asyncio.get_running_loop().run_in_executor(DB, self._write_reference_batch, batch)
+
+    def _write_reference_batch(self, batch):
+        for notes, topics in batch:
+            self._write_reference(notes, topics)
+
+    async def warm_books(self):
+        """Keep the current and next 15m books in memory so a copy does not open HTTP."""
+        from .hot_path import IO, cached_book, remember_book
+        loop=asyncio.get_running_loop()
+        while True:
+            try:
+                now=int(time.time())
+                start=now-(now%900)
+                tokens=[]
+                for stamp in (start, start+900):
+                    if self.market and self.market.get('start')==stamp and self.market.get('tokens'):
+                        tokens.extend(self.market['tokens'].values())
+                        continue
+                    slug=f'{self.asset.lower()}-updown-15m-{stamp}'
+                    raw=await loop.run_in_executor(IO, get_json, f'{GAMMA}/markets/slug/{slug}')
+                    market=normalize_market(raw, stamp, self.asset)
+                    tokens.extend(market['tokens'].values())
+                for token in tokens:
+                    if cached_book(token, 0.35):
+                        continue
+                    url=f'{CLOB}/book?token_id={urllib.parse.quote(str(token),safe="")}'
+                    raw=await loop.run_in_executor(IO, get_json, url)
+                    remember_book(token, raw)
+            except Exception as error:
+                LOG.debug('book warmer: %s', error_detail(error))
+            await asyncio.sleep(0.35)
 
     async def discover(self, start):
         asset=self.asset
@@ -243,7 +310,7 @@ class Worker:
         if self.market and self.market['slug']==slug and self.market['rule_hash']==m['rule_hash']:
             for key in ('opening','opening_decimal','opening_evidence'):
                 if self.market.get(key) is not None:m[key]=self.market[key]
-        self.store.record('market_metadata',raw)
+        await self._db(self.store.record,'market_metadata',raw)
         return m
 
     def clock_skew(self):
@@ -252,44 +319,52 @@ class Worker:
                 'samples':{'book':len(self.book_clock.offsets),'reference':len(self.reference_clock.offsets)}}
 
     async def books(self, m):
+        from .hot_path import IO, remember_book
+        loop=asyncio.get_running_loop()
         async def one(side,token):
-            raw=await asyncio.to_thread(get_json,f'{CLOB}/book?token_id={urllib.parse.quote(str(token),safe="")}')
+            # Always a new read. The arrival book has to be newer than the decision book.
+            # The copy path reads the memory copy this leaves behind.
+            raw=await loop.run_in_executor(IO, get_json, f'{CLOB}/book?token_id={urllib.parse.quote(str(token),safe="")}')
+            remember_book(token, raw)
             now=time.time()
-            self.store.record('book',{'market':m['slug'],'side':side,'raw':raw},now)
+            await self._db(self.store.record,'book',{'market':m['slug'],'side':side,'raw':raw},now)
             return side,normalize_book(raw,token,now,venue_clock=self.book_clock)
         results=await asyncio.gather(*(one(s,t) for s,t in m['tokens'].items()))
         return dict(results)
 
-    async def reconcile(self):
+    def _reconcile_rows(self):
         with self.store.connect() as db:
             rows=db.execute("SELECT DISTINCT market FROM positions WHERE status='OPEN' UNION SELECT market FROM examples WHERE market NOT IN (SELECT market FROM labels)").fetchall()
             shadow_markets={json.loads(r[0])['market'] for r in db.execute('SELECT body FROM exit_comparison')
                             if json.loads(r[0])['status']=='OPEN'}
             shadow_markets.update(r[0] for r in db.execute("SELECT DISTINCT market FROM opportunity_samples WHERE market NOT IN (SELECT market FROM labels)"))
             known={r[0] for r in rows}
-            rows=list(rows)+[(slug,) for slug in sorted(shadow_markets-known)]
+            return list(rows)+[(slug,) for slug in sorted(shadow_markets-known)]
+
+    async def reconcile(self):
+        from .hot_path import IO
+        loop=asyncio.get_running_loop()
+        rows=await self._read(self._reconcile_rows)
         for row in rows[:100]:
             slug=row[0]
             if int(slug.rsplit('-',1)[1])+900>time.time(): continue
-            raw=await asyncio.to_thread(get_json,f'{GAMMA}/markets/slug/{slug}')
+            raw=await loop.run_in_executor(IO, get_json, f'{GAMMA}/markets/slug/{slug}')
             condition=raw['conditionId']
-            official=await asyncio.to_thread(get_json,f'{CLOB}/markets/{condition}')
+            official=await loop.run_in_executor(IO, get_json, f'{CLOB}/markets/{condition}')
             if str(official.get('condition_id'))!=str(condition): raise ValueError('resolution condition mismatch')
             winners=[t for t in official.get('tokens',[]) if t.get('winner') is True]
             if official.get('closed') is True and len(winners)==1 and winners[0].get('outcome') in ('Up','Down'):
-                self.store.resolve(slug,winners[0]['outcome'],{'source':'clob_official_winner','closed':True,
-                    'condition':condition,'token':winners[0]['token_id']},time.time())
-        self.store.redeem(time.time())
-        self.store.audit()
+                await self._db(self.store.resolve, slug, winners[0]['outcome'], {'source':'clob_official_winner','closed':True,
+                    'condition':condition,'token':winners[0]['token_id']}, time.time())
+        await self._db(self.store.redeem, time.time())
+        await self._read(self.store.audit)
 
     async def paper_exits(self, market, reconciliation_ok):
         # P0-1 FIX: Stop-loss exits run independently of network reconciliation failures.
         # However, a LedgerError (integrity violation) MUST block everything.
         if not self.ledger_ok:return
         if not market.get('accepting') or not market.get('fee_verified') or not market.get('rule_supported'):return
-        with self.store.connect() as db:
-            rows=[dict(r) for r in db.execute("SELECT * FROM positions WHERE status='OPEN' AND market=?",(market['slug'],))]
-        rows=[p for p in rows if p['strategy'] in (self.entry_strategy,'mid-window-v2') or json.loads(p['evidence']).get('risk_policy') in ('btc-stop10-v1','eth-stop10-v1','btc-mid-v2-stop10','eth-mid-v2-stop10')]
+        rows=await self._db(self._open_exit_rows, market['slug'])
         for p in rows:
             # Route to the correct exit_intent based on strategy version.
             if p['strategy'] == 'mid-window-v2':
@@ -311,11 +386,20 @@ class Worker:
                         fill=simulate_sale(book,p['shares'],market['fee_rate'],intent['floor'])
                         reason='EXIT_NO_FULL_FILL'
                         if fill:
-                            reason=self.store.close_paper(p['id'],fill,{**intent,'arrival_at':at,'book_source_ts':book['source_ts'],'decision_book_ts':decision_book_ts},at)
-            self.decision(p['strategy'],market['slug'],reason, intent or {},time.time())
+                            reason=await self._db(self.store.close_paper, p['id'], fill, {**intent,'arrival_at':at,'book_source_ts':book['source_ts'],'decision_book_ts':decision_book_ts}, at)
+            await self._db(self.decision, p['strategy'], market['slug'], reason, intent or {}, time.time())
+
+    def _open_exit_rows(self, slug):
+        with self.store.connect() as db:
+            rows=[dict(r) for r in db.execute("SELECT * FROM positions WHERE status='OPEN' AND market=?",(slug,))]
+        return [p for p in rows if p['strategy'] in (self.entry_strategy,'mid-window-v2') or json.loads(p['evidence']).get('risk_policy') in ('btc-stop10-v1','eth-stop10-v1','btc-mid-v2-stop10','eth-mid-v2-stop10')]
+
+    def _save_example(self, slug, now, body):
+        with self.store.connect() as db:
+            db.execute('INSERT OR IGNORE INTO examples VALUES (?,?,?)',(slug, now, body))
 
     async def cycle(self, entries_allowed=True):
-        self.store.audit()
+        await self._read(self.store.audit)
         now=time.time()
         start=int(now)//900*900
         if not self.market or self.market['start']!=start or now-self.last_registry>=30:
@@ -323,30 +407,30 @@ class Worker:
             self.last_registry=now
         m=self.market
         self.capture_opening(m)
-        self.store.set('market',m)
+        await self._db(self.store.set,'market',m)
         try:
             m['books']=await self.books(m)
         except ValueError as error:
             if 'stale/future book' not in str(error):
                 raise
             now=time.time()
-            self.store.set('worker',{'status':'DEGRADED','heartbeat':now,
+            await self._db(self.store.set,'worker',{'status':'DEGRADED','heartbeat':now,
                 'reference_status':'FRESH' if self.selected_reference(m) else 'MISSING_OR_STALE',
                 'book_status':'STALE','reference_error':self.feed_error,'version':'0.6.7','asset':self.asset,
                 'execution':'PAPER ONLY','clock_skew':self.clock_skew()})
             return
         now=time.time()
         try:
-            self.complete_set.step(m,now)
-            self.store.set('complete_set_error',{})
+            await self._db(self.complete_set.step,m,now)
+            await self._db(self.store.set,'complete_set_error',{})
         except Exception as error:
-            self.store.set('complete_set_error',{'at':now,'error':error_detail(error)})
+            await self._db(self.store.set,'complete_set_error',{'at':now,'error':error_detail(error)})
         # RTDS continues while REST requests are in flight. Use the latest
         # reference/history available at the actual decision time.
         self.capture_opening(m)
         reference=self.selected_reference(m)
         history=self.selected_history(m)
-        self.store.set('reference',reference or {})
+        await self._db(self.store.set,'reference',reference or {})
         up=m['books']['Up']; down=m['books']['Down']
         def mid(b):
             if not b['asks'] or not b['bids']: return None
@@ -359,41 +443,42 @@ class Worker:
             past=[x for x in history if now-600<=x[0]<=now]
             m['features']=features(reference['price'],m['opening'],past,probability,m['end']-now)
         try:
-            self.opportunity_research.step(m,reference,now)
-            self.store.set('opportunity_research_error',{})
+            await self._db(self.opportunity_research.step,m,reference,now)
+            await self._db(self.store.set,'opportunity_research_error',{})
         except Exception as error:
-            self.store.set('opportunity_research_error',{'at':now,'error':error_detail(error)})
+            await self._db(self.store.set,'opportunity_research_error',{'at':now,'error':error_detail(error)})
         try:
-            self.value_execution.step(m,reference,time.time(),entries_allowed and not self.is_paused() and not strategy_paused(self.store,'value-surface-paper-v1'))
-            self.store.set('value_surface_execution_error',{})
+            surface_paused=await self._db(strategy_paused,self.store,'value-surface-paper-v1')
+            await self._db(self.value_execution.step,m,reference,time.time(),entries_allowed and not self.is_paused() and not surface_paused)
+            await self._db(self.store.set,'value_surface_execution_error',{})
         except Exception as error:
-            self.store.set('value_surface_execution_error',{'at':time.time(),'error':error_detail(error)})
+            await self._db(self.store.set,'value_surface_execution_error',{'at':time.time(),'error':error_detail(error)})
         # Match the model's existing decision horizon. One causal sample per
         # market; never backdate or fill a missed window with later data.
         books_fresh=all(-.25 <= self.book_clock.age(b['source_ts'],now) <= 3 for b in (up,down))
         if (self.asset=='BTC' and m['features'] and m['rule_supported'] and books_fresh
                 and MODEL_HORIZON[0] <= m['end']-now <= MODEL_HORIZON[1]):
-            with self.store.connect() as db:
-                db.execute('INSERT OR IGNORE INTO examples VALUES (?,?,?)',(m['slug'],now,json.dumps({'features':m['features'],'book_probability':probability,'rule_hash':m['rule_hash'],'feature_schema':m['feature_schema'],
+            await self._db(self._save_example, m['slug'], now, json.dumps({'features':m['features'],'book_probability':probability,'rule_hash':m['rule_hash'],'feature_schema':m['feature_schema'],
                     'sampling_policy':'first-valid-model-horizon-v2','remaining_seconds':m['end']-now,
                     'reference_source_ts':reference['source_ts'],
-                    'book_source_ts':{side:b['source_ts'] for side,b in m['books'].items()}})))
-        self.store.set('market',m)
-        self.store.set('price_history',history[-900:])
+                    'book_source_ts':{side:b['source_ts'] for side,b in m['books'].items()}}))
+        await self._db(self.store.set,'market',m)
+        await self._db(self.store.set,'price_history',history[-900:])
         # Isolated paired research uses the already collected snapshot: no extra
         # HTTP calls or sleeps, no mutation of trading accounts or risk limits.
         try:
-            if self.asset=='BTC':self.exit_comparison.step(m,time.time(),entries_allowed)
-            self.store.set('exit_comparison_error',{})
+            if self.asset=='BTC':
+                await self._db(self.exit_comparison.step,m,time.time(),entries_allowed)
+            await self._db(self.store.set,'exit_comparison_error',{})
         except Exception as error:
-            self.store.set('exit_comparison_error',{'at':time.time(),'error':error_detail(error)})
+            await self._db(self.store.set,'exit_comparison_error',{'at':time.time(),'error':error_detail(error)})
             LOG.warning('exit comparison halted: %s',error_detail(error))
         await self.paper_exits(m, entries_allowed)
-        model=self.store.get('model',{})
+        model=await self._db(self.store.get,'model',{})
         signals=[]
         paused=self.is_paused() or not entries_allowed
         for strategy in self.store.strategies:
-            intent,reason=self.choose_entry(strategy,m,reference,model,now,paused)
+            intent,reason=await self._db(self.choose_entry,strategy,m,reference,model,now,paused)
             if intent:
                 if self.asset=="ETH":
                     intent.update(strategy=strategy,config_version="eth-mid-window-v1",asset="ETH",hypothesis={**intent["hypothesis"],"id":"eth-mid-window-v1","asset":"ETH"})
@@ -406,7 +491,7 @@ class Worker:
                             'stop_loss_net_fraction':.10,'protective_sale_until_elapsed_exclusive':900,
                             'entry_all_in_cap_usd':5}
                 signals.append(intent)
-            else: self.decision(strategy,m['slug'],reason,{},now)
+            else: await self._db(self.decision,strategy,m['slug'],reason,{},now)
         if signals:
             # New arrival books after explicit latency: never fill on the decision snapshot.
             # P0-2 FIX: Record decision book timestamps to enforce strictly newer arrival.
@@ -429,10 +514,10 @@ class Worker:
                 # P0-2 FIX: Arrival book must have a strictly newer source_ts than decision.
                 book_valid=all(-.25<=self.book_clock.age(b['source_ts'],at)<=3 and b['source_ts']>decision_book_ts.get(side,0) for side,b in arrival.items())
                 if time_valid and book_valid and not self.is_paused() and at < m['end']-30 and reference and -.25 <= self.reference_clock.age(reference['source_ts'],at)<=5 and m.get('fee_verified'):
-                    capacity=self.store.entry_capacity(intent['strategy'],at)
+                    capacity=await self._db(self.store.entry_capacity,intent['strategy'],at)
                     intent.update(sizing_policy='remaining-risk-v1',entry_capacity_micro=capacity)
                     if capacity<=0:
-                        self.decision(intent['strategy'],m['slug'],'RISK_CAPACITY_EXHAUSTED',intent,at);continue
+                        await self._db(self.decision,intent['strategy'],m['slug'],'RISK_CAPACITY_EXHAUSTED',intent,at);continue
                     budget=str(max(0,capacity-100)/1e6/(1+float(m['fee_rate'])))
                     fill=simulate_fill(book['asks'],budget,str(intent['limit']),str(m['fee_rate']),book['min_shares'],book['tick'])
                     if fill and fill['cost']+fill['fee']>capacity:fill=None
@@ -445,22 +530,49 @@ class Worker:
                         if intent['probability'] is not None and intent['probability']-fill['vwap']-fill['fee']/fill['shares']-.03<.02:
                             reason='EDGE_LOST'
                         else:
-                            reason=self.store.open(intent['strategy'],m['slug'],intent['side'],fill,
+                            reason=await self._db(self.store.open,intent['strategy'],m['slug'],intent['side'],fill,
                                 {**intent,'arrival_at':at,'rule_hash':m['rule_hash'],'reference':reference,
                                  'feature_schema':m['feature_schema'],'opening_evidence':m.get('opening_evidence'),
                                  'opening':m['opening'],'model_id':model.get('model_id'),'depth_fraction':.5},at)
                             if self.asset=='BTC' and reason=='FILLED' and intent['strategy']==self.entry_strategy:
-                                self.exit_comparison.capture(m,at)
-                self.decision(intent['strategy'],m['slug'],reason,intent,at)
+                                await self._db(self.exit_comparison.capture,m,at)
+                await self._db(self.decision,intent['strategy'],m['slug'],reason,intent,at)
         reference=self.selected_reference(m)
-        self.store.set('reference',reference or {})
+        await self._db(self.store.set,'reference',reference or {})
         now=time.time()
         reference_fresh=reference and -.25<=self.reference_clock.age(reference['source_ts'],now)<=5
-        self.store.set('worker',{'status':('PAUSED' if paused else 'RECORDING') if reference_fresh else 'DEGRADED','heartbeat':now,
+        await self._db(self.store.set,'worker',{'status':('PAUSED' if paused else 'RECORDING') if reference_fresh else 'DEGRADED','heartbeat':now,
             'reference_status':'FRESH' if reference_fresh else 'MISSING_OR_STALE',
             'book_status':'FRESH' if books_fresh else 'STALE',
             'reference_error':self.feed_error,'version':'0.6.7','asset':self.asset,'execution':'PAPER ONLY',
             'clock_skew':self.clock_skew()})
+
+    async def heartbeat_loop(self):
+        """Keep the health check current while a long read is still running."""
+        while True:
+            now=time.time()
+            reference=self.reference
+            fresh=bool(reference and -.25<=self.reference_clock.age(reference['source_ts'],now)<=5)
+            books=(self.market or {}).get('books') or {}
+            book_fresh=bool(books) and all(-.25<=self.book_clock.age(b.get('source_ts',0),now)<=8 for b in books.values())
+            status='RECORDING' if fresh else ('DEGRADED' if self.market else 'STARTING')
+            from .hot_path import snapshot
+            await self._db(self.store.set,'worker',{
+                'status':status,'heartbeat':now,
+                'reference_status':'FRESH' if fresh else 'MISSING_OR_STALE',
+                'book_status':'FRESH' if book_fresh else 'STALE',
+                'reference_error':self.feed_error,'version':'0.6.7','asset':self.asset,
+                'execution':'PAPER ONLY','clock_skew':self.clock_skew(),
+                'hot_path':snapshot()})
+            await asyncio.sleep(10)
+
+    async def loop_lag_probe(self):
+        """How late a 50ms sleep actually returns. That is loop stall, not HTTP."""
+        from .hot_path import note_loop_lag
+        while True:
+            started=time.monotonic()
+            await asyncio.sleep(0.05)
+            note_loop_lag(max(0.0, (time.monotonic() - started - 0.05) * 1000))
 
     async def iteration(self):
         errors=[]
@@ -484,36 +596,43 @@ class Worker:
                 self.reconciliation_ok=False
                 failure('reconciliation',e)
         try:
-            self.value_execution.settle(time.time())
+            await self._db(self.value_execution.settle, time.time())
         except Exception as e:
             failure('value_settlement',e)
         try:
             await self.cycle(entries_allowed=self.reconciliation_ok)
         except Exception as e:
             failure('collection',e)
-        if self.asset=='BTC' and (time.time()-self.last_research>3600 or self.store.get('model',{}).get('feature_schema')!=(self.store.get('market',{}).get('feature_schema') or 'spot-v1')):
-            try:
-                train(self.store)
-                self.store.set('report',report(self.store))
-                self.last_research=time.time()
-            except Exception as e:
-                failure('research',e)
+        if self.asset=='BTC':
+            model=await self._db(self.store.get,'model',{}) or {}
+            published=await self._db(self.store.get,'market',{}) or {}
+            if time.time()-self.last_research>3600 or model.get('feature_schema')!=(published.get('feature_schema') or 'spot-v1'):
+                try:
+                    await self._db(train,self.store)
+                    built=await self._db(report,self.store)
+                    await self._db(self.store.set,'report',built)
+                    self.last_research=time.time()
+                except Exception as e:
+                    failure('research',e)
         if time.time()-self.last_prune>=600:
             try:
-                dropped=await asyncio.to_thread(self.store.prune_ephemeral)
+                dropped=await self._db(self.store.prune_ephemeral)
                 self.last_prune=time.time()
                 if dropped:
                     LOG.info('pruned %d old book/price notes',dropped)
             except Exception as e:
                 failure('prune',e)
         if errors:
-            self.store.set('worker',{'status':'DEGRADED','heartbeat':time.time(),
+            await self._db(self.store.set,'worker',{'status':'DEGRADED','heartbeat':time.time(),
                 'errors':errors,'version':'0.6.7','asset':self.asset,'clock_skew':self.clock_skew()})
 
     async def run(self):
-        self.store.set('worker', {'status':'STARTING','heartbeat':time.time(),'version':'0.6.7','asset':self.asset,'execution':'PAPER ONLY'})
-        self.store.audit()
+        await self._db(self.store.set,'worker', {'status':'STARTING','heartbeat':time.time(),'version':'0.6.7','asset':self.asset,'execution':'PAPER ONLY'})
         reference=asyncio.create_task(self.reference_stream())
+        flush=asyncio.create_task(self.flush_references())
+        warmer=asyncio.create_task(self.warm_books())
+        pulse=asyncio.create_task(self.heartbeat_loop())
+        lag=asyncio.create_task(self.loop_lag_probe())
         observer=WalletObserver(self.store,get_json) if self.asset=="BTC" else None
         wallets=asyncio.create_task(observer.run()) if observer else None
         # Hourly shortlist only. Candidates are never auto-copied.
@@ -542,12 +661,14 @@ class Worker:
                 except Exception as e:
                     LOG.warning('Failed to initialize CLOB client: %s', e)
                     clob_client = None
-        copier=asyncio.create_task(WalletCopy(self.store,get_json,self.is_paused,clob_client=clob_client).run()) if self.asset=="BTC" else None
+        from .hot_path import fetch_copy
+        copier=asyncio.create_task(WalletCopy(self.store,fetch_copy,self.is_paused,clob_client=clob_client).run()) if self.asset=="BTC" else None
         mitch=None
         clock_task=None
         if self.asset=="BTC":
             from .mitch_copy import MitchCopy
-            mitch=asyncio.create_task(MitchCopy(self.store,get_json).run())
+            from .hot_path import fetch_copy as mitch_fetch
+            mitch=asyncio.create_task(MitchCopy(self.store,mitch_fetch).run())
             clock_task=asyncio.create_task(self.clock_loop())
         # Chain monitor: insert the seed trade as soon as it hits Polygon.
         # Same activity key as REST, so the public list cannot double-copy.
@@ -561,6 +682,7 @@ class Worker:
                 from .wallet_chain_monitor import ChainMonitor, ChainBridge
                 bridge=ChainBridge(self.store,get_json)
                 monitor=ChainMonitor(chain_urls,get_active_wallets(self.store),bridge.on_event)
+                monitor.on_removed=bridge.on_removed
                 chain_task=asyncio.create_task(monitor.run())
                 LOG.info('chain monitor: detect on-chain → copy without waiting for the public list')
             else:
@@ -570,7 +692,8 @@ class Worker:
             from .wallet_chain_monitor import run_market_prints
             prints=asyncio.create_task(run_market_prints(get_json))
         jobs={
-            'reference': reference, 'wallets': wallets, 'discovery': discovery,
+            'reference': reference, 'flush': flush, 'warmer': warmer, 'pulse': pulse, 'lag': lag,
+            'wallets': wallets, 'discovery': discovery,
             'copier': copier, 'mitch': mitch, 'clock': clock_task,
             'chain': chain_task, 'prints': prints,
         }
@@ -589,13 +712,15 @@ class Worker:
                         error=None if caught is None else str(caught)[:200]
                     births[name]=births.get(name, 0)+1
                     dead.append({'name': name, 'error': error, 'restarts': births[name]})
-                    if births[name]<=5 and name in ('copier', 'mitch', 'wallets', 'chain', 'prints'):
+                    if births[name]<=5 and name in ('copier', 'mitch', 'wallets', 'chain', 'prints', 'flush', 'warmer', 'pulse', 'lag'):
                         LOG.warning('restarting %s after it stopped (%s)', name, error)
                         if name=='copier':
-                            jobs[name]=asyncio.create_task(WalletCopy(self.store,get_json,self.is_paused,clob_client=clob_client).run())
+                            from .hot_path import fetch_copy
+                            jobs[name]=asyncio.create_task(WalletCopy(self.store,fetch_copy,self.is_paused,clob_client=clob_client).run())
                         elif name=='mitch':
                             from .mitch_copy import MitchCopy
-                            jobs[name]=asyncio.create_task(MitchCopy(self.store,get_json).run())
+                            from .hot_path import fetch_copy
+                            jobs[name]=asyncio.create_task(MitchCopy(self.store,fetch_copy).run())
                         elif name=='wallets' and observer:
                             jobs[name]=asyncio.create_task(observer.run())
                         elif name=='chain' and monitor:
@@ -603,6 +728,14 @@ class Worker:
                         elif name=='prints':
                             from .wallet_chain_monitor import run_market_prints
                             jobs[name]=asyncio.create_task(run_market_prints(get_json))
+                        elif name=='flush':
+                            jobs[name]=asyncio.create_task(self.flush_references())
+                        elif name=='warmer':
+                            jobs[name]=asyncio.create_task(self.warm_books())
+                        elif name=='pulse':
+                            jobs[name]=asyncio.create_task(self.heartbeat_loop())
+                        elif name=='lag':
+                            jobs[name]=asyncio.create_task(self.loop_lag_probe())
                 if dead or births:
                     self.store.set('task_health', {'at': time.time(), 'dead': dead, 'restarts': births})
                 # Refresh chain monitor wallet set every 60s
@@ -633,7 +766,7 @@ class Worker:
             if jumped:
                 sample['wake_or_step'] = True
                 sample['status'] = 'unreliable'
-            self.store.set('clock_status', sample)
+            await self._db(self.store.set,'clock_status', sample)
             await asyncio.sleep(15 if jumped else 60)
 
 def main():

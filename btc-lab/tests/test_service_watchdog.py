@@ -65,6 +65,30 @@ class WatchdogSplitTests(unittest.TestCase):
         self.assertEqual(restart, ['heartbeat'])
         self.assertEqual(noted, [])
 
+    def test_a_growing_queue_is_noted_and_not_restarted(self):
+        now = 1_000_000
+        state = {
+            'worker': {'heartbeat': now - 5, 'status': 'RECORDING'},
+            'wallet_copy_execution': {'updated_at': now - 5},
+            'mitch_copy': {'updated_at': now - 5},
+            'wallet_copy_progress': {'at': now - 2, 'backlog': 3},
+            'mitch_progress': {
+                'at': now - 2, 'backlog': 40, 'book_pool_ms': 2500,
+                'expired_recent': 5, 'arrivals_60s': 4, 'decisions_60s': 0,
+                'oldest_fresh_age_s': 30,
+            },
+        }
+        previous = {'ages': {'mitch_backlog': 10}}
+        restart, noted, ages = watchdog.assess(
+            now, state, True, process_age=1000, previous=previous,
+        )
+        self.assertEqual(restart, [])
+        self.assertIn('mitch_backlog_growing', noted)
+        self.assertIn('book_wait', noted)
+        self.assertIn('signals_expired_by_us', noted)
+        self.assertIn('mitch_no_useful_progress', noted)
+        self.assertEqual(ages['mitch_backlog'], 40)
+
     def test_a_launch_wait_suppresses_the_restart(self):
         now = 1_000_000
         state = {'worker': {'heartbeat': now - 500}}

@@ -159,19 +159,39 @@ class CopyTests(unittest.TestCase):
         self.assertEqual(report['wallet_copy_daily'][0]['closed'],1)
         self.assertEqual(report['wallet_copy_daily'][0]['net_pnl_usd'],self.state()['accounts'][0]['pnl'])
         self.assertNotIn('entry_evidence',report['wallet_copy_daily'][0]['period_trades'][0])
-    def test_a_sell_after_the_fresh_window_is_recorded_and_not_filled(self):
-        self.confirm_source(0, 1000)
-        self.buy()
+    def _late_sell(self, proportion=1):
         self.now += 200
         row = self.row('late-sell', 'SELL')
         row['source_ts'] = self.now - 120
         row['first_seen'] = self.now - 120
         body = json.loads(row['body'])
         body['timestamp'] = row['source_ts']
+        body['price'] = .70
         body['size'] = 10
         row['body'] = json.dumps(body)
-        self.process(row)
-        self.assertEqual(self.reason(), 'LATE_SELL_NOT_FILLED')
+        asyncio.run(self.engine.process(
+            row, shadow=False, sell_proportion={'proportion': proportion, 'known': True},
+        ))
+        self.engine.publish('TEST')
+        return row
+
+    def test_a_late_sell_recovers_at_the_current_book(self):
+        self.confirm_source(0, 1000)
+        self.buy()
+        self.bid = '.40'
+        self._late_sell()
+        self.assertEqual(self.reason(), 'LATE_SELL_RECOVERED')
+        trade = self.state()['recent_trades'][0]
+        self.assertEqual(trade['status'], 'CLOSED')
+        self.assertLess(trade['payout'] / trade['shares'], 0.5)
+        self.assertGreater(trade['payout'] / trade['shares'], 0.3)
+
+    def test_a_late_sell_without_current_liquidity_stays_open(self):
+        self.confirm_source(0, 1000)
+        self.buy()
+        self.depth = '1'
+        self._late_sell()
+        self.assertEqual(self.reason(), 'LATE_SELL_EXPOSED')
         self.assertEqual(self.state()['recent_trades'][0]['status'], 'OPEN')
 
     def test_observer_backlog_skipped_without_replay(self):

@@ -282,7 +282,7 @@ class WalletObserver:
         while True:
             started=time.monotonic()
             await self.poll(wallet)
-            status=self.store.get('wallet_observer:'+wallet,{})
+            status=await asyncio.to_thread(self.store.get, 'wallet_observer:'+wallet, {})
             failures=failures+1 if status.get('status')=='ERROR' else 0
             interval=min(60,2**min(failures,6)) if failures else 1
             await asyncio.sleep(max(.1,interval-(time.monotonic()-started)))

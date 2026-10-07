@@ -84,7 +84,16 @@ def _this_process(stamp, process_age, now):
     return stamp
 
 
-def assess(now, state, http_ok, launch_wait=None, process_age=None, http_failures=0):
+def _num(value):
+    try:
+        if value is None or value == '':
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def assess(now, state, http_ok, launch_wait=None, process_age=None, http_failures=0, previous=None):
     """A live heartbeat does not hide a stopped copier or a publish that never moved.
 
     A ledger mismatch holds buys and is not restarted. A launch-limit wait is
@@ -136,12 +145,51 @@ def assess(now, state, http_ok, launch_wait=None, process_age=None, http_failure
         noted.append('connection')
     if health.get('status') == 'ledger_mismatch' or mitch_health.get('status') == 'mismatch':
         noted.append('ledger_mismatch')
+    # A process that keeps writing rejections is not healthy. These notes do
+    # not restart: a restart does not drain a saturated pool.
+    prev_ages = (previous or {}).get('ages') or {}
+    mitch_backlog = _num(mitch_progress.get('backlog'))
+    prev_mitch = _num(prev_ages.get('mitch_backlog'))
+    copy_backlog = _num(copy_progress.get('backlog'))
+    prev_copy = _num(prev_ages.get('copy_backlog'))
+    if mitch_backlog is not None and mitch_backlog > 30:
+        noted.append('mitch_backlog')
+    if copy_backlog is not None and copy_backlog > 30:
+        noted.append('copy_backlog')
+    if (mitch_backlog is not None and prev_mitch is not None
+            and mitch_backlog > prev_mitch + 5 and mitch_backlog > 10):
+        noted.append('mitch_backlog_growing')
+    elif (mitch_backlog is not None and prev_mitch is not None
+            and prev_mitch > 10 and mitch_backlog < prev_mitch):
+        noted.append('mitch_backlog_easing')
+    if (copy_backlog is not None and prev_copy is not None
+            and copy_backlog > prev_copy + 5 and copy_backlog > 10):
+        noted.append('copy_backlog_growing')
+    book_http = _num(mitch_progress.get('book_http_ms')) or 0
+    book_pool = _num(mitch_progress.get('book_pool_ms')) or 0
+    copy_http = _num(copy_progress.get('book_http_ms')) or 0
+    copy_pool = _num(copy_progress.get('book_pool_ms')) or 0
+    if max(book_http, book_pool, copy_http, copy_pool) > 1000:
+        noted.append('book_wait')
+    expired = _num(mitch_progress.get('expired_recent')) or 0
+    if expired >= 3:
+        noted.append('signals_expired_by_us')
+    arrivals = _num(mitch_progress.get('arrivals_60s')) or 0
+    decisions = _num(mitch_progress.get('decisions_60s')) or 0
+    oldest_fresh = _num(mitch_progress.get('oldest_fresh_age_s')) or 0
+    if arrivals > 0 and decisions == 0 and oldest_fresh > 20:
+        noted.append('mitch_no_useful_progress')
+    copy_arrivals = _num(copy_progress.get('arrivals_60s')) or 0
+    copy_decisions = _num(copy_progress.get('decisions_60s')) or 0
+    copy_oldest = _num(copy_progress.get('oldest_age_s')) or 0
+    if copy_arrivals > 0 and copy_decisions == 0 and copy_oldest > 20:
+        noted.append('copy_no_useful_progress')
     if waiting:
         restart_problems = []
-    # A large database can spend several minutes in STARTING while the
-    # process is on CPU. That is not a dead copier. After ten minutes it is.
+    # A cold open of the live database stays on CPU well past ten minutes.
+    # That is not a dead copier. After twenty minutes it is.
     if (worker.get('status') == 'STARTING' and process_age is not None
-            and process_age < 600):
+            and process_age < 1200):
         restart_problems = []
         noted.append('starting')
     return restart_problems, noted, {
@@ -152,6 +200,11 @@ def assess(now, state, http_ok, launch_wait=None, process_age=None, http_failure
         'mitch_step_age_s': _age(now, mitch_step),
         'copy_queue': copy_progress.get('queue'),
         'mitch_queue': mitch_progress.get('queue'),
+        'copy_backlog': copy_progress.get('backlog'),
+        'mitch_backlog': mitch_progress.get('backlog'),
+        'mitch_oldest_fresh_age_s': mitch_progress.get('oldest_fresh_age_s'),
+        'book_pool_ms': mitch_progress.get('book_pool_ms'),
+        'book_http_ms': mitch_progress.get('book_http_ms'),
     }
 
 
@@ -221,6 +274,7 @@ def main():
     age = process_age(now)
     restart_problems, noted, ages = assess(
         now, state, http_ok, launch_wait, process_age=age, http_failures=http_failures,
+        previous=previous,
     )
     action = 'ok'
     proof = load(ROOT / 'logs' / 'watchdog-restart.json', None)
