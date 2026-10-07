@@ -35,13 +35,13 @@
   "dead_en": [
     "S55 · ECONOMICS · jeden event / veto"
   ],
-  "error": "http 404 claude-sonnet-4-20250514",
-  "updated_at": "2026-10-07T13:28:30.517154+00:00",
-  "hunt_updated_at": "2026-10-07T13:28:16.045389+00:00",
+  "error": "http 400 claude-sonnet-4-20250514",
+  "updated_at": "2026-10-07T20:45:43.913114+00:00",
+  "hunt_updated_at": "2026-10-07T20:45:42.924909+00:00",
   "x_source": "error",
   "x_model": null,
   "x_error": "http 403 grok-4.6 {\"code\":\"permission-denied\",\"error\":\"Your newly created team doesn't have any credits or licenses yet. You can purchase those on https://conso",
   "x_pl": "Filtr X: błąd API. Zostają sity. Copy off.",
   "x_en": "X filter: API error. Gates stand. Copy off.",
-  "x_updated_at": "2026-10-07T13:28:30.640219+00:00"
+  "x_updated_at": "2026-10-07T20:45:44.140418+00:00"
 }
