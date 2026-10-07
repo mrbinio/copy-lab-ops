@@ -51,7 +51,9 @@ Te rewizje są na `mrbinio/copy-lab-ops`, gałąź `ops/btc-reconcile-2026-10-05
 - https://github.com/mrbinio/copy-lab-ops/commit/2e0130f6a9ab00132b8656802c67b0462cda6fb2
 - https://github.com/mrbinio/copy-lab-ops/tree/ops/btc-reconcile-2026-10-05
 
-Gałąź po wypchnięciu `6daf3dd..2e0130f` wskazuje `2e0130f`. W `mrbinio/polymarket-copy-lab` tych rewizji nie ma, bo ta praca jest w copy-lab-ops.
+Kod tej poprawki to `14aba51`, na tej gałęzi. W `mrbinio/polymarket-copy-lab` tych rewizji nie ma, bo ta praca jest w copy-lab-ops.
+
+- https://github.com/mrbinio/copy-lab-ops/commit/14aba5193a322e7e34f2609d4ca6a0b5bd062de7
 
 ## Niespełnione
 
