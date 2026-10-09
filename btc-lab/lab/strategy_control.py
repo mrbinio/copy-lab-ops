@@ -5,7 +5,10 @@ from .wallet_observer import SEED_WALLETS, PAPER_EXTRA
 
 COPY_IDS = tuple('copy-' + wallet for wallet in SEED_WALLETS + PAPER_EXTRA)
 
+# 9 Oct 2026: every own strategy lost after fees (about -73 USD on 206 trades
+# across five accounts). They stay as an archive and settle what is open.
 DEFAULT_PAUSED = {
+    'early-v1': True,
     'mid-window-v1': True,
     'mid-window-v2': True,
     'value-v1': True,

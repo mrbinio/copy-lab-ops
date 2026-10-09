@@ -131,6 +131,9 @@ class FastMatch:
     async def _try_all(self, tx):
         loop = asyncio.get_running_loop()
         calls = [loop.run_in_executor(RPC_POOL, self.lookup, url, tx) for url in self.urls]
+        for call in calls:
+            # The first answer wins. A slower endpoint's error is not news.
+            call.add_done_callback(lambda f: f.cancelled() or f.exception())
         for done in asyncio.as_completed(calls):
             try:
                 found = await done

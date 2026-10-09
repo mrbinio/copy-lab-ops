@@ -254,22 +254,26 @@ class WalletObserver:
         added = 0
         complete = False
         newest = previous.get('last_event_at')
-        for page in range(4):
-            query = urlencode(dict(user=wallet,start=start,end=end,limit=500,offset=page*500,sortBy='TIMESTAMP',sortDirection='DESC'))
-            rows = self.fetch('https://data-api.polymarket.com/activity?'+query)
+        from .data_api import fetch_rows
+        cursor = None
+        # v2 pages by cursor and has no 10,000-row offset wall. Twenty pages
+        # of 500 cover a busy seed for a day; more waits for the next poll.
+        for page in range(20):
+            rows, cursor = fetch_rows(self.fetch, 'activity', user=wallet, start=start, end=end, limit=500,
+                                      sortBy='TIMESTAMP', sortDirection='DESC', cursor=cursor)
             for row in rows:
                 ts = row.get('timestamp') if isinstance(row, dict) else None
                 if isinstance(ts, (int, float)) and (newest is None or ts > newest):
                     newest = ts
             added += self.ingest(wallet,rows,time.time())
-            if len(rows)<500:
+            if not cursor:
                 complete=True
                 break
         count = int(previous.get('unique_fingerprints') or 0) + added
         self.store.set(key,dict(wallet=wallet,status='POLL_OK' if complete else 'INCOMPLETE_PAGE_LIMIT',
             checked_at=time.time(),last_event_at=newest,unique_fingerprints=count,new_rows=added,
             cursor=end if complete else previous.get('cursor',start+120),
-            source='DATA_API_V1_INDEXED_ONCHAIN',poll_seconds=1,history_complete=False,
+            source='DATA_API_V2_INDEXED_ONCHAIN',poll_seconds=1,history_complete=False,
             identity_limitation='No log index; identical fills may collapse. Not a PnL ledger.',error=None))
 
     async def poll(self, wallet):

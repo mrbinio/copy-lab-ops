@@ -15,6 +15,8 @@ class RetirementTests(unittest.TestCase):
     def test_eth_and_other_baselines_unchanged_and_pause_respected(self):
         with tempfile.TemporaryDirectory() as d:
             worker=Worker(Store(Path(d)/'BTC.db'),d)
+            from lab.strategy_control import set_paused
+            set_paused(worker.store,'early-v1',False)
             with patch('lab.worker.choose',return_value=(None,'TEST')) as choose:
                 self.assertEqual(worker.choose_entry('mid-window-v1',{},None,{},200),(None,'STRATEGY_PAUSED'))
                 choose.assert_not_called()

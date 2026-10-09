@@ -665,9 +665,10 @@ class ChainBridge:
     def _poll_activity(self, wallet, since):
         start = max(0, int(since) - 30)
         end = int(self.clock()) + 5
-        query = urllib.parse.urlencode(dict(user=wallet, start=start, end=end,
-                                            limit=100, sortBy='TIMESTAMP', sortDirection='DESC'))
-        return self.fetch(f'{DATA_API}/activity?{query}')
+        from .data_api import fetch_rows
+        rows, _cursor = fetch_rows(self.fetch, 'activity', user=wallet, start=start, end=end,
+                                   limit=100, sortBy='TIMESTAMP', sortDirection='DESC')
+        return rows
 
     def status(self):
         return {'bridged': self.bridged, 'skipped': self.skipped, 'timeouts': self.timeouts,

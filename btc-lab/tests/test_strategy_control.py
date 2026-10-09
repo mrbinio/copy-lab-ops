@@ -13,12 +13,13 @@ class StrategyControlTests(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
-    def test_losing_strategies_start_paused_and_early_stays_on(self):
+    def test_every_own_strategy_starts_paused(self):
+        # 9 Oct 2026: early-v1 lost after fees like the others.
         state = pauses(self.store)
         self.assertTrue(state['mid-window-v1'])
         self.assertTrue(state['mid-window-v2'])
-        self.assertFalse(state['early-v1'])
-        self.assertFalse(is_paused(self.store, 'early-v1'))
+        self.assertTrue(state['early-v1'])
+        self.assertTrue(is_paused(self.store, 'early-v1'))
         self.assertNotIn('late-v1', state)
 
     def test_toggle_persists(self):

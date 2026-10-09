@@ -478,6 +478,13 @@ class MitchBookTests(unittest.TestCase):
         self.assertEqual(row['all_net_usd'], -9.000001)
         self.assertEqual(row['period_net_usd'], -0.000001)
 
+    def test_the_pause_file_stops_new_buys(self):
+        (Path(self.store.path).parent / 'PAUSE').write_text('telegram')
+        event = self.event(10)
+        with self.store.connect() as db:
+            _why, fill = self.engine.plan_buy(event, asks('0.50'), '0', '0.01', '1', 20_000_000)
+            self.assertEqual(self.engine.apply_buy(db, FIRST, 'stopped', event, fill, {}), 'GLOBAL_STOP')
+
     def test_a_clob_match_buy_inside_one_second_goes_to_the_book(self):
         self.store.set('mitch_copy_start', {'at': self.engine.clock() - 60, 'spec': 'mitch-copy-wallets-v1'})
         event = dict(self.event(10), _source='clob_match', _ts_basis='match')

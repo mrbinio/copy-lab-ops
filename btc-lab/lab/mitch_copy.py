@@ -453,7 +453,15 @@ class MitchCopy:
         )
         return payload
 
+    def stopped(self):
+        """The same PAUSE file that stops the other copiers. Sells and settlement go on."""
+        from pathlib import Path
+        return (Path(self.store.path).parent / 'PAUSE').exists()
+
     def apply_buy(self, db, wallet, key, event, fill, timing):
+        if self.stopped():
+            self._mark(db, wallet, key, 'GLOBAL_STOP', self._case(None, event, {'timing': timing}))
+            return 'GLOBAL_STOP'
         if self._is_paused(db, wallet):
             self._mark(db, wallet, key, 'MITCH_PAUSED', self._case(None, event, {
                 'timing': timing, 'reason': PAUSE_REASON,
@@ -990,13 +998,13 @@ class MitchCopy:
         loop = asyncio.get_running_loop()
         for wallet in WALLETS:
             try:
-                raw = await loop.run_in_executor(
-                    COPY, self.fetch, 'https://data-api.polymarket.com/positions?user=' + wallet,
+                from .data_api import fetch_rows
+                raw, _cursor = await loop.run_in_executor(
+                    COPY, lambda w=wallet: fetch_rows(self.fetch, 'positions', user=w, limit=500),
                 )
             except Exception:
                 continue
-            if isinstance(raw, list):
-                await loop.run_in_executor(DB, self._apply_anchor, wallet, raw)
+            await loop.run_in_executor(DB, self._apply_anchor, wallet, raw)
 
     def _apply_anchor(self, wallet, rows):
         now = self.clock()

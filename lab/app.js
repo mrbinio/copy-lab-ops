@@ -783,8 +783,19 @@ function mitchSignature(m){
     w:(m.wallets||[]).map(x=>[x.wallet,x.net_micro,x.paused,x.copies,x.open,x.reserved_micro,x.tradable_micro])
   });
 }
+function renderMitchFast(m){
+  const box=$('mitch-fast');if(!box)return;
+  const f=m&&m.fast;const st=m&&m.stint;
+  const parts=[];
+  if(st&&st.at)parts.push('Okres testu '+st.id+' od '+formatTime(st.at)+'. Pauza liczy tylko kopie z tego okresu; wynik od startu zostaje.');
+  if(f)parts.push('Szybka ścieżka (print CLOB → transakcja w mempoolu): '+f.prints+' printów, '+f.resolved+' odczytanych, '+f.missed+' chybionych, mediana '+(f.resolve_median_ms==null?'—':f.resolve_median_ms+' ms')+', transakcje Mitcha: '+f.watched+'.');
+  else parts.push('Szybka ścieżka: brak danych.');
+  box.textContent=parts.join(' ');
+}
+
 function renderMitch(s){
   const m=s.mitch_copy;
+  renderMitchFast(m);
   const sig=mitchSignature(m);
   if(sig===lastMitchSig)return;
   lastMitchSig=sig;

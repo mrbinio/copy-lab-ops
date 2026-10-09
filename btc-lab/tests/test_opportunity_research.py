@@ -69,7 +69,7 @@ class WalletTests(unittest.IsolatedAsyncioTestCase):
             st=Store(Path(d)/'lab.sqlite')
             import time
             r=dict(proxyWallet=WALLETS[0],timestamp=int(time.time())-2,transactionHash='abc',type='TRADE')
-            o=WalletObserver(st,lambda url:[r]*500)
+            o=WalletObserver(st,lambda url:{'data':[r]*500,'pagination':{'has_more':True,'next_cursor':'more'}})
             await o.poll(WALLETS[0])
             self.assertEqual(st.get('wallet_observer:'+WALLETS[0])['status'],'INCOMPLETE_PAGE_LIMIT')
             self.assertFalse(st.get('wallet_observer:'+WALLETS[0])['history_complete'])

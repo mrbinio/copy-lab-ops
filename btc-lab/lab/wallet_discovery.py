@@ -248,15 +248,16 @@ class WalletDiscovery:
         collected = []
         complete = False
         offset = 0
+        cursor = None
+        from .data_api import fetch_rows
         try:
             while offset <= ACTIVITY_OFFSET_CAP:
-                query = urlencode(dict(user=wallet, start=start, end=end, limit=ACTIVITY_PAGE_SIZE, offset=offset,
-                                       sortBy='TIMESTAMP', sortDirection='DESC'))
-                rows = await asyncio.to_thread(self.fetch, 'https://data-api.polymarket.com/activity?' + query)
-                if not isinstance(rows, list):
-                    break
+                rows, cursor = await asyncio.to_thread(
+                    fetch_rows, self.fetch, 'activity', user=wallet, start=start, end=end,
+                    limit=ACTIVITY_PAGE_SIZE, sortBy='TIMESTAMP', sortDirection='DESC', cursor=cursor,
+                )
                 collected.extend(rows)
-                if len(rows) < ACTIVITY_PAGE_SIZE:
+                if not cursor:
                     complete = True
                     break
                 stamps = []
@@ -277,17 +278,16 @@ class WalletDiscovery:
         return stats
 
     async def recent_tape(self):
+        from .data_api import fetch_rows
         found = []
+        cursor = None
         for page in range(TAPE_PAGES):
-            query = urlencode(dict(limit=500, offset=page * 500))
             try:
-                batch = await asyncio.to_thread(self.fetch, 'https://data-api.polymarket.com/trades?' + query)
+                batch, cursor = await asyncio.to_thread(fetch_rows, self.fetch, 'trades', limit=500, cursor=cursor)
             except Exception:
                 break
-            if not isinstance(batch, list):
-                break
             found.extend(parse_trades(batch))
-            if len(batch) < 500:
+            if not cursor:
                 break
         return found
 
@@ -295,12 +295,14 @@ class WalletDiscovery:
         previous = self.store.get('wallet_discovery', {})
         try:
             now = time.time()
-            month_q = urlencode(dict(category='CRYPTO', timePeriod='MONTH', orderBy='PNL', limit=50, offset=0))
-            week_q = urlencode(dict(category='CRYPTO', timePeriod='WEEK', orderBy='PNL', limit=50, offset=0))
-            month = self.parse(await asyncio.to_thread(self.fetch, 'https://data-api.polymarket.com/v1/leaderboard?' + month_q))
+            from .data_api import fetch_rows
+            def board(period):
+                return fetch_rows(self.fetch, 'leaderboard', category='CRYPTO', timePeriod=period,
+                                  orderBy='PNL', limit=50)[0]
+            month = self.parse(await asyncio.to_thread(board, 'MONTH'))
             week = {}
             try:
-                week = self.parse(await asyncio.to_thread(self.fetch, 'https://data-api.polymarket.com/v1/leaderboard?' + week_q))
+                week = self.parse(await asyncio.to_thread(board, 'WEEK'))
             except Exception:
                 week = {}
             tape = await self.recent_tape()
