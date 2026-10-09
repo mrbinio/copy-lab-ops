@@ -715,10 +715,11 @@ class Worker:
             from .wallet_chain_monitor import run_market_prints
             from . import fast_match
             from .mitch_copy import WALLETS as MITCH_WALLETS, submit_fast
-            fast=fast_match.FastMatch(MITCH_WALLETS, submit_fast)
+            from .wallet_chain_monitor import run_market_prints_thread
+            fast=fast_match.FastMatch(MITCH_WALLETS, fast_match.hand_to_loop(asyncio.get_running_loop(), submit_fast))
             fast_match.CURRENT=fast
-            LOG.info('fast lane: match print -> pending tx -> Mitch (%d rpc)', len(fast.urls))
-            prints=asyncio.create_task(run_market_prints(get_json, fast=fast))
+            LOG.info('fast lane: match print -> pending tx -> Mitch (%d rpc, own thread)', len(fast.urls))
+            prints=asyncio.create_task(asyncio.to_thread(run_market_prints_thread, get_json, fast))
         jobs={
             'reference': reference, 'flush': flush, 'warmer': warmer, 'pulse': pulse, 'lag': lag,
             'wallets': wallets, 'discovery': discovery,
@@ -755,7 +756,8 @@ class Worker:
                             jobs[name]=asyncio.create_task(monitor.run())
                         elif name=='prints':
                             from .wallet_chain_monitor import run_market_prints
-                            jobs[name]=asyncio.create_task(run_market_prints(get_json, fast=fast))
+                            from .wallet_chain_monitor import run_market_prints_thread
+                            jobs[name]=asyncio.create_task(asyncio.to_thread(run_market_prints_thread, get_json, fast))
                         elif name=='flush':
                             jobs[name]=asyncio.create_task(self.flush_references())
                         elif name=='warmer':

@@ -139,6 +139,30 @@ class FastLaneTests(unittest.TestCase):
         self.assertEqual(lane.status()['prints'], 1)
 
 
+class HandOffTests(unittest.TestCase):
+    def test_the_copy_runs_on_the_worker_loop_not_the_socket_loop(self):
+        import threading
+        from lab.fast_match import hand_to_loop
+        main = asyncio.new_event_loop()
+        ran = []
+        done = threading.Event()
+
+        async def sink(wallet, row, arrived):
+            ran.append((wallet, threading.current_thread().name))
+            done.set()
+
+        thread = threading.Thread(target=main.run_forever, name='worker-loop', daemon=True)
+        thread.start()
+        try:
+            asyncio.run(hand_to_loop(main, sink)('0xw', {}, 1.0))
+            self.assertTrue(done.wait(2))
+            self.assertEqual(ran, [('0xw', 'worker-loop')])
+        finally:
+            main.call_soon_threadsafe(main.stop)
+            thread.join(2)
+            main.close()
+
+
 class InsertTests(unittest.TestCase):
     def test_a_match_row_is_not_replaced_and_keeps_its_source(self):
         with tempfile.TemporaryDirectory() as tmp:

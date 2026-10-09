@@ -190,6 +190,18 @@ class FastMatch:
                     rpc=len(self.urls), at=self.clock())
 
 
+def hand_to_loop(loop, sink):
+    """A sink that runs on another loop. The lane does not wait for the copy."""
+    async def handed(wallet, row, arrived):
+        future = asyncio.run_coroutine_threadsafe(sink(wallet, row, arrived), loop)
+
+        def report(done):
+            if not done.cancelled() and done.exception() is not None:
+                LOG.warning('fast copy: %s', str(done.exception())[:200])
+        future.add_done_callback(report)
+    return handed
+
+
 def insert_row(store, wallet, body, detected_at):
     """Store the fill so the board, history and later rows see it. Returns the queue row."""
     from .wallet_chain_monitor import _row_key

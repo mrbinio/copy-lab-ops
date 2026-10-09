@@ -705,6 +705,16 @@ async def _window_tokens(fetch):
     return ids
 
 
+def run_market_prints_thread(fetch, fast=None):
+    """The market channel on its own thread and loop.
+
+    On the worker loop a database stall stopped reads long enough for the
+    server to close with 1013 slow consumer, and opening handshakes timed
+    out. This socket is the start of the fast lane, so it waits for nothing.
+    """
+    asyncio.run(run_market_prints(fetch, fast=fast))
+
+
 async def run_market_prints(fetch, sleep=asyncio.sleep, fast=None):
     """Public market channel. Stays up across windows. A print is not a wallet until the transfer matches."""
     import websockets
@@ -722,8 +732,20 @@ async def run_market_prints(fetch, sleep=asyncio.sleep, fast=None):
                 }))
                 last_ping = time.monotonic()
                 last_refresh = last_ping
+                quiet = 0
                 while True:
-                    raw = await asyncio.wait_for(ws.recv(), timeout=15)
+                    try:
+                        raw = await asyncio.wait_for(ws.recv(), timeout=10)
+                    except asyncio.TimeoutError:
+                        # A quiet book is not a dead socket. Ask, and leave
+                        # only after thirty seconds without a word.
+                        quiet += 1
+                        if quiet >= 3:
+                            raise
+                        await ws.send('PING')
+                        last_ping = time.monotonic()
+                        continue
+                    quiet = 0
                     now_m = time.monotonic()
                     if now_m - last_ping >= 10:
                         await ws.send('PING')
