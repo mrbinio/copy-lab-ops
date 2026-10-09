@@ -5,7 +5,7 @@ from decimal import Decimal
 from pathlib import Path
 from lab.core import Store
 from lab.mitch_copy import (
-    MitchCopy, WALLETS, copy_notional_usd, price_allows, sell_fraction, our_sell_shares,
+    MitchCopy, STINT, WALLETS, copy_notional_usd, price_allows, sell_fraction, our_sell_shares,
 )
 from lab.wallet_roster import bootstrap
 
@@ -441,12 +441,18 @@ class MitchBookTests(unittest.TestCase):
         row = next(item for item in published['wallets'] if item['wallet'] == FIRST)
         self.assertTrue(row['paused'])
         self.assertTrue(published['journal'])
+        self.assertLess(row['period_net_micro'], 0)
+        self.assertEqual(row['period_closed'], 1)
+        self.assertEqual(row['period_copies'], 1)
+        self.assertEqual(published['period_reasons'].get('MITCH_PAUSED'), 1)
+        self.assertIn('MITCH_PAUSED', {e['reason'] for e in published['period_events']})
+        self.assertFalse(published['stop_active'])
 
     def test_pause_stays_after_a_later_plus(self):
         with self.store.connect() as db:
             db.execute(
                 "INSERT INTO state VALUES ('mitch_pauses', ?) ON CONFLICT(key) DO UPDATE SET body=excluded.body",
-                (json.dumps({'wallets': {FIRST: {'paused': True, 'since': 1, 'reason': 'held', 'stint': 'fast-match-v1'}}}),),
+                (json.dumps({'wallets': {FIRST: {'paused': True, 'since': 1, 'reason': 'held', 'stint': STINT['id']}}}),),
             )
             trade = {
                 'id': 'win1', 'wallet': FIRST, 'status': 'CLOSED', 'opened': self.engine.clock(),

@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="pl" translate="no" class="notranslate">
-<head><meta charset="utf-8"><meta name="google" content="notranslate"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0b1018"><title>BTC Lab · PAPER</title><link rel="stylesheet" href="style.css?v=20261009-fast-match"><script defer src="app.js?v=20261009-fast-match"></script></head>
+<head><meta charset="utf-8"><meta name="google" content="notranslate"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0b1018"><title>BTC Lab · PAPER</title><link rel="stylesheet" href="style.css?v=20261009-dash-v2"><script defer src="app.js?v=20261009-dash-v2"></script></head>
 <body class="notranslate" translate="no">
 <aside class="sidebar"><a class="brand" href="#wynik"><span class="brand-mark">₿</span><span>BTC<span class="brand-light">LAB</span><small>PAPER</small></span></a>
 <p class="nav-label">WIDOK</p>
@@ -18,6 +18,7 @@
 <header><div class="breadcrumb">BTC Lab <span>/</span> <b id="tab-name">Portfele</b></div><div class="header-actions"><span id="clock">—</span><button id="language" class="small-button" aria-label="Change language">EN</button></div></header>
 <div id="ops-status" class="ops-status" role="status">Stan: brak danych</div>
 <nav class="project-tabs" aria-label="Projekty"><a href="#wynik">Kopiowanie</a><a href="#mitch">Mitch copy wallets</a><a href="#strategie">Strategie 5–15 min</a><a href="#dziennik">Historia</a></nav>
+<p id="stop-banner" class="stop-banner" hidden>STOP aktywny: nowe kupna są wstrzymane (Mitch, portfele, strategie). Sprzedaż i rozliczenia działają. Zdejmiesz go komendą /wznow w Telegramie.</p>
 <section class="page" id="wynik">
 <p id="demo-banner" class="demo-banner" hidden>NIEAKTUALNY PODGLĄD — to nie są bieżące wyniki usługi na porcie 8769.</p>
 <p class="paper-banner">PAPER — symulacja, nie prawdziwe pieniądze. Tylko kopiowane portfele. Własne strategie 5–15 min są na osobnej zakładce i nie wchodzą do tej liczby.</p>
@@ -55,7 +56,7 @@
 <section class="page" id="mitch" hidden>
 <p class="paper-banner">PAPER — osobna księga mitch-copy-wallets-v1. To nie jest wynik kwalifikacji portfeli. Symulacja, nie prawdziwe pieniądze. Tylko BTC Up/Down 15 min. Miha 5m nie jest kopiowany.</p>
 <p id="mitch-miha-note" class="metric-note"></p>
-<p id="mitch-fast" class="metric-note"></p>
+<div class="metrics" id="mitch-fast"></div>
 <section class="panel" id="mitch-book-panel"><div class="panel-heading"><div><h2>Arkusz — bid i ask</h2><p>To jest ostatni odczyt CLOB przy decyzji Mitcha. Brak bidu albo asku jest powodem, nie zgadywaniem.</p></div></div>
 <div id="mitch-book"></div></section>
 <div class="metrics" id="mitch-metrics"></div>
@@ -63,6 +64,11 @@
 <div id="mitch-bank"></div></section>
 <div id="mitch-wallets" class="strategy-grid"></div>
 <section class="panel" id="mitch-detail" hidden></section>
+<section class="panel" id="mitch-decisions-panel">
+<div class="panel-heading"><div><h2>Decyzje w okresie testu</h2><p>Każda transakcja Mitcha na BTC 15m i co z nią zrobiliśmy. Czas liczony od jego transakcji na giełdzie do naszej decyzji.</p></div><span class="chip" id="mitch-decisions-count">brak danych</span></div>
+<div class="table-scroll"><table><thead><tr><th>CZAS</th><th>PORTFEL</th><th>DECYZJA</th><th>STRONA</th><th>RYNEK</th><th>OD JEGO TRANSAKCJI</th></tr></thead><tbody id="mitch-decisions"></tbody></table></div>
+<p id="mitch-decisions-empty" class="metric-note" style="margin:12px 22px">Mitch jeszcze nie handlował w tym okresie.</p>
+</section>
 <section class="panel" id="mitch-trades-panel">
 <div class="panel-heading"><div><h2>Transakcje Mitcha</h2><p>Zamknięte kopie tej księgi. Zakup spóźniony albo z listy publicznej tu nie wejdzie.</p></div></div>
 <div class="table-scroll"><table><thead><tr><th>CZAS</th><th>PORTFEL</th><th>RYNEK</th><th>ŹRÓDŁO</th><th>KOPIA</th><th>STATUS</th><th>WYNIK</th></tr></thead><tbody id="mitch-trades"></tbody></table></div>

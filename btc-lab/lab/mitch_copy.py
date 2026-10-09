@@ -31,10 +31,13 @@ MAX_BUY_AGE = 1.0
 # clob_match: the exchange transaction read from the mempool right after the
 # market channel printed the match. Its time is the match time in ms.
 CHAIN_SOURCES = ('clob_match', 'order_filled', 'market_trade')
+# v2: Damian, 9 Oct 2026 ~19:00, after a lifetime pause was put back on the
+# release by another agent. The new period starts again from this deploy.
 STINT = {
-    'id': 'fast-match-v1',
+    'id': 'fast-match-v2',
     'note': 'Copies from the match print and the pending exchange transaction. '
-            'The book since start keeps the losses of the late public-list path.',
+            'The book since start keeps the losses of the late public-list path. '
+            'Damian chose a new test period on 9 Oct 2026.',
 }
 PAUSE_REASON = 'mitch-copy-wallets-v1 pause: closed copy period is negative'
 # Mitch did not name a paper bankroll. This only keeps the window caps
@@ -902,12 +905,44 @@ class MitchCopy:
                 row['reserved_micro'] = reserved
                 row['tradable_micro'] = tradable_cash(cash, reserved)
             pauses = self.refresh_pauses(db)
+            stint = self.stint(db)
+            stint_at = float(stint['at']) if stint else None
             for row in wallets:
                 hold = (pauses.get('wallets') or {}).get(row['wallet']) or {}
                 row['paused'] = bool(hold.get('paused'))
                 row['pause_reason'] = hold.get('reason')
                 row['pause_today_net_usd'] = hold.get('today_net_usd')
                 row['pause_all_net_usd'] = hold.get('all_net_usd')
+                inside = [p for p in closed if p.get('wallet') == row['wallet']
+                          and stint_at is not None and float(p.get('opened') or 0) >= stint_at]
+                row['period_net_micro'] = sum(int(p['pnl_micro']) for p in inside)
+                row['period_closed'] = len(inside)
+                row['period_copies'] = db.execute(
+                    "SELECT COUNT(*) FROM mitch_events WHERE wallet=? AND reason IN ('MITCH_BUY','MITCH_ADD') AND at>=?",
+                    (row['wallet'], stint_at or now),
+                ).fetchone()[0]
+            period_events = []
+            period_reasons = {}
+            if stint_at is not None:
+                for reason, count in db.execute(
+                    "SELECT reason, COUNT(*) FROM mitch_events WHERE at>=? AND reason!='AWAITING_SOURCE_PRICE' GROUP BY reason",
+                    (stint_at,),
+                ):
+                    period_reasons[reason] = int(count)
+                for e in db.execute(
+                    "SELECT wallet, reason, body, at FROM mitch_events WHERE at>=? AND reason NOT IN "
+                    "('AWAITING_SOURCE_PRICE','NOT_BTC_15M','MITCH_SKIP_5M','HISTORICAL_BEFORE_START') "
+                    "ORDER BY at DESC LIMIT 25",
+                    (stint_at,),
+                ):
+                    body = json.loads(e[2] or '{}')
+                    timing = body.get('timing') or {}
+                    period_events.append({
+                        'at': e[3], 'wallet': e[0], 'reason': e[1], 'side': body.get('side'),
+                        'market': body.get('market'), 'total_ms': timing.get('total_ms'),
+                        'detect_ms': timing.get('detect_ms'), 'book_ms': timing.get('book_ms'),
+                        'source': body.get('source') or timing.get('source_precision'),
+                    })
             from .profit_bank import bank_snapshot
             bank = bank_snapshot(db)
             latency_rows, missing_timing = self._executed_timings(db)
@@ -936,6 +971,9 @@ class MitchCopy:
             'max_buy_age_s': MAX_BUY_AGE,
             'stint': self.stint(),
             'fast': fast_status(),
+            'stop_active': self.stopped(),
+            'period_reasons': period_reasons,
+            'period_events': period_events,
             'journal': [{
                 'at': p.get('closed_at'), 'wallet': p.get('wallet'),
                 'slug': p.get('slug'), 'status': p.get('status'),

@@ -783,14 +783,65 @@ function mitchSignature(m){
     w:(m.wallets||[]).map(x=>[x.wallet,x.net_micro,x.paused,x.copies,x.open,x.reserved_micro,x.tradable_micro])
   });
 }
+const MITCH_REASON={
+  MITCH_BUY:['Kupiono','ok'],MITCH_ADD:['Dokupiono','ok'],MITCH_SELL:['Sprzedano','ok'],
+  LATE_BUY_NOT_COPIED:['Za późno (ponad 1 s)','skip'],PRICE_WORSE_THAN_10C:['Cena gorsza o ponad 10¢','skip'],
+  MITCH_PAUSED:['Portfel na pauzie','stop'],GLOBAL_STOP:['STOP z Telegrama','stop'],WINDOW_LIMIT:['Limit okna wyczerpany','skip'],
+  NO_LIQUIDITY:['Za mała płynność','skip'],NO_ASK:['Brak ofert sprzedaży','skip'],BOOK_STALE:['Arkusz nieaktualny','skip'],
+  BOOK_WAIT_TOO_LONG:['Arkusz przyszedł za wolno','skip'],MITCH_NEED_CHAIN:['Brak jego ceny z giełdy','skip'],
+  SOURCE_TIME_UNKNOWN:['Nieznany czas jego transakcji','skip'],MARKET_CLOSED:['Rynek zamknięty','skip'],
+  FEE_UNCONFIRMED:['Opłata niepotwierdzona','skip'],SOURCE_PROPORTION_UNKNOWN:['Nieznana część sprzedaży','skip'],
+  LATE_SELL_RECONCILED:['Spóźniona sprzedaż, wg bieżącego arkusza','ok'],MITCH_LEDGER_HOLD:['Księga się nie zgadza','stop']
+};
+function mitchMetric(label,value,note,cls){
+  const card=node('article',undefined,'metric');
+  card.append(node('div',label,'metric-label'));
+  card.append(node('div',value,'metric-value small'+(cls?' '+cls:'')));
+  if(note)card.append(node('div',note,'metric-note'));
+  return card;
+}
 function renderMitchFast(m){
+  const banner=$('stop-banner');if(banner)banner.hidden=!(m&&m.stop_active);
   const box=$('mitch-fast');if(!box)return;
   const f=m&&m.fast;const st=m&&m.stint;
-  const parts=[];
-  if(st&&st.at)parts.push('Okres testu '+st.id+' od '+formatTime(st.at)+'. Pauza liczy tylko kopie z tego okresu; wynik od startu zostaje.');
-  if(f)parts.push('Szybka ścieżka (print CLOB → transakcja w mempoolu): '+f.prints+' printów, '+f.resolved+' odczytanych, '+f.missed+' chybionych, mediana '+(f.resolve_median_ms==null?'—':f.resolve_median_ms+' ms')+', transakcje Mitcha: '+f.watched+'.');
-  else parts.push('Szybka ścieżka: brak danych.');
-  box.textContent=parts.join(' ');
+  const rows=m&&Array.isArray(m.wallets)?m.wallets:[];
+  box.replaceChildren();
+  const age=f&&f.at?Date.now()/1000-f.at:null;
+  const live=f&&f.prints>0&&age!=null&&age<60;
+  box.append(mitchMetric('Szybka ścieżka',!f?missing():live?'działa':'czeka',
+    f?(f.prints+' printów · '+f.resolved+' odczytanych · '+f.missed+' chybionych'):'Brak statusu.',live?'positive':f?'':'negative'));
+  box.append(mitchMetric('Odczyt jego transakcji',f&&f.resolve_median_ms!=null?Math.round(f.resolve_median_ms)+' ms':missing(),
+    f&&f.resolve_p90_ms!=null?'mediana · p90 '+Math.round(f.resolve_p90_ms)+' ms · cel: decyzja poniżej 1 s':'Od printu CLOB do odczytu transakcji.'));
+  const copies=rows.reduce((n,r)=>n+(r.period_copies||0),0);
+  const net=rows.reduce((n,r)=>n+(r.period_net_micro||0),0);
+  box.append(mitchMetric('Okres testu: wynik',rows.length?money(net/1e6,true):missing(),
+    copies+' kopii · '+rows.reduce((n,r)=>n+(r.period_closed||0),0)+' zamkniętych',net>0?'positive':net<0?'negative':''));
+  box.append(mitchMetric('Okres testu od',st&&st.at?formatTime(st.at):missing(),
+    'Pauza liczy tylko ten okres. Wynik od startu zostaje poniżej.'));
+  renderMitchDecisions(m);
+}
+function renderMitchDecisions(m){
+  const body=$('mitch-decisions');if(!body)return;
+  const rows=m&&Array.isArray(m.period_events)?m.period_events:[];
+  const labels={};for(const w of (m&&m.wallets)||[])labels[w.wallet]=w.label;
+  const sig=JSON.stringify(rows.map(r=>[r.at,r.reason]));
+  if(body.dataset.sig===sig)return;
+  body.dataset.sig=sig;
+  body.replaceChildren();
+  const empty=$('mitch-decisions-empty');if(empty)empty.hidden=!!rows.length;
+  const count=$('mitch-decisions-count');
+  if(count){const r=m&&m.period_reasons||{};const bought=(r.MITCH_BUY||0)+(r.MITCH_ADD||0);count.textContent=bought+' kopii · '+Object.values(r).reduce((a,b)=>a+b,0)+' decyzji';}
+  for(const row of rows){
+    const [text,kind]=MITCH_REASON[row.reason]||[row.reason,'skip'];
+    const tr=document.createElement('tr');
+    tr.append(node('td',formatTime(row.at)));
+    tr.append(node('td',labels[row.wallet]||String(row.wallet||'').slice(-8)));
+    tr.append(node('td',text,'decision-'+kind));
+    tr.append(node('td',row.side==='BUY'?'kupno':row.side==='SELL'?'sprzedaż':(row.side||'—')));
+    tr.append(node('td',row.market||'—'));
+    tr.append(node('td',row.total_ms==null?'—':Math.round(row.total_ms)+' ms'));
+    body.append(tr);
+  }
 }
 
 function renderMitch(s){
@@ -840,8 +891,10 @@ function renderMitch(s){
       const net=row.net_micro;
       const card=node('article',undefined,'strategy-card wallet-tile'+(row.paused?' paused':'')+(net>0?' profit':net<0?' loss':''));
       card.append(node('h3',row.label||String(row.wallet||'').slice(-8)));
-      card.append(node('p','Wynik: '+(net==null?missing():money(net/1e6,true))));
-      if(row.paused)card.append(node('p','ZAKUPY WSTRZYMANE. Ujemny zamknięty wynik. Sprzedaż i rozliczenie zostają.'));
+      const pnet=row.period_net_micro;
+      card.append(node('p','Okres testu: '+(pnet==null?missing():money(pnet/1e6,true))+' · '+(row.period_copies||0)+' kopii, '+(row.period_closed||0)+' zamkniętych'));
+      card.append(node('p','Od startu: '+(net==null?missing():money(net/1e6,true))));
+      if(row.paused)card.append(node('p','ZAKUPY WSTRZYMANE: minus w okresie testu albo dziś. Sprzedaż i rozliczenie zostają. Nie zdejmuje się sama.'));
       const since=row.spent_since_start_micro==null?missing():money(row.spent_since_start_micro/1e6);
       const wins=Array.isArray(row.windows)?row.windows:[];
       const current=wins.find(item=>item.open);
@@ -855,7 +908,7 @@ function renderMitch(s){
         const detail=$('mitch-detail');
         if(!detail)return;
         detail.hidden=false;
-        detail.replaceChildren(node('h2',row.label||''),node('p',row.wallet||''),node('p','Wynik zamknięty: '+(net==null?missing():money(net/1e6,true))),node('p',row.paused?'Zakupy wstrzymane.':'Zakupy dozwolone tylko z łańcucha poniżej 1 s.'));
+        detail.replaceChildren(node('h2',row.label||''),node('p',row.wallet||''),node('p','Wynik zamknięty: '+(net==null?missing():money(net/1e6,true))),node('p',row.paused?'Zakupy wstrzymane.':'Zakupy tylko z jego transakcji na giełdzie, decyzja poniżej 1 s od niej.'));
       };
       tiles.append(card);
     }
@@ -886,7 +939,7 @@ function renderMitch(s){
   extra.replaceChildren();
   if(!m){extra.append(node('p','Brak danych. Założenia i opóźnienia pojawią się po pierwszym zapisie projektu.'));return;}
   extra.append(node('p','Księga Mitcha: '+(m.health||'brak kontroli')+(m.breaks&&m.breaks.length?' · '+m.breaks.map(b=>String(b.wallet||'').slice(-8)+' różnica gotówki '+(b.cash_minus_capital_ledger)+', księgi '+(b.book_minus_capital_pnl)).join('; '):'')));
-  extra.append(node('p','Zakup tylko z OrderFilled albo dopasowanego printu, poniżej 1 s. Lista publiczna nie jest ceną zakupu.'));
+  extra.append(node('p','Zakup tylko z jego transakcji odczytanej z giełdy (mempool, paragon albo print), poniżej 1 s od niej. Lista publiczna nie jest ceną zakupu.'));
   extra.append(node('p','Oczekiwanie na potwierdzenie ceny: '+(m.awaiting_price==null?missing():String(m.awaiting_price))));
   const reasons=m.reasons||{};
   const reasonText=Object.keys(reasons).length?Object.entries(reasons).map(([k,v])=>k+' '+v).join(' · '):'brak decyzji';

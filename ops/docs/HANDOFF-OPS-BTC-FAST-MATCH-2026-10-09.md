@@ -69,3 +69,10 @@ Stare, niezwiązane z tymi zmianami: `test_skip_review.py` (3 failures również
 2. Book przez WebSocket zamiast HTTP (~100–130 ms oszczędności).
 3. Kwalifikator na tę samą szybką ścieżkę (dziś 90 s + publiczna lista).
 4. Własny portfel i wykonanie LIVE: dopiero po dodatnim okresie PAPER na szybkiej ścieżce.
+
+## Aktualizacja 9.10 ~19:00 — decyzje Damiana
+
+- O 17:59 agent w Cursorze wgrał na wydanie pauzę liczoną od startu (`HANDOFF-OPS-BTC-MITCH-PAUSE-HOLD-2026-10-09.md`). Damian zdecydował: **nowy okres testu zostaje**. Okres podbity do `fast-match-v2` od tego wdrożenia, żeby pauzy z 17:59 zeszły jeden raz.
+- Damian zdecydował też: **kod zmienia, wdraża i restartuje tylko jeden agent (Claude Code)**. Cursor może czytać i sprawdzać, ale nie wdraża i nie restartuje.
+- Pulpit, zakładka Mitch: pasek szybkiej ścieżki, wynik w okresie testu obok wyniku od startu, tabela „Decyzje w okresie testu” z czasem od jego transakcji, globalny baner STOP.
+- Klucz prywatny CLOB usunięty z `config.json` przez Damiana. Telegram (@btclab_damian_bot) połączony.
