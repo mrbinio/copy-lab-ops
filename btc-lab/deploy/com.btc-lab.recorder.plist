@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.btc-lab.recorder</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Users/damianbiniarz/Library/Application Support/BTC Lab/releases/b009e2b8b429-1790926011187411000/venv/bin/python</string>
+		<string>-m</string>
+		<string>lab.hires_recorder</string>
+		<string>/Users/damianbiniarz/Library/Application Support/BTC Lab</string>
+	</array>
+	<key>WorkingDirectory</key>
+	<string>/Users/damianbiniarz/Library/Application Support/BTC Lab/releases/b009e2b8b429-1790926011187411000/btc-lab</string>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+	<key>ThrottleInterval</key>
+	<integer>30</integer>
+	<key>Nice</key>
+	<integer>10</integer>
+	<key>LowPriorityIO</key>
+	<true/>
+	<key>StandardErrorPath</key>
+	<string>/Users/damianbiniarz/Library/Application Support/BTC Lab/logs/recorder.err</string>
+	<key>StandardOutPath</key>
+	<string>/Users/damianbiniarz/Library/Application Support/BTC Lab/logs/recorder.out</string>
+</dict>
+</plist>

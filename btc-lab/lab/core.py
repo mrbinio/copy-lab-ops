@@ -280,6 +280,20 @@ class Store:
                 if a['cash'] < 0 or a['cash'] != a['initial']+delta:
                     raise LedgerError("ledger cash invariant violated")
 
+    def _recorder_status(self):
+        """Research recorder heartbeat (com.btc-lab.recorder). It never trades."""
+        try:
+            path = Path(self.path).resolve().parent.parent / 'logs' / 'recorder-status.json'
+            data = json.loads(path.read_text())
+        except Exception:
+            return {'ok': None, 'note': 'no_recorder_status'}
+        ages = data.get('last_age_s') or {}
+        stale = [k for k in ('polymarket', 'binance', 'rtds') if (ages.get(k) is None or ages.get(k) > 120)]
+        fresh = time.time() - float(data.get('at') or 0) < 120
+        return {'ok': bool(fresh and not stale and not data.get('paused')), 'stale': stale,
+                'paused': data.get('paused'), 'bytes': data.get('bytes'),
+                'started_at': data.get('started_at'), 'at': data.get('at')}
+
     def _telegram_status(self):
         """Bot heartbeat from its own state file. The token is never read here."""
         root = Path(self.path).resolve().parent.parent
@@ -381,7 +395,7 @@ class Store:
             trades.append({**{k:t.get(k) for k in ('strategy','market','side','shares','cost','fee','exit_fee','opened','status','payout')},'id':'copy:'+t['id'],'resolved':t.get('closed_at')})
         trades=sorted(trades,key=lambda t:t['opened'],reverse=True)[:300]
         from .strategy_control import pauses as strategy_pauses
-        return {"wallet_copy_execution":copies,"wallet_copy_health":self.get("wallet_copy_health",{}),"wallet_copy_progress":self.get("wallet_copy_progress",{}),"mitch_progress":self.get("mitch_progress",{}),"task_health":self.get("task_health",{}),"mitch_health":self.get("mitch_health",{}),"mitch_copy":mitch,"clock_status":self.get("clock_status",{}),"service_watch":self.get("service_watch",{}),"chain_status":self.get("chain_status",{}),"tunnel_status":self._tunnel_status(),"telegram_status":self._telegram_status(),"wallet_copy_error":self.get("wallet_copy_error",{}),"wallet_observer":wallets,"wallet_activity_recent":wallet_events,"wallet_discovery":self.get("wallet_discovery",{}),"wallet_roster":self.get("wallet_roster",{}),"opportunity_research":self.get("opportunity_research",{}),"value_surface_execution":experiment,"asset":self.asset,"mode":"PAPER","live_enabled":False,"accounts":accounts,"trades":trades,"decisions":decisions,
+        return {"wallet_copy_execution":copies,"wallet_copy_health":self.get("wallet_copy_health",{}),"wallet_copy_progress":self.get("wallet_copy_progress",{}),"mitch_progress":self.get("mitch_progress",{}),"task_health":self.get("task_health",{}),"mitch_health":self.get("mitch_health",{}),"mitch_copy":mitch,"clock_status":self.get("clock_status",{}),"service_watch":self.get("service_watch",{}),"chain_status":self.get("chain_status",{}),"tunnel_status":self._tunnel_status(),"telegram_status":self._telegram_status(),"recorder_status":self._recorder_status(),"wallet_copy_error":self.get("wallet_copy_error",{}),"wallet_observer":wallets,"wallet_activity_recent":wallet_events,"wallet_discovery":self.get("wallet_discovery",{}),"wallet_roster":self.get("wallet_roster",{}),"opportunity_research":self.get("opportunity_research",{}),"value_surface_execution":experiment,"asset":self.asset,"mode":"PAPER","live_enabled":False,"accounts":accounts,"trades":trades,"decisions":decisions,
                 "observations":count,"labels":labels,"worker":self.get("worker",{}),"market":self.get("market",{}),
                 "reference":self.get("reference",{}),"model":self.get("model",{"status":"COLLECTING","samples":0}),
                 "price_history":self.get("price_history",[]),"strategy_pauses":strategy_pauses(self),"profit_bank":bank,"generated_at":time.time()}

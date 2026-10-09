@@ -904,6 +904,9 @@ function renderOverview(s){
     sys.append(ovRow('Zegar',(clk.status||'—')+(clk.offset_ms!=null?' · '+Math.round(clk.offset_ms)+' ms':''),clk.status==='synced'));
     sys.append(ovRow('Telegram',tg.ok?'połączony':tg.configured?'brak odpowiedzi':'nie skonfigurowany',tg.ok?true:tg.configured?false:null));
     sys.append(ovRow('Tunel zdalny',tun.edge_connected?'połączony':tun.edge_connected===false?'rozłączony':'—',tun.edge_connected===true?true:tun.edge_connected===false?false:null));
+    const rec=s.recorder_status||{};
+    const recDays=rec.started_at?((now-rec.started_at)/86400).toFixed(1):null;
+    sys.append(ovRow('Rejestrator danych (badania)',rec.ok==null?'nie działa':rec.ok?('zapis od '+recDays+' dni · '+(rec.bytes/1e9).toFixed(2)+' GB'):(rec.paused?'wstrzymany: mało miejsca':'brak danych: '+(rec.stale||[]).join(', ')),rec.ok==null?null:!!rec.ok));
     sys.append(ovRow('STOP z Telegrama',m.stop_active?'AKTYWNY':'nie',m.stop_active?false:true));
     sys.append(ovRow('Tryb','PAPER · LIVE wyłączone',!s.live_enabled));
   }

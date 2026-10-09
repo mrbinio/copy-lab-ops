@@ -429,10 +429,8 @@ class MitchCopy:
                 closed = trade.get('closed_at')
                 if closed and datetime.fromtimestamp(float(closed), STOCKHOLM).date().isoformat() == today:
                     today_net += pnl
-            should = known and (period_net < 0 or today_net < 0)
+            should = known and (period_net < 0 or today_net < 0 or all_net < 0)
             old = previous.get(wallet) or {}
-            if old.get('stint') != stint_id:
-                old = {}
             if should:
                 wallets[wallet] = {
                     'paused': True,

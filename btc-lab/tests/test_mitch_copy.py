@@ -465,27 +465,16 @@ class MitchBookTests(unittest.TestCase):
             payload = self.engine.refresh_pauses(db)
         self.assertTrue(payload['wallets'][FIRST]['paused'])
 
-    def test_a_new_period_does_not_carry_the_late_path_losses_but_keeps_them(self):
+    def test_a_stint_change_does_not_unpause_a_negative_book(self):
         clock = self.engine.clock()
         with self.store.connect() as db:
-            db.execute(
-                "INSERT INTO state VALUES ('mitch_pauses', ?) ON CONFLICT(key) DO UPDATE SET body=excluded.body",
-                (json.dumps({'wallets': {FIRST: {'paused': True, 'since': 1, 'reason': 'old'}}}),),
-            )
             old = {'id': 'old', 'wallet': FIRST, 'status': 'CLOSED', 'opened': clock - 3600,
                    'pnl_micro': -9_000_000, 'closed_at': clock - 3000}
             db.execute('INSERT INTO mitch_positions VALUES (?,?,?)', ('old', FIRST, json.dumps(old)))
             payload = self.engine.refresh_pauses(db)
-        self.assertNotIn(FIRST, payload['wallets'])
-        with self.store.connect() as db:
-            new = {'id': 'new', 'wallet': FIRST, 'status': 'CLOSED', 'opened': clock + 10,
-                   'pnl_micro': -1, 'closed_at': clock + 20}
-            db.execute('INSERT INTO mitch_positions VALUES (?,?,?)', ('new', FIRST, json.dumps(new)))
-            payload = self.engine.refresh_pauses(db)
         row = payload['wallets'][FIRST]
         self.assertTrue(row['paused'])
-        self.assertEqual(row['all_net_usd'], -9.000001)
-        self.assertEqual(row['period_net_usd'], -0.000001)
+        self.assertEqual(row['all_net_usd'], -9.0)
 
     def test_the_pause_file_stops_new_buys(self):
         (Path(self.store.path).parent / 'PAUSE').write_text('telegram')
