@@ -16,7 +16,7 @@ from .wallet_observer import get_active_wallets, wallet_label
 from .strategy_control import is_paused as copy_paused, pauses as copy_pauses
 from .wallet_roster import buy_pause_reason, pause_if_period_negative, period_results_for_pause
 from .copy_totals import paper_board, summarize as copy_summarize, path_stats, path_record
-from .profit_bank import ensure_reserved_column, lock_profit, reserved_of, tradable_cash
+from .profit_bank import ensure_reserved_column, lock_profit, rebuild_high_water, reserved_of, tradable_cash
 from .wallet_watch import build_watch
 from .copy_policy import POLICY, band_reason, confirmed_source_price, decide_buy, decide_sell, remember_fill
 
@@ -447,7 +447,11 @@ class WalletCopy:
     # Max total CLOB exposure across all open orders (safety cap)
     CLOB_MAX_EXPOSURE_USD = 10.0
 
-    def __init__(self,store,fetch,paused=lambda:False,clock=time.time,sleep=asyncio.sleep,clob_client=None):
+    def __init__(self,store,fetch,paused=lambda:False,clock=time.time,sleep=asyncio.sleep,clob_client=None,buys_enabled=True):
+        # Damian, 9 Oct 2026: new qualifier buys stop. A copy up to 90 s after
+        # the public list is the tail, not the edge. Sells, settlement,
+        # observation and discovery go on.
+        self.buys_enabled=buys_enabled
         self.store,self.fetch,self.paused,self.clock,self.sleep=store,fetch,paused,clock,sleep
         self.clob_client = clob_client
         self._clob_exposure_usd = 0.0  # running total of CLOB orders placed
@@ -466,6 +470,7 @@ class WalletCopy:
             db.execute("UPDATE wallet_copy_events SET reason='ABORTED_ON_RESTART' WHERE reason='PROCESSING'")
             db.execute('CREATE INDEX IF NOT EXISTS wallet_copy_events_wallet_ts ON wallet_copy_events(wallet, ts)')
             ensure_reserved_column(db, 'wallet_copy_accounts')
+            rebuild_high_water(db, 'wallet_copy_accounts', 'wallet_copy_positions')
         if not store.get('wallet_copy_start',{}):store.set('wallet_copy_start',{'at':clock()})
         self.started=store.get('wallet_copy_start',{})['at']
         try:
@@ -550,7 +555,7 @@ class WalletCopy:
         totals=copy_summarize(trades,copy_pauses(self.store),now,observed=len(get_active_wallets(self.store)),copy_wallets=list(get_active_wallets(self.store)),roster=roster_state)
         board=paper_board(trades,roster_state,copy_pauses(self.store),now)
         self.store.set(KEY,dict(spec='wallet-signal-copy-v1',status=status,error=error,updated_at=now,started_at=self.started,board=board,
-            mode='PAPER + CLOB' if self.clob_client else 'PAPER ONLY',accounts=accounts,recent_trades=[public_trade(t) for t in sorted(trades,key=lambda t:t['opened'],reverse=True)[:100]],
+            mode='PAPER + CLOB' if self.clob_client else 'PAPER ONLY',buys_enabled=self.buys_enabled,accounts=accounts,recent_trades=[public_trade(t) for t in sorted(trades,key=lambda t:t['opened'],reverse=True)[:100]],
             trades_truncated=len(trades)>100,reasons=reasons,recent_decisions=recent,
             skip_review=self._scan['skip'],recent_errors=errors,entry_policy='copy-immediate-v7',
             totals=totals,path_ms=path_stats(samples[-200:]),
@@ -865,6 +870,8 @@ class WalletCopy:
             # or the official settlement path, which never enters this function.
             if kind=='BUY' and self.paused():
                 self.reason(row,'PAUSED');return {'stop':True}
+            if kind=='BUY' and not self.buys_enabled:
+                self.reason(row,'QUALIFIER_BUYS_OFF');return {'stop':True}
             if kind=='BUY':
                 roster_state=((self.store.get('wallet_roster') or {}).get('wallets') or {}).get(wallet,{}).get('state')
                 if roster_state not in ('paper_test','paper_active','paused','observed'):

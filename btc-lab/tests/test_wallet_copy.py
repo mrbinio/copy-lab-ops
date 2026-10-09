@@ -108,6 +108,10 @@ class CopyTests(unittest.TestCase):
         self.now=1102;self.process(self.row());self.assertEqual(self.reason(),'COPY_PAUSED')
         self.assertEqual(self.state()['accounts'][0]['trades'],0)
         self.assertGreaterEqual(self.book_calls,1)
+    def test_qualifier_buys_off_blocks_a_buy_only(self):
+        self.engine.buys_enabled=False
+        self.now=1102;self.process(self.row());self.assertEqual(self.reason(),'QUALIFIER_BUYS_OFF')
+        self.assertEqual(self.state()['accounts'][0]['trades'],0)
     def test_token_fee_pause_and_unsupported_rejected(self):
         self.now=1102;self.pause=True;self.process(self.row());self.assertEqual(self.reason(),'PAUSED')
         self.pause=False;row=self.row('wrong');body=json.loads(row['body']);body['asset']='9';row['body']=json.dumps(body);self.process(row);self.assertEqual(self.reason(),'ERROR')

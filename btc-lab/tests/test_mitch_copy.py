@@ -369,7 +369,10 @@ class MitchBookTests(unittest.TestCase):
         with self.store.connect() as db:
             added = lock_profit(db, 'mitch_accounts', FIRST, 10_000_000)
             self.assertEqual(added, 4_000_000)
-            self.assertEqual(reserved_of(db, 'mitch_accounts', FIRST), 4_000_000)
+            # The reserve sits on the ledger, not on one account.
+            self.assertEqual(reserved_of(db, 'mitch_accounts', FIRST), 0)
+            self.assertEqual(lock_profit(db, 'mitch_accounts', FIRST, -10_000_000), 0)
+            self.assertEqual(lock_profit(db, 'mitch_accounts', FIRST, 10_000_000), 0)
             bank = bank_snapshot(db)
         self.assertEqual(bank['mitch_reserved_micro'], 4_000_000)
         self.assertFalse(bank['live'])

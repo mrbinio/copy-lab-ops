@@ -16,7 +16,7 @@ from zoneinfo import ZoneInfo
 
 from .core import simulate_fill
 from .profit_bank import (
-    RESERVE_PCT, ensure_reserved_column, lock_profit, reserved_of, tradable_cash,
+    RESERVE_PCT, ensure_reserved_column, lock_profit, rebuild_high_water, reserved_of, tradable_cash,
 )
 
 log = logging.getLogger('lab.mitch')
@@ -284,6 +284,7 @@ class MitchCopy:
             if 'baseline' not in columns:
                 db.execute('ALTER TABLE mitch_source ADD COLUMN baseline TEXT')
             ensure_reserved_column(db, 'mitch_accounts')
+            rebuild_high_water(db, 'mitch_accounts', 'mitch_positions')
             self.refresh_pauses(db)
             for wallet in WALLETS:
                 db.execute(

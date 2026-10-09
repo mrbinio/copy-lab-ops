@@ -1,25 +1,34 @@
 <!doctype html>
 <html lang="pl" translate="no" class="notranslate">
-<head><meta charset="utf-8"><meta name="google" content="notranslate"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0b1018"><title>BTC Lab · PAPER</title><link rel="stylesheet" href="style.css?v=20261009-dash-v2"><script defer src="app.js?v=20261009-dash-v2"></script></head>
+<head><meta charset="utf-8"><meta name="google" content="notranslate"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0b1018"><title>BTC Lab · PAPER</title><link rel="stylesheet" href="style.css?v=20261009-overview"><script defer src="app.js?v=20261009-overview"></script></head>
 <body class="notranslate" translate="no">
 <aside class="sidebar"><a class="brand" href="#wynik"><span class="brand-mark">₿</span><span>BTC<span class="brand-light">LAB</span><small>PAPER</small></span></a>
 <p class="nav-label">WIDOK</p>
 <nav aria-label="Main navigation">
-<a class="nav-item active" href="#wynik"><span>◈</span><b>Portfele</b></a>
+<a class="nav-item active" href="#przeglad"><span>◆</span><b>Przegląd</b></a>
 <a class="nav-item" href="#mitch"><span>▣</span><b>Mitch</b></a>
+<a class="nav-item" href="#wynik"><span>◈</span><b>Portfele</b></a>
 <a class="nav-item" href="#dziennik"><span>≋</span><b>Historia</b></a>
-<a class="nav-item" href="#obserwacje"><span>◉</span><b>Obserwacje</b></a>
-<a class="nav-item" href="#kandydaci"><span>⌕</span><b>Kandydaci</b></a>
-<a class="nav-item" href="#strategie"><span>⊞</span><b>5–15 min</b></a>
-<a class="nav-item" href="#diagnostyka"><span>◎</span><b>Diagnostyka</b></a>
+<a class="nav-item" href="#obserwacje"><span>⌕</span><b>Odkrywanie</b></a>
+<a class="nav-item" href="#diagnostyka"><span>◎</span><b>System</b></a>
+<a class="nav-item" href="#strategie"><span>⊞</span><b>Archiwum</b></a>
 </nav>
 <div class="sidebar-bottom"><strong>PAPER — symulacja, nie prawdziwe pieniądze</strong><p>Port 8769. To nie jest saldo giełdy i nie są to prawdziwe zlecenia.</p><div class="build"><span id="service-version">—</span></div></div></aside>
 <main>
-<header><div class="breadcrumb">BTC Lab <span>/</span> <b id="tab-name">Portfele</b></div><div class="header-actions"><span id="clock">—</span><button id="language" class="small-button" aria-label="Change language">EN</button></div></header>
+<header><div class="breadcrumb">BTC Lab <span>/</span> <b id="tab-name">Przegląd</b></div><div class="header-actions"><span id="clock">—</span><button id="language" class="small-button" aria-label="Change language">EN</button></div></header>
 <div id="ops-status" class="ops-status" role="status">Stan: brak danych</div>
-<nav class="project-tabs" aria-label="Projekty"><a href="#wynik">Kopiowanie</a><a href="#mitch">Mitch copy wallets</a><a href="#strategie">Strategie 5–15 min</a><a href="#dziennik">Historia</a></nav>
+<nav class="project-tabs" aria-label="Projekty"><a href="#przeglad">Przegląd</a><a href="#mitch">Mitch</a><a href="#wynik">Portfele</a><a href="#dziennik">Historia</a></nav>
 <p id="stop-banner" class="stop-banner" hidden>STOP aktywny: nowe kupna są wstrzymane (Mitch, portfele, strategie). Sprzedaż i rozliczenia działają. Zdejmiesz go komendą /wznow w Telegramie.</p>
-<section class="page" id="wynik">
+<section class="page" id="przeglad">
+<p class="paper-banner">PAPER — symulacja. Trzy osobne księgi: Mitch, Portfele (kwalifikator) i archiwum strategii. Nie są sumowane w jeden wynik.</p>
+<div class="metrics" id="overview-net"></div>
+<div class="main-grid">
+<section class="panel"><div class="panel-heading"><div><h2>Gotowość do prawdziwych USDC</h2><p>Warunki, które muszą być spełnione na PAPER, zanim LIVE w ogóle będzie rozważane. Spełnienie nie włącza LIVE samo.</p></div><span class="chip" id="overview-ready-count">—</span></div><div id="overview-ready"></div></section>
+<section class="panel"><div class="panel-heading"><div><h2>System</h2><p>Stan usług na tym Macu.</p></div></div><div id="overview-system"></div></section>
+</div>
+<section class="panel" style="margin-top:22px"><div class="panel-heading"><div><h2>Rezerwa zysku</h2><p id="overview-bank-note">40% z każdego nowego szczytu wyniku netto księgi.</p></div></div><div id="overview-bank"></div></section>
+</section>
+<section class="page" id="wynik" hidden>
 <p id="demo-banner" class="demo-banner" hidden>NIEAKTUALNY PODGLĄD — to nie są bieżące wyniki usługi na porcie 8769.</p>
 <p class="paper-banner">PAPER — symulacja, nie prawdziwe pieniądze. Tylko kopiowane portfele. Własne strategie 5–15 min są na osobnej zakładce i nie wchodzą do tej liczby.</p>
 <p id="copy-flow" class="data-status stale">Stan kopiowania: brak danych</p>
@@ -88,11 +97,12 @@
 <section class="page" id="obserwacje" hidden>
 <p class="paper-banner">To nie jest wynik kopiowania PAPER. Obserwacje i niezależne bilety nie wchodzą do liczby na ekranie Wynik.</p>
 <div id="wallet-content"></div>
-</section>
-<section class="page" id="kandydaci" hidden>
+<h2 style="margin:28px 0 12px">Kandydaci</h2>
 <p class="paper-banner">Kandydaci nie są wynikiem kopiowania PAPER i nie są prawdziwymi pieniędzmi.</p>
 <div id="candidate-content"></div>
+
 </section>
+
 <section class="page" id="strategie" hidden>
 <p class="paper-banner">ARCHIWUM · PAPER. Od 9.10.2026 wszystkie własne strategie 5–15 min są zatrzymane: każda straciła po opłatach (łącznie ok. −73 USD na 206 transakcjach). Otwarte pozycje dochodzą do rozliczenia. Ta liczba nie jest wynikiem kopiowanych portfeli.</p>
 <p id="asset-note" class="asset-note" hidden></p>
