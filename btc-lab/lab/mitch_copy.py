@@ -429,8 +429,10 @@ class MitchCopy:
                 closed = trade.get('closed_at')
                 if closed and datetime.fromtimestamp(float(closed), STOCKHOLM).date().isoformat() == today:
                     today_net += pnl
-            should = known and (period_net < 0 or today_net < 0 or all_net < 0)
+            should = known and (period_net < 0 or today_net < 0)
             old = previous.get(wallet) or {}
+            if old.get('stint') != stint_id:
+                old = {}
             # A pause carries the result that caused it. A held pause without a
             # negative trigger in this period was not made by this rule (on
             # 9 Oct a lifetime pause was written into the period from outside)
