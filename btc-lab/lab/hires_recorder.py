@@ -250,19 +250,30 @@ async def record_polymarket(sink, fetch=get_json):
                     return
 
 
+SILENCE = 60
+
+
+async def _drain(ws, sink, source):
+    """Read until the socket closes or goes quiet. A silent socket is reconnected."""
+    while True:
+        try:
+            raw = await asyncio.wait_for(ws.recv(), timeout=SILENCE)
+        except asyncio.TimeoutError:
+            raise RuntimeError('%s silent for %d s, reconnecting' % (source, SILENCE))
+        sink.write(source, raw, time.time_ns())
+
+
 async def record_binance(sink):
     import websockets
     async with websockets.connect(BINANCE, open_timeout=15, ping_interval=20, max_size=None) as ws:
-        async for raw in ws:
-            sink.write('binance', raw, time.time_ns())
+        await _drain(ws, sink, 'binance')
 
 
 async def record_coinbase(sink):
     import websockets
     async with websockets.connect(COINBASE, open_timeout=15, ping_interval=20, max_size=None) as ws:
         await ws.send(json.dumps({'type': 'subscribe', 'product_ids': ['BTC-USD'], 'channels': ['ticker']}))
-        async for raw in ws:
-            sink.write('coinbase', raw, time.time_ns())
+        await _drain(ws, sink, 'coinbase')
 
 
 async def record_rtds(sink):
@@ -276,8 +287,7 @@ async def record_rtds(sink):
             {'topic': 'crypto_prices_twap_sixty', 'type': 'update', 'filters': chainlink},
             {'topic': 'crypto_prices', 'type': 'update', 'filters': json.dumps({'symbol': 'btcusdt'}, separators=(',', ':'))},
         ]}))
-        async for raw in ws:
-            sink.write('rtds', raw, time.time_ns())
+        await _drain(ws, sink, 'rtds')
 
 
 async def main(root):

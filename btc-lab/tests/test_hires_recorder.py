@@ -54,6 +54,27 @@ class SinkTests(unittest.TestCase):
             self.assertFalse(sink.write('binance', '{}'))
 
 
+class SilenceTests(unittest.TestCase):
+    def test_a_quiet_socket_is_dropped(self):
+        import asyncio
+        import lab.hires_recorder as rec
+
+        class Quiet:
+            async def recv(self):
+                await asyncio.sleep(10)
+
+        class Collect:
+            def write(self, *a):
+                pass
+
+        rec.SILENCE = 0.05
+        try:
+            with self.assertRaises(RuntimeError):
+                asyncio.run(rec._drain(Quiet(), Collect(), 'rtds'))
+        finally:
+            rec.SILENCE = 60
+
+
 class TokenTests(unittest.TestCase):
     def test_current_and_next_window_for_5m_and_15m(self):
         asked = []
