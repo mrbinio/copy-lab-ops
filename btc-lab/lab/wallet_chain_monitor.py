@@ -763,6 +763,11 @@ async def run_market_prints(fetch, sleep=asyncio.sleep, fast=None):
                         if raw == 'PING':
                             await ws.send('PONG')
                         continue
+                    # Hundreds of book changes a second arrive here; only trade
+                    # prints are used. Parsing the rest held the GIL and starved
+                    # the worker loop (heartbeat 35 s, healthz 503, 9 Oct).
+                    if '"event_type":"last_trade_price"' not in raw and '"event_type": "last_trade_price"' not in raw:
+                        continue
                     try:
                         msg = json.loads(raw)
                     except ValueError:

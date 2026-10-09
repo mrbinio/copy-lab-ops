@@ -244,3 +244,16 @@ class MonitorTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(s['connected'])
 
 if __name__=='__main__':unittest.main()
+
+
+class PrintFilterTests(unittest.TestCase):
+    def test_only_trade_prints_pass_the_cheap_filter(self):
+        import inspect
+        from lab import wallet_chain_monitor
+        source = inspect.getsource(wallet_chain_monitor.run_market_prints)
+        self.assertIn('"event_type":"last_trade_price"', source)
+        book = '[{"event_type":"book","last_trade_price":"0.49","bids":[]}]'
+        trade = '[{"event_type":"last_trade_price","price":"0.5","transaction_hash":"0xab"}]'
+        check = lambda raw: '"event_type":"last_trade_price"' in raw or '"event_type": "last_trade_price"' in raw
+        self.assertFalse(check(book))
+        self.assertTrue(check(trade))
