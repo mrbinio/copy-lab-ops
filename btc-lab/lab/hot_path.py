@@ -18,6 +18,9 @@ CHAIN = ThreadPoolExecutor(max_workers=2, thread_name_prefix='lab-chain')
 # One writer. Long reads use READ so a ledger scan cannot sit in front of a copy.
 DB = ThreadPoolExecutor(max_workers=1, thread_name_prefix='lab-db')
 READ = ThreadPoolExecutor(max_workers=2, thread_name_prefix='lab-read')
+# Mitch's fast lane. Its own thread, so a copy does not wait behind the
+# shared writer's queue. SQLite still serialises the write itself.
+MITCH = ThreadPoolExecutor(max_workers=1, thread_name_prefix='lab-mitch')
 
 _LOCK = threading.Lock()
 _BOOKS = {}

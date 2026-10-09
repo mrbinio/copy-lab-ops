@@ -40,6 +40,8 @@ class CLOBClient:
             funder: Optional funder address (for proxy wallets)
             max_order_usd: Max USD per order (capped at MAX_ORDER_USD)
         """
+        from .live_gate import require_live
+        require_live()
         from py_clob_client_v2.client import ClobClient
         from py_clob_client_v2.clob_types import (
             MarketOrderArgs, OrderArgs, OrderType,
@@ -128,7 +130,7 @@ class CLOBClient:
             }
 
     def sell(self, token_id: str, price: float, size: float) -> dict:
-        """Place a GTC SELL limit order.
+        """Place a FOK SELL. Nothing rests in the book after the call.
 
         Args:
             token_id: Token to sell
@@ -153,7 +155,7 @@ class CLOBClient:
         )
 
         try:
-            resp = self.client.create_and_post_order(order_args, order_type=self._OrderType.GTC)
+            resp = self.client.create_and_post_order(order_args, order_type=self._OrderType.FOK)
             log.info("CLOB sell response: %s", json.dumps(resp, default=str)[:500])
             return {
                 "ok": resp.get("success", False),

@@ -144,6 +144,10 @@ def merge_activity_body(existing_body, row):
     book quote is replaced and is never added to the price he paid.
     """
     existing = json.loads(existing_body)
+    if existing.get('_source') in ('clob_match', 'order_filled'):
+        # The exchange transaction is the execution. A later public row does
+        # not replace it, and the source stays on the row for the audit.
+        return existing_body, False
     if existing.get('_source') == 'chain_fast':
         merged = dict(row)
         merged.pop('_source', None)

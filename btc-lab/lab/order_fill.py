@@ -9,6 +9,10 @@ from decimal import Decimal
 
 # keccak256("OrderFilled(bytes32,address,address,uint256,uint256,uint256,uint256,uint256)")
 ORDER_FILLED_TOPIC = '0xd0a08e8c493f9c94f29311604c9de1b4e8c8d4c06bd0c789af57f2d65bfec0f6'
+# Exchange 0xe111180000d2663c0091e4f400237545b87b996b, seen on every Mitch fill
+# on 8-9 Oct 2026. Data: side (0 BUY), token, maker gave, maker got, fee, two
+# words not used here. One log per order and its maker is the order's owner.
+ORDER_FILLED_V2_TOPIC = '0xd543adfd945773f1a62f74f0ee55a5e3b9b1a28262980ba90b1a89f2ea84d8ee'
 SCALE = Decimal(10) ** 6
 _SHARE_TOLERANCE = Decimal('0.000001')
 
@@ -34,12 +38,46 @@ def _words(data):
         return None
 
 
+def _parse_v2(log, topics):
+    words = _words(log.get('data'))
+    if not words:
+        return None
+    side, token, gave, got, fee = words
+    if side not in (0, 1) or token == 0:
+        return None
+    maker = _address(topics[2])
+    taker = _address(topics[3])
+    if not maker or not taker:
+        return None
+    try:
+        index = int(str(log.get('logIndex') or '0x0'), 16)
+    except ValueError:
+        return None
+    buy = side == 0
+    return {
+        'maker': maker,
+        'taker': taker,
+        'maker_asset': 0 if buy else token,
+        'taker_asset': token if buy else 0,
+        'maker_amount': gave,
+        'taker_amount': got,
+        'fee': fee,
+        'log_index': index,
+        'tx': log.get('transactionHash'),
+        'owner_only': True,
+    }
+
+
 def parse_order_filled(log):
     """One OrderFilled log, or None when it is not that event or was removed."""
     if not isinstance(log, dict) or log.get('removed'):
         return None
     topics = log.get('topics') or []
-    if len(topics) < 4 or str(topics[0]).lower() != ORDER_FILLED_TOPIC:
+    if len(topics) < 4:
+        return None
+    if str(topics[0]).lower() == ORDER_FILLED_V2_TOPIC:
+        return _parse_v2(log, topics)
+    if str(topics[0]).lower() != ORDER_FILLED_TOPIC:
         return None
     words = _words(log.get('data'))
     if not words:
@@ -71,7 +109,7 @@ def _leg(fill, wallet, token):
     if fill['maker'] == wallet:
         give_asset, give_amount = fill['maker_asset'], fill['maker_amount']
         take_asset, take_amount = fill['taker_asset'], fill['taker_amount']
-    elif fill['taker'] == wallet:
+    elif fill['taker'] == wallet and not fill.get('owner_only'):
         give_asset, give_amount = fill['taker_asset'], fill['taker_amount']
         take_asset, take_amount = fill['maker_asset'], fill['maker_amount']
     else:

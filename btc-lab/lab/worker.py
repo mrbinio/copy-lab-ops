@@ -661,7 +661,12 @@ class Worker:
                     config = json.loads(config_path.read_text())
                     clob_key = config.get('clob_private_key', '')
                     clob_live = config.get('clob_live', False)
-                    if clob_key and clob_live is True:
+                    from .live_gate import LIVE_ORDERS_ALLOWED
+                    if clob_key and clob_live is True and not LIVE_ORDERS_ALLOWED:
+                        LOG.warning('clob_live=true in config is ignored: real orders are disabled in code')
+                    if clob_key:
+                        LOG.warning('a CLOB private key is stored in config.json while the lab is PAPER; move it out')
+                    if clob_key and clob_live is True and LIVE_ORDERS_ALLOWED:
                         from .clob_order import CLOBClient as _CLOBClient
                         clob_client = _CLOBClient(
                             private_key=clob_key,
@@ -697,6 +702,7 @@ class Worker:
                 bridge=ChainBridge(self.store,get_json)
                 monitor=ChainMonitor(chain_urls,get_active_wallets(self.store),bridge.on_event)
                 monitor.on_removed=bridge.on_removed
+                monitor.want=bridge._worth_accelerating
                 self.chain_monitor=monitor
                 self.chain_bridge=bridge
                 chain_task=asyncio.create_task(monitor.run())
@@ -704,9 +710,15 @@ class Worker:
             else:
                 LOG.info('ALCHEMY_WSS not set; REST-only polling')
         prints=None
+        fast=None
         if self.asset=='BTC':
             from .wallet_chain_monitor import run_market_prints
-            prints=asyncio.create_task(run_market_prints(get_json))
+            from . import fast_match
+            from .mitch_copy import WALLETS as MITCH_WALLETS, submit_fast
+            fast=fast_match.FastMatch(MITCH_WALLETS, submit_fast)
+            fast_match.CURRENT=fast
+            LOG.info('fast lane: match print -> pending tx -> Mitch (%d rpc)', len(fast.urls))
+            prints=asyncio.create_task(run_market_prints(get_json, fast=fast))
         jobs={
             'reference': reference, 'flush': flush, 'warmer': warmer, 'pulse': pulse, 'lag': lag,
             'wallets': wallets, 'discovery': discovery,
@@ -743,7 +755,7 @@ class Worker:
                             jobs[name]=asyncio.create_task(monitor.run())
                         elif name=='prints':
                             from .wallet_chain_monitor import run_market_prints
-                            jobs[name]=asyncio.create_task(run_market_prints(get_json))
+                            jobs[name]=asyncio.create_task(run_market_prints(get_json, fast=fast))
                         elif name=='flush':
                             jobs[name]=asyncio.create_task(self.flush_references())
                         elif name=='warmer':

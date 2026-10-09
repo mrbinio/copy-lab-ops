@@ -98,7 +98,7 @@ def confirmed_print(tx, token, shares):
     }
 # A seed can fill ten times inside one block. Off-market events now return at
 # once, so the queue only holds short book lookups.
-MAX_PENDING_TASKS = 30
+MAX_PENDING_TASKS = 120
 
 
 def parse_transfer_single(log):
@@ -220,6 +220,12 @@ class ChainMonitor:
                         wallet, side = classify_transfer(event, self.wallets)
                         if wallet is None: continue
                         self.events_matched += 1
+                        # Observed and paused names do not take a slot that a
+                        # copied wallet may need in the same block.
+                        want = getattr(self, 'want', None)
+                        if want is not None and not want(wallet):
+                            self.not_copied = getattr(self, 'not_copied', 0) + 1
+                            continue
                         event.update(wallet=wallet, side=side, detected_at=self.clock())
                         # Bounded queue: drop if too many pending
                         if len(self._tasks) >= MAX_PENDING_TASKS:
@@ -332,7 +338,7 @@ class ChainBridge:
         key = _row_key(source_row)
         source_row['_detected_at'] = detected_at
         body = json.dumps(source_row, allow_nan=False)
-        rank = {'chain_fast': 0, 'chain_accelerated': 1, 'market_trade': 2, 'order_filled': 3}
+        rank = {'chain_fast': 0, 'chain_accelerated': 1, 'market_trade': 2, 'order_filled': 3, 'clob_match': 4}
         with self.store.connect() as db:
             existing = db.execute(
                 'SELECT body FROM wallet_activity WHERE wallet=? AND event_key=?',
@@ -375,20 +381,34 @@ class ChainBridge:
         def post(target, payload, timeout=8):
             return _post(target, payload, timeout=1.0)
 
+        # The age of a copy is counted from his trade. The match print has it
+        # in ms. Without a print the block time is the next best, and it is
+        # never later than the trade it carries. Our own detection time is
+        # not his trade time and is marked so a buy cannot pass on it.
+        token = str(event.get('token_id') or '')
+        printed = confirmed_print(event.get('tx_hash'), token, event.get('value', 0) / 1e6)
         try:
-            parsed = execution_from_receipt(TokenBalanceReader(url, post=post), event, want_block=False)
+            parsed = execution_from_receipt(
+                TokenBalanceReader(url, post=post), event, want_block=not printed,
+            )
         except Exception:
             return None
         if not parsed:
             return None
         fill, block_ts, rpc_ms = parsed
         detected_at = event.get('detected_at', self.clock())
-        if block_ts and 0 <= detected_at - block_ts <= 30:
+        provider = None
+        if printed and printed.get('ts'):
+            stamp = float(printed['ts'])
+            basis = 'match'
+            provider = detected_at - stamp
+        elif block_ts and 0 <= detected_at - block_ts <= 30:
             stamp = float(block_ts)
+            basis = 'block'
             provider = detected_at - stamp
         else:
             stamp = detected_at
-            provider = None
+            basis = 'local_detect'
         return {
             'transactionHash': event['tx_hash'],
             'type': 'TRADE',
@@ -406,6 +426,7 @@ class ChainBridge:
             '_fills': fill['fills'],
             '_rpc_ms': round(rpc_ms, 1),
             '_provider_delay_s': None if provider is None else round(provider, 3),
+            '_ts_basis': basis,
             '_block': event.get('block_number'),
         }
 
@@ -517,7 +538,7 @@ class ChainBridge:
                     (wallet, key, now, ts, json.dumps(source_row, allow_nan=False)),
                 )
                 self.bridged += 1
-            elif json.loads(existing[0]).get('_source') == 'order_filled':
+            elif json.loads(existing[0]).get('_source') in ('order_filled', 'clob_match'):
                 # The receipt is the execution. A later public row does not replace it.
                 return False
             else:
@@ -670,15 +691,20 @@ async def _window_tokens(fetch):
     start = now - (now % 900)
     ids = []
     loop = asyncio.get_running_loop()
+    from .fast_match import remember_window
     for stamp in (start, start + 900):
+        slug = 'btc-updown-15m-%s' % stamp
         raw = await loop.run_in_executor(
-            IO, fetch, 'https://gamma-api.polymarket.com/markets/slug/btc-updown-15m-%s' % stamp,
+            IO, fetch, 'https://gamma-api.polymarket.com/markets/slug/' + slug,
         )
-        ids.extend(_print_tokens(raw, stamp))
+        tokens = _print_tokens(raw, stamp)
+        for token in tokens:
+            remember_window(token, slug, raw.get('conditionId') if isinstance(raw, dict) else None)
+        ids.extend(tokens)
     return ids
 
 
-async def run_market_prints(fetch, sleep=asyncio.sleep):
+async def run_market_prints(fetch, sleep=asyncio.sleep, fast=None):
     """Public market channel. Stays up across windows. A print is not a wallet until the transfer matches."""
     import websockets
     url = 'wss://ws-subscriptions-clob.polymarket.com/ws/market'
@@ -722,6 +748,8 @@ async def run_market_prints(fetch, sleep=asyncio.sleep):
                     for item in rows:
                         if isinstance(item, dict) and item.get('event_type') == 'last_trade_price':
                             note_market_trade(item)
+                            if fast is not None:
+                                fast.note(item)
         except Exception as error:
             LOG.info('market prints: %s', str(error)[:160])
             await sleep(2)

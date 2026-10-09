@@ -28,7 +28,14 @@ MIHA_5M_VERDICT = (
 STOCKHOLM = ZoneInfo('Europe/Stockholm')
 PRICE_WORSE = Decimal('0.10')
 MAX_BUY_AGE = 1.0
-CHAIN_SOURCES = ('order_filled', 'market_trade')
+# clob_match: the exchange transaction read from the mempool right after the
+# market channel printed the match. Its time is the match time in ms.
+CHAIN_SOURCES = ('clob_match', 'order_filled', 'market_trade')
+STINT = {
+    'id': 'fast-match-v1',
+    'note': 'Copies from the match print and the pending exchange transaction. '
+            'The book since start keeps the losses of the late public-list path.',
+}
 PAUSE_REASON = 'mitch-copy-wallets-v1 pause: closed copy period is negative'
 # Mitch did not name a paper bankroll. This only keeps the window caps
 # from being confused with an empty account. It is not his rule.
@@ -38,8 +45,8 @@ ASSUMPTIONS = (
     'The $20 and $5 caps include the buy cost and the entry fee. Exit fees are only in the net result. Needs Mitch to confirm.',
     'A partial sell uses source shares sold divided by source shares just before that sell. Needs Mitch to confirm.',
     'Paper capital is $500 per wallet because Mitch did not set it. The window caps are the binding limit.',
-    'A new buy needs a chain fill or a matched print, and it must land inside one second. A late public-list copy is not his trade.',
-    'A negative closed book, today or since start, pauses further buys. There is no automatic retest.',
+    'A new buy needs his fill from the exchange transaction or the chain, and it must land inside one second of the match. A late public-list copy is not his trade.',
+    'A negative closed book, today or in the current test period, pauses further buys. There is no automatic retest. The book since start is kept and shown.',
 )
 GROUPING = (
     'One activity row is one buy. The shared collector key is transaction hash, '
@@ -56,6 +63,21 @@ WALLETS = {
     '0x454c48b436e5dda7a186cc7e0ebeee2a1d1865cf': {'label': 'checkr3', 'limit_usd': Decimal('20')},
     '0xa82365c8e854728c472812fba6202ca125386215': {'label': 'mihaXd', 'limit_usd': Decimal('5')},
 }
+
+
+ACTIVE = None
+
+
+async def submit_fast(wallet, body, detected_at):
+    """Sink for the fast lane. The running copier, also after a task restart."""
+    if ACTIVE is not None:
+        await ACTIVE.submit_fast(wallet, body, detected_at)
+
+
+def fast_status():
+    from . import fast_match
+    current = getattr(fast_match, 'CURRENT', None)
+    return current.status() if current is not None else None
 
 
 def copy_notional_usd(source_usd):
@@ -267,6 +289,11 @@ class MitchCopy:
                 )
         if not self.store.get('mitch_copy_start'):
             self.store.set('mitch_copy_start', {'at': self.clock(), 'spec': SPEC})
+        current = self.store.get('mitch_stint') or {}
+        if current.get('id') != STINT['id']:
+            self.store.set('mitch_stint', dict(STINT, at=self.clock()))
+            with self.store.connect() as db:
+                self.refresh_pauses(db)
 
     def started(self):
         row = self.store.get('mitch_copy_start') or {}
@@ -350,45 +377,76 @@ class MitchCopy:
     def _is_paused(self, db, wallet):
         return bool(((self._pause_state(db).get('wallets') or {}).get(wallet) or {}).get('paused'))
 
+    def stint(self, db=None):
+        """Start of the current test period, or None before the first one.
+
+        The book since start stays as it is. A pause looks only at copies
+        opened inside the period, so losses of an earlier copy path do not
+        block a test of the new one. Inside the period a minus still pauses
+        and nothing unpauses it.
+        """
+        if db is not None:
+            row = db.execute("SELECT body FROM state WHERE key='mitch_stint'").fetchone()
+            body = json.loads(row[0]) if row else None
+        else:
+            body = self.store.get('mitch_stint')
+        if not isinstance(body, dict) or not body.get('at'):
+            return None
+        return body
+
     def refresh_pauses(self, db):
-        """Stop new buys when the closed book, today or since start, is negative."""
+        """Stop new buys when the closed book, today or in this period, is negative."""
         now = self.clock()
         today = datetime.fromtimestamp(now, STOCKHOLM).date().isoformat()
         previous = (self._pause_state(db).get('wallets') or {})
+        stint = self.stint(db)
+        stint_at = float(stint['at']) if stint else None
+        stint_id = stint.get('id') if stint else None
         wallets = {}
         for wallet in WALLETS:
             all_net = 0
+            period_net = 0
             today_net = 0
             known = True
             for (body,) in db.execute('SELECT body FROM mitch_positions WHERE wallet=?', (wallet,)):
                 trade = json.loads(body)
                 if trade.get('status') not in ('CLOSED', 'SETTLED'):
                     continue
+                inside = stint_at is None or float(trade.get('opened') or 0) >= stint_at
                 if trade.get('pnl_micro') is None:
-                    known = False
+                    if inside:
+                        known = False
                     continue
                 pnl = int(trade['pnl_micro'])
                 all_net += pnl
+                if not inside:
+                    continue
+                period_net += pnl
                 closed = trade.get('closed_at')
                 if closed and datetime.fromtimestamp(float(closed), STOCKHOLM).date().isoformat() == today:
                     today_net += pnl
-            should = known and (all_net < 0 or today_net < 0)
+            should = known and (period_net < 0 or today_net < 0)
             old = previous.get(wallet) or {}
+            if old.get('stint') != stint_id:
+                old = {}
             if should:
                 wallets[wallet] = {
                     'paused': True,
                     'since': old.get('since') or now,
                     'today_net_usd': today_net / 1e6,
+                    'period_net_usd': period_net / 1e6,
                     'all_net_usd': all_net / 1e6,
+                    'stint': stint_id,
                     'reason': PAUSE_REASON,
                 }
             elif old.get('paused'):
                 hold = dict(old)
                 hold['paused'] = True
                 hold['today_net_usd'] = today_net / 1e6
+                hold['period_net_usd'] = period_net / 1e6
                 hold['all_net_usd'] = all_net / 1e6
                 wallets[wallet] = hold
-        payload = {'updated_at': now, 'wallets': wallets}
+        payload = {'updated_at': now, 'stint': stint, 'wallets': wallets}
         db.execute(
             "INSERT INTO state VALUES ('mitch_pauses', ?) ON CONFLICT(key) DO UPDATE SET body=excluded.body",
             (json.dumps(payload),),
@@ -868,6 +926,8 @@ class MitchCopy:
             'open_mark_note': 'No live mark is stored. Open cost is capital in use, not a result.',
             'wallets': wallets,
             'max_buy_age_s': MAX_BUY_AGE,
+            'stint': self.stint(),
+            'fast': fast_status(),
             'journal': [{
                 'at': p.get('closed_at'), 'wallet': p.get('wallet'),
                 'slug': p.get('slug'), 'status': p.get('status'),
@@ -957,8 +1017,21 @@ class MitchCopy:
                     continue
                 self.anchor_source(db, wallet, token, size, as_of=now)
 
+    async def submit_fast(self, wallet, body, detected_at):
+        """A fill read from the pending exchange transaction. Decide now."""
+        from .fast_match import insert_row
+        from .hot_path import MITCH
+        if wallet not in WALLETS:
+            return
+        loop = asyncio.get_running_loop()
+        row = await loop.run_in_executor(MITCH, insert_row, self.store, wallet, body, detected_at)
+        if row:
+            await self.handle(row, pool=MITCH)
+
     async def run(self):
         from .hot_path import DB
+        global ACTIVE
+        ACTIVE = self
         loop = asyncio.get_running_loop()
         # Schema first, then the board, then decisions. Anchors must not hold the first step.
         await loop.run_in_executor(DB, self.ensure)
@@ -1094,7 +1167,7 @@ class MitchCopy:
             with self.store.connect() as db:
                 self._mark(db, wallet, key, 'NOT_BTC_15M', self._case(row, event))
             return {'stop': True}
-        if source == 'market_trade':
+        if source in ('market_trade', 'clob_match'):
             basis = 'source_subsecond'
         elif source == 'order_filled':
             basis = 'chain_fill'
@@ -1102,6 +1175,14 @@ class MitchCopy:
             basis = 'source_second'
         clock = self.store.get('clock_status') or {}
         age = self.clock() - float(row['source_ts'])
+        if event['side'] == 'BUY' and event.get('_ts_basis') == 'local_detect':
+            with self.store.connect() as db:
+                db.execute('BEGIN IMMEDIATE')
+                self._record_source(db, wallet, str(event.get('asset') or ''), key, event, buy=True)
+                self._mark(db, wallet, key, 'SOURCE_TIME_UNKNOWN', self._case(row, event, {
+                    'source': source,
+                }))
+            return {'stop': True}
         if event['side'] == 'BUY' and source not in CHAIN_SOURCES:
             with self.store.connect() as db:
                 db.execute('BEGIN IMMEDIATE')
@@ -1184,8 +1265,9 @@ class MitchCopy:
         if db_submitted is not None:
             stage['db_wait_ms'] = round((time.perf_counter() - db_submitted) * 1000, 1)
         write_started = time.perf_counter()
+        decided = pre.get('decided_at') or self.clock()
         timing = self._timing(
-            row, pre['queued'], self.clock(), self.clock(), pre['basis'], pre['clock_ok'],
+            row, pre['queued'], decided, decided, pre['basis'], pre['clock_ok'],
             book_started, book_done, pre['clock'], stage,
         )
         from .hot_path import note_stage
@@ -1230,7 +1312,10 @@ class MitchCopy:
             if float(row['source_ts']) < self.started():
                 self._mark(db, wallet, key, 'HISTORICAL_BEFORE_START', self._case(row, event, {'timing': timing}))
                 return
-            if event['side'] == 'BUY' and self.clock() - float(row['source_ts']) > MAX_BUY_AGE:
+            # The decision is taken when the book is in. Waiting for the database
+            # writer afterwards is bookkeeping, not a later trade.
+            decided = pre.get('decided_at') or self.clock()
+            if event['side'] == 'BUY' and decided - float(row['source_ts']) > MAX_BUY_AGE:
                 self._record_source(db, wallet, str(event.get('asset') or ''), key, event, buy=True)
                 self._mark(db, wallet, key, 'LATE_BUY_NOT_COPIED', self._case(row, event, {'timing': timing}))
                 return
@@ -1272,10 +1357,11 @@ class MitchCopy:
                 fee_rate=terms['fee_rate'], fee_verified=True,
             )
 
-    async def handle(self, row):
+    async def handle(self, row, pool=None):
         from .hot_path import DB
+        pool = pool or DB
         queued = time.monotonic()
-        pre = await asyncio.get_running_loop().run_in_executor(DB, self._prefilter, row, queued)
+        pre = await asyncio.get_running_loop().run_in_executor(pool, self._prefilter, row, queued)
         if not pre or pre.get('stop'):
             if pre and pre.get('prefetch'):
                 await self._book(str(pre['event'].get('asset') or ''))
@@ -1290,9 +1376,10 @@ class MitchCopy:
         stage = {}
         if isinstance(checked, dict):
             stage = checked.pop('_stage', None) or {}
+        pre['decided_at'] = self.clock()
         db_submitted = time.perf_counter()
         await asyncio.get_running_loop().run_in_executor(
-            DB, self._finish, pre, checked, terms, book_started, book_done, stage, db_submitted,
+            pool, self._finish, pre, checked, terms, book_started, book_done, stage, db_submitted,
         )
 
     def _note_book(self, pre, checked):

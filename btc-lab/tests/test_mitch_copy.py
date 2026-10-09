@@ -446,15 +446,64 @@ class MitchBookTests(unittest.TestCase):
         with self.store.connect() as db:
             db.execute(
                 "INSERT INTO state VALUES ('mitch_pauses', ?) ON CONFLICT(key) DO UPDATE SET body=excluded.body",
-                (json.dumps({'wallets': {FIRST: {'paused': True, 'since': 1, 'reason': 'held'}}}),),
+                (json.dumps({'wallets': {FIRST: {'paused': True, 'since': 1, 'reason': 'held', 'stint': 'fast-match-v1'}}}),),
             )
             trade = {
-                'id': 'win1', 'wallet': FIRST, 'status': 'CLOSED',
+                'id': 'win1', 'wallet': FIRST, 'status': 'CLOSED', 'opened': self.engine.clock(),
                 'pnl_micro': 5_000_000, 'closed_at': self.engine.clock(),
             }
             db.execute('INSERT INTO mitch_positions VALUES (?,?,?)', ('win1', FIRST, json.dumps(trade)))
             payload = self.engine.refresh_pauses(db)
         self.assertTrue(payload['wallets'][FIRST]['paused'])
+
+    def test_a_new_period_does_not_carry_the_late_path_losses_but_keeps_them(self):
+        clock = self.engine.clock()
+        with self.store.connect() as db:
+            db.execute(
+                "INSERT INTO state VALUES ('mitch_pauses', ?) ON CONFLICT(key) DO UPDATE SET body=excluded.body",
+                (json.dumps({'wallets': {FIRST: {'paused': True, 'since': 1, 'reason': 'old'}}}),),
+            )
+            old = {'id': 'old', 'wallet': FIRST, 'status': 'CLOSED', 'opened': clock - 3600,
+                   'pnl_micro': -9_000_000, 'closed_at': clock - 3000}
+            db.execute('INSERT INTO mitch_positions VALUES (?,?,?)', ('old', FIRST, json.dumps(old)))
+            payload = self.engine.refresh_pauses(db)
+        self.assertNotIn(FIRST, payload['wallets'])
+        with self.store.connect() as db:
+            new = {'id': 'new', 'wallet': FIRST, 'status': 'CLOSED', 'opened': clock + 10,
+                   'pnl_micro': -1, 'closed_at': clock + 20}
+            db.execute('INSERT INTO mitch_positions VALUES (?,?,?)', ('new', FIRST, json.dumps(new)))
+            payload = self.engine.refresh_pauses(db)
+        row = payload['wallets'][FIRST]
+        self.assertTrue(row['paused'])
+        self.assertEqual(row['all_net_usd'], -9.000001)
+        self.assertEqual(row['period_net_usd'], -0.000001)
+
+    def test_a_clob_match_buy_inside_one_second_goes_to_the_book(self):
+        self.store.set('mitch_copy_start', {'at': self.engine.clock() - 60, 'spec': 'mitch-copy-wallets-v1'})
+        event = dict(self.event(10), _source='clob_match', _ts_basis='match')
+        now = self.engine.clock()
+        row = {
+            'wallet': FIRST, 'event_key': 'match-1', 'body': json.dumps(event),
+            'source_ts': now - 0.3, 'first_seen': now - 0.1,
+        }
+        pre = self.engine._prefilter(row, 0)
+        self.assertFalse(pre['stop'])
+        self.assertEqual(pre['basis'], 'source_subsecond')
+
+    def test_a_receipt_timed_by_our_own_detection_cannot_buy(self):
+        event = dict(self.event(10), _source='order_filled', _ts_basis='local_detect')
+        now = self.engine.clock()
+        row = {
+            'wallet': FIRST, 'event_key': 'local-1', 'body': json.dumps(event),
+            'source_ts': now, 'first_seen': now,
+        }
+        pre = self.engine._prefilter(row, 0)
+        self.assertTrue(pre['stop'])
+        with self.store.connect() as db:
+            reason = db.execute(
+                'SELECT reason FROM mitch_events WHERE event_key=?', ('local-1',),
+            ).fetchone()[0]
+        self.assertEqual(reason, 'SOURCE_TIME_UNKNOWN')
 
 
 if __name__ == '__main__':
