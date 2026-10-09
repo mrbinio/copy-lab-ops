@@ -354,8 +354,10 @@ function fillWalletTiles(s,board,period){
       .reduce((sum,t)=>sum+(Number(t.cost)||0)+(Number(t.fee)||0),0));
     const rosterRow=((s.wallet_roster||{}).wallets||{})[wallet]||{};
     if(rosterRow.state==='paused'&&rosterRow.since){
-      card.append(node('p','Pauza od '+formatTime(rosterRow.since)+(rosterRow.period_id?' · '+rosterRow.period_id:'')+(rosterRow.sample?' · próba '+rosterRow.sample:''),'watch-line'));
+      const pauseNet=row&&row.pause_period_net_usd!=null?money(Number(row.pause_period_net_usd),true):missing();
+      card.append(node('p','Pauza od '+formatTime(rosterRow.since)+' · wynik dnia '+(net==null?missing():money(net/1e6,true))+' · wynik okresu, który wstrzymał zakupy: '+pauseNet+(rosterRow.sample?' · próba '+rosterRow.sample:''),'watch-line'));
     }
+    if(account.reserved>0)card.append(node('p','Zarezerwowane '+money(account.reserved)+' · do kolejnych zakupów '+(account.tradable==null?missing():money(account.tradable)),'watch-line'));
     if(openCount)card.append(node('p',t('Open copy','Otwarta kopia')+' · '+openCount+' · koszt '+money(openCost/1e6)+' · '+t('not a closed result','to nie jest zamknięty wynik'),'watch-line'));
     else if(row&&row.pause_reason)card.append(node('p',row.pause_reason,'watch-line'));
     else if(!(account.trades>0))card.append(node('p',t('No closed copy. Watching is not a result.','Brak zamkniętej kopii. Śledzenie nie jest wynikiem.'),'watch-line'));
@@ -481,11 +483,43 @@ function renderPaperBoard(s){
     text('journal-scope',t('Closed copies are the main number. Open copies are listed and are not in that sum.','Zamknięte kopie są liczbą główną. Otwarte kopie są na liście i nie wchodzą do tej sumy.'));
   }
 }
-function render(){const scrollY=document.scrollingElement?document.scrollingElement.scrollTop:0;const s=state||blank();syncAssetUI(s);renderOpsBar(s);renderWalletPanel(s);const a=ownStrategies(s.accounts).find(x=>x.id===selected)||ownStrategies(s.accounts)[0]||{id:'',name:'',cash:null,pnl:null,trades:0,settled:0,wins:0,curve:[],initial:null};const live=connected&&!preview;const versionElement=$('service-version');if(versionElement)versionElement.textContent=serviceVersionLabel(s.worker,live,preview,Date.now()/1000);const age=Date.now()/1000-(s.worker.heartbeat||0);const healthy=live&&age<30&&s.worker.status==='RECORDING';text('status-text',preview?t('DESIGN PREVIEW','PODGLĄD PROJEKTU'):healthy?t('RECORDING','ZBIERANIE DANYCH'):live?t('SERVICE DEGRADED','SYSTEM WYMAGA UWAGI'):t('NOT CONNECTED','NIEPOŁĄCZONY'));text('status-detail',preview?t('Synthetic examples · excluded from research','Dane przykładowe · poza badaniem'):healthy?t('Collector connected. Strategy checks remain independent.','Kolektor połączony. Strategie osobno sprawdzają dane.'):live?t('Entries wait for valid data and service recovery.','Wejścia czekają na poprawne dane i działający system.'):t('The dashboard is ready. The 24/7 service is not connected.','Dashboard jest gotowy. Usługa 24/7 nie jest podłączona.'));$('status-dot').style.background=healthy?'var(--teal)':'var(--amber)';$('demo-banner').hidden=!preview;text('demo-banner',t('DESIGN PREVIEW — synthetic data, not trading results.','PODGLĄD PROJEKTU — dane sztuczne, to nie są wyniki handlu.'));text('pnl',a.settled?money(a.pnl,true):t('No settlements','Brak rozliczeń'));$('pnl').style.fontSize=a.settled?'':'1.35rem';$('pnl').className='metric-value '+(a.pnl>0?'positive':a.pnl<0?'negative':'');text('balance',money(a.cash));const selectedStatus=$('selected-account-status');if(selectedStatus){const last=(s.decisions||[]).find(d=>d.strategy===a.id);selectedStatus.textContent=(a.name||a.id)+' · '+a.trades+' '+t('trades','transakcji')+' · '+(last?reason(last.reason):t('No recorded decision','Brak zapisanej decyzji'))+(connected?'':' · '+t('Connection unavailable; last received data','Brak połączenia; ostatnio odebrane dane'));}text('capital-note',t('Research account · virtual ','Konto badawcze · wirtualne ')+money(a.initial??500));text('win-rate',a.settled?`${(100*a.wins/a.settled).toFixed(1)}%`:'—');text('trade-count',`${a.settled} ${t('settled trades','rozliczonych transakcji')}`);text('observations',s.observations==null?'—':s.observations.toLocaleString());text('labels',`${t('Official outcomes','Oficjalne wyniki')}: ${s.labels??'—'}`);chart(a.curve||[]);text('curve-period',a.curve?.length?`${formatTime(a.curve[0].ts)} — ${formatTime(a.curve.at(-1).ts)} · Stockholm`:t('No performance history','Brak historii wyników'));const ask=side=>{const book=s.market.books?.[side];return book?.asks?.length?`${(100*Math.min(...book.asks.map(x=>Number(x[0])))).toFixed(1)}¢`:'—';};text('up-ask',ask('Up'));text('down-ask',ask('Down'));text('reference-label',s.market.rule_kind==='TWAP60'?'Chainlink TWAP 60 s':t('Reference price','Cena referencyjna'));text('reference-price',money(s.reference?.price));text('opening-price',money(s.market.opening));const d=s.decisions.find(x=>x.strategy===selected);text('decision-reason',d?reason(d.reason):t('Awaiting verified data','Oczekiwanie na zweryfikowane dane'));
-const cards=$('strategy-cards');cards.replaceChildren();const visibleAccounts=sortAccounts(ownStrategies(s.accounts));const books=bookParts(s.accounts);const totalPnl=books.strategy;const bar=node('div',undefined,'card-layout-bar');const autoBtn=node('button',t('Green on top','Zielone u góry'),'small-button'+(cardLayout==='auto'?' on':''));const manBtn=node('button',t('My order · drag','Mój układ · przeciągnij'),'small-button'+(cardLayout==='manual'?' on':''));autoBtn.type=manBtn.type='button';autoBtn.onclick=()=>{cardLayout='auto';localStorage.setItem('btc-lab-card-layout','auto');render();};manBtn.onclick=()=>{cardLayout='manual';if(!cardOrder.length)cardOrder=visibleAccounts.map(a=>a.id);localStorage.setItem('btc-lab-card-layout','manual');localStorage.setItem('btc-lab-card-order',JSON.stringify(cardOrder));render();};bar.append(autoBtn,manBtn);const totalBox=node('div',undefined,'total-pnl');totalBox.append(node('span',t('5–15 min strategies','Strategie 5–15 min')),node('strong',money(totalPnl,true),totalPnl>=0?'positive':'negative'),node('small',t('From the start of each strategy account. Copied wallets stay on Portfele.','Od początku każdego konta strategii. Kopiowane portfele zostają w Portfelach.')),node('small',`${t('Updated','Odświeżono')}: ${formatTime(s.generated_at)}`));cards.append(bar,totalBox);visibleAccounts.forEach((account,i)=>{const pnlClass=cardToneClass(account);const card=node('article',undefined,'strategy-card'+pnlClass+(account.id===selected?' selected':''));card.dataset.strategy=account.id;card.draggable=cardLayout==='manual';if(cardLayout==='manual'){card.addEventListener('dragstart',ev=>{ev.dataTransfer.setData('text/plain',account.id);card.classList.add('dragging');});card.addEventListener('dragend',()=>card.classList.remove('dragging'));card.addEventListener('dragover',ev=>ev.preventDefault());card.addEventListener('drop',ev=>{ev.preventDefault();const from=ev.dataTransfer.getData('text/plain');if(!from||from===account.id)return;const ids=visibleAccounts.map(a=>a.id);const a=ids.indexOf(from),b=ids.indexOf(account.id);if(a<0||b<0)return;ids.splice(a,1);ids.splice(b,0,from);cardOrder=ids;localStorage.setItem('btc-lab-card-order',JSON.stringify(cardOrder));render();});}const top=node('div',undefined,'strategy-top');top.append(node('span',`0${i+1} / ${asset} 15M`,'strategy-number'),node('span',cardKind(account),'chip'));card.append(top,node('h3',cardTitle(account)),node('p',cardBlurb(account)));const stats=node('div',undefined,'strategy-stats');const pairs=account.id.startsWith('copy-')?copyStatPairs(account):[[money(account.pnl,true),'P&L'],[String(account.trades),t('Paper trades','Transakcje testowe')]];for(const [v,label]of pairs){const box=node('div');box.append(node('strong',v),node('small',label));stats.append(box);}card.append(stats);if(account.id.startsWith('copy-')){for(const line of copyWatchLines(account))card.append(node('p',line,'watch-line'));}const pauses=s.strategy_pauses||{};if(Object.prototype.hasOwnProperty.call(pauses,account.id)){const paused=!!pauses[account.id];const btn=node('button',paused?t('Turn entries on','Włącz nowe zakłady'):t('Turn entries off','Wyłącz nowe zakłady'),'small-button strategy-toggle');btn.type='button';btn.onclick=async ev=>{ev.stopPropagation();try{const res=await fetch('./api/strategy-pause',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:account.id,paused:!paused,asset})});if(!res.ok)throw Error('pause');}catch(e){btn.textContent=t('Could not save','Nie zapisano');return;}refresh();};card.append(btn);if(paused)card.append(node('p',t('New entries are off. Open tickets still settle.','Nowe zakłady są wyłączone. Otwarte bilety nadal się rozliczają.')));}if(account.current_block)card.append(node('p',reason(account.current_block)));if(account.entry_capacity_usd!=null)card.append(node('p',`${t('Available next-entry budget including fees','Dostępna kwota kolejnego wejścia z opłatami')}: ${money(account.entry_capacity_usd)} · ${t('Market minimum still applies','Obowiązuje minimum rynku')}`));if(account.losses_7d!=null)card.append(node('p',`${t('Today net','Dzisiaj netto')}: ${money(account.today_pnl,true)} · ${t('7-day gross losses','Straty brutto 7 dni')}: ${money(account.losses_7d)} / ${money(account.week_limit)} · ${t('Next entry loss is also reserved','Limit uwzględnia też możliwą stratę nowego wejścia')}`));cards.append(card);});
-text('journal-filter-label',t('Journal strategy','Strategia w dzienniku'));text('journal-all',t('All strategies','Wszystkie strategie'));const bookSelect=$('journal-book');if(bookSelect){const bookLabel=$('journal-book-label');if(bookLabel)bookLabel.textContent=t('Journal book','Księga dziennika');if(bookSelect.dataset.ready!==lang){bookSelect.replaceChildren();for(const [value,label] of [['paper',t('PAPER accounts','Konta PAPER')],['policy',t('Policy observation','Obserwacja polityki')],['independent',t('Independent tickets','Niezależne bilety')]]){const o=node('option',label);o.value=value;bookSelect.append(o);}bookSelect.dataset.ready=lang;}bookSelect.value=journalBook;}const journalTrades=renderHistory(s);$('journal-empty').hidden=!!journalTrades.length;text('journal-scope',journalBook==='policy'?t('Policy observation only. Not the PAPER account.','Tylko obserwacja polityki. To nie konto PAPER.'):journalBook==='independent'?t('Independent hold-to-settlement tickets only. Not a PAPER profit and not a promotion.','Tylko niezależne bilety trzymane do rozstrzygnięcia. To nie zysk konta PAPER i nie awans.'):journalFilter==='all'?t('PAPER account fills only. Observation and independent tickets are separate views.','Tylko wypełnienia kont PAPER. Obserwacja i niezależne bilety są osobnymi widokami.'):`${journalFilter} · ${t('filtered from latest 100 service records; full day in Export report','filtr ostatnich 100 wpisów serwera; pełny dzień w Pobierz raport')}`);text('journal-count',`${journalTrades.length} ${t('recent trades','ostatnich transakcji')}`);text('collector-health',preview?'PREVIEW':healthy?'CONNECTED':live?'DEGRADED':'OFFLINE');text('model-health',isEth()?t('NOT USED','NIE JEST UŻYWANY'):s.model.status);text('training-count',isEth()?t('Separate ETH experiment','Osobny eksperyment ETH'):`${s.model.samples||0} / 200`);$('training-progress').hidden=isEth();$('training-progress').value=Math.min(200,s.model.samples||0);const events=$('events');events.replaceChildren();for(const error of (s.worker.errors||[])){const row=node('div',undefined,'event');row.append(node('span',error.stage),node('b',error.detail||error.error));events.append(row);}if(s.worker.reference_error){events.append(node('p',s.worker.reference_error,'muted'));}s.decisions.slice(0,6).forEach(d=>{const row=node('div',undefined,'event');row.append(node('time',formatTime(d.ts)),node('span',d.strategy),node('b',reason(d.reason)));events.append(row);});if(!s.decisions.length)events.append(node('p',t('No decisions recorded. Waiting for the worker.','Brak zapisanych decyzji. Oczekiwanie na silnik.'),'muted'));text('updated',preview?t('Preview · not connected to a market','Podgląd · bez połączenia z rynkiem'):connected?`${t('Last response','Ostatnia odpowiedź')}: ${formatTime(s.generated_at)} · Stockholm`:t('No service connected','Usługa nie jest podłączona'));tick();installHelp();renderPaperBoard(s);renderMitch(s);if(document.scrollingElement)document.scrollingElement.scrollTop=scrollY;}
+let lastViewSig='',lastMitchSig='',fetchError='';
+function holdScroll(){const el=document.scrollingElement||document.documentElement;return el?el.scrollTop:0;}
+function restoreScroll(y){const apply=()=>{const el=document.scrollingElement||document.documentElement;if(el)el.scrollTop=y;if(document.body)document.body.scrollTop=y;};apply();requestAnimationFrame(apply);}
+function viewSig(s){
+  const board=paperBoardOf(s)||{};
+  const period=board.periods&&board.periods[paperPeriod];
+  const m=s.mitch_copy||{};
+  const bank=s.profit_bank||m.profit_bank||{};
+  return JSON.stringify([
+    location.hash,paperPeriod,lang,journalBook,journalFilter,historyPage,connected,fetchError,
+    period&&period.net_micro,period&&period.closed,board.open&&board.open.count,
+    (period&&period.wallets||[]).map(w=>[w.wallet,w.net_micro,w.closed,w.copying]),
+    m.closed_today_micro,m.closed_all_micro,m.open_count,m.journal,
+    (m.wallets||[]).map(w=>[w.wallet,w.net_micro,w.paused,w.reserved_micro,w.copies]),
+    bank.reserved_micro,bank.mitch_reserved_micro,bank.copy_reserved_micro
+  ]);
+}
+function profitBankOf(s){return (s&&s.profit_bank)||(s&&s.mitch_copy&&s.mitch_copy.profit_bank)||{};}
+function fillProfitBank(s){
+  const bank=profitBankOf(s);
+  for(const id of ['profit-bank-tile','mitch-bank']){
+    const el=$(id);if(!el)continue;
+    el.replaceChildren();
+    const card=node('article',undefined,'strategy-card wallet-tile'+(Number(bank.reserved_micro)>0?' profit':''));
+    card.append(node('h3','Rezerwa zysku'));
+    const amount=bank.reserved_micro==null?missing():money(Number(bank.reserved_micro)/1e6);
+    card.append(node('p','Zarezerwowane: '+amount+(bank.live?' · LIVE':' · PAPER, nie LIVE')));
+    card.append(node('p','Mitch '+(bank.mitch_reserved_micro==null?missing():money(Number(bank.mitch_reserved_micro)/1e6))+' · kwalifikator '+(bank.copy_reserved_micro==null?missing():money(Number(bank.copy_reserved_micro)/1e6))));
+    card.append(node('p',bank.note||'40% z nowych zamkniętych plusów. To nie jest saldo giełdy.'));
+    el.append(card);
+  }
+}
+function render(){const scrollY=holdScroll();const s=state||blank();try{renderOpsBar(s);const sig=viewSig(s);if(sig===lastViewSig){restoreScroll(scrollY);return;}lastViewSig=sig;syncAssetUI(s);renderOpsBar(s);renderWalletPanel(s);const a=ownStrategies(s.accounts).find(x=>x.id===selected)||ownStrategies(s.accounts)[0]||{id:'',name:'',cash:null,pnl:null,trades:0,settled:0,wins:0,curve:[],initial:null};const live=connected&&!preview;const versionElement=$('service-version');if(versionElement)versionElement.textContent=serviceVersionLabel(s.worker,live,preview,Date.now()/1000);const age=Date.now()/1000-(s.worker.heartbeat||0);const healthy=live&&age<30&&s.worker.status==='RECORDING';text('status-text',preview?t('DESIGN PREVIEW','PODGLĄD PROJEKTU'):healthy?t('RECORDING','ZBIERANIE DANYCH'):live?t('SERVICE DEGRADED','SYSTEM WYMAGA UWAGI'):t('NOT CONNECTED','NIEPOŁĄCZONY'));text('status-detail',preview?t('Synthetic examples · excluded from research','Dane przykładowe · poza badaniem'):healthy?t('Collector connected. Strategy checks remain independent.','Kolektor połączony. Strategie osobno sprawdzają dane.'):live?t('Entries wait for valid data and service recovery.','Wejścia czekają na poprawne dane i działający system.'):t('The dashboard is ready. The 24/7 service is not connected.','Dashboard jest gotowy. Usługa 24/7 nie jest podłączona.'));$('status-dot').style.background=healthy?'var(--teal)':'var(--amber)';$('demo-banner').hidden=!preview;text('demo-banner',t('DESIGN PREVIEW — synthetic data, not trading results.','PODGLĄD PROJEKTU — dane sztuczne, to nie są wyniki handlu.'));text('pnl',a.settled?money(a.pnl,true):t('No settlements','Brak rozliczeń'));$('pnl').style.fontSize=a.settled?'':'1.35rem';$('pnl').className='metric-value '+(a.pnl>0?'positive':a.pnl<0?'negative':'');text('balance',money(a.cash));const selectedStatus=$('selected-account-status');if(selectedStatus){const last=(s.decisions||[]).find(d=>d.strategy===a.id);selectedStatus.textContent=(a.name||a.id)+' · '+a.trades+' '+t('trades','transakcji')+' · '+(last?reason(last.reason):t('No recorded decision','Brak zapisanej decyzji'))+(connected?'':' · '+t('Connection unavailable; last received data','Brak połączenia; ostatnio odebrane dane'));}text('capital-note',t('Research account · virtual ','Konto badawcze · wirtualne ')+money(a.initial??500));text('win-rate',a.settled?`${(100*a.wins/a.settled).toFixed(1)}%`:'—');text('trade-count',`${a.settled} ${t('settled trades','rozliczonych transakcji')}`);text('observations',s.observations==null?'—':s.observations.toLocaleString());text('labels',`${t('Official outcomes','Oficjalne wyniki')}: ${s.labels??'—'}`);chart(a.curve||[]);text('curve-period',a.curve?.length?`${formatTime(a.curve[0].ts)} — ${formatTime(a.curve.at(-1).ts)} · Stockholm`:t('No performance history','Brak historii wyników'));const ask=side=>{const book=s.market.books?.[side];return book?.asks?.length?`${(100*Math.min(...book.asks.map(x=>Number(x[0])))).toFixed(1)}¢`:'—';};text('up-ask',ask('Up'));text('down-ask',ask('Down'));text('reference-label',s.market.rule_kind==='TWAP60'?'Chainlink TWAP 60 s':t('Reference price','Cena referencyjna'));text('reference-price',money(s.reference?.price));text('opening-price',money(s.market.opening));const d=s.decisions.find(x=>x.strategy===selected);text('decision-reason',d?reason(d.reason):t('Awaiting verified data','Oczekiwanie na zweryfikowane dane'));
+const cards=$('strategy-cards');if(cards)cards.replaceChildren();if(cards){const visibleAccounts=sortAccounts(ownStrategies(s.accounts));const books=bookParts(s.accounts);const totalPnl=books.strategy;const bar=node('div',undefined,'card-layout-bar');const autoBtn=node('button',t('Green on top','Zielone u góry'),'small-button'+(cardLayout==='auto'?' on':''));const manBtn=node('button',t('My order · drag','Mój układ · przeciągnij'),'small-button'+(cardLayout==='manual'?' on':''));autoBtn.type=manBtn.type='button';autoBtn.onclick=()=>{cardLayout='auto';localStorage.setItem('btc-lab-card-layout','auto');render();};manBtn.onclick=()=>{cardLayout='manual';if(!cardOrder.length)cardOrder=visibleAccounts.map(a=>a.id);localStorage.setItem('btc-lab-card-layout','manual');localStorage.setItem('btc-lab-card-order',JSON.stringify(cardOrder));render();};bar.append(autoBtn,manBtn);const totalBox=node('div',undefined,'total-pnl');totalBox.append(node('span',t('5–15 min strategies','Strategie 5–15 min')),node('strong',money(totalPnl,true),totalPnl>=0?'positive':'negative'),node('small',t('From the start of each strategy account. Copied wallets stay on Portfele.','Od początku każdego konta strategii. Kopiowane portfele zostają w Portfelach.')),node('small',`${t('Updated','Odświeżono')}: ${formatTime(s.generated_at)}`));cards.append(bar,totalBox);visibleAccounts.forEach((account,i)=>{const pnlClass=cardToneClass(account);const card=node('article',undefined,'strategy-card'+pnlClass+(account.id===selected?' selected':''));card.dataset.strategy=account.id;card.draggable=cardLayout==='manual';if(cardLayout==='manual'){card.addEventListener('dragstart',ev=>{ev.dataTransfer.setData('text/plain',account.id);card.classList.add('dragging');});card.addEventListener('dragend',()=>card.classList.remove('dragging'));card.addEventListener('dragover',ev=>ev.preventDefault());card.addEventListener('drop',ev=>{ev.preventDefault();const from=ev.dataTransfer.getData('text/plain');if(!from||from===account.id)return;const ids=visibleAccounts.map(a=>a.id);const a=ids.indexOf(from),b=ids.indexOf(account.id);if(a<0||b<0)return;ids.splice(a,1);ids.splice(b,0,from);cardOrder=ids;localStorage.setItem('btc-lab-card-order',JSON.stringify(cardOrder));render();});}const top=node('div',undefined,'strategy-top');top.append(node('span',`0${i+1} / ${asset} 15M`,'strategy-number'),node('span',cardKind(account),'chip'));card.append(top,node('h3',cardTitle(account)),node('p',cardBlurb(account)));const stats=node('div',undefined,'strategy-stats');const pairs=account.id.startsWith('copy-')?copyStatPairs(account):[[money(account.pnl,true),'P&L'],[String(account.trades),t('Paper trades','Transakcje testowe')]];for(const [v,label]of pairs){const box=node('div');box.append(node('strong',v),node('small',label));stats.append(box);}card.append(stats);if(account.id.startsWith('copy-')){for(const line of copyWatchLines(account))card.append(node('p',line,'watch-line'));}const pauses=s.strategy_pauses||{};if(Object.prototype.hasOwnProperty.call(pauses,account.id)){const paused=!!pauses[account.id];const btn=node('button',paused?t('Turn entries on','Włącz nowe zakłady'):t('Turn entries off','Wyłącz nowe zakłady'),'small-button strategy-toggle');btn.type='button';btn.onclick=async ev=>{ev.stopPropagation();try{const res=await fetch('./api/strategy-pause',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:account.id,paused:!paused,asset})});if(!res.ok)throw Error('pause');}catch(e){btn.textContent=t('Could not save','Nie zapisano');return;}refresh();};card.append(btn);if(paused)card.append(node('p',t('New entries are off. Open tickets still settle.','Nowe zakłady są wyłączone. Otwarte bilety nadal się rozliczają.')));}if(account.current_block)card.append(node('p',reason(account.current_block)));if(account.entry_capacity_usd!=null)card.append(node('p',`${t('Available next-entry budget including fees','Dostępna kwota kolejnego wejścia z opłatami')}: ${money(account.entry_capacity_usd)} · ${t('Market minimum still applies','Obowiązuje minimum rynku')}`));if(account.losses_7d!=null)card.append(node('p',`${t('Today net','Dzisiaj netto')}: ${money(account.today_pnl,true)} · ${t('7-day gross losses','Straty brutto 7 dni')}: ${money(account.losses_7d)} / ${money(account.week_limit)} · ${t('Next entry loss is also reserved','Limit uwzględnia też możliwą stratę nowego wejścia')}`));cards.append(card);});}
+text('journal-filter-label',t('Journal strategy','Strategia w dzienniku'));text('journal-all',t('All strategies','Wszystkie strategie'));const bookSelect=$('journal-book');if(bookSelect){const bookLabel=$('journal-book-label');if(bookLabel)bookLabel.textContent=t('Journal book','Księga dziennika');if(bookSelect.dataset.ready!==lang){bookSelect.replaceChildren();for(const [value,label] of [['paper',t('PAPER accounts','Konta PAPER')],['policy',t('Policy observation','Obserwacja polityki')],['independent',t('Independent tickets','Niezależne bilety')]]){const o=node('option',label);o.value=value;bookSelect.append(o);}bookSelect.dataset.ready=lang;}bookSelect.value=journalBook;}const journalTrades=renderHistory(s);if($('journal-empty'))$('journal-empty').hidden=!!journalTrades.length;text('journal-scope',journalBook==='policy'?t('Policy observation only. Not the PAPER account.','Tylko obserwacja polityki. To nie konto PAPER.'):journalBook==='independent'?t('Independent hold-to-settlement tickets only. Not a PAPER profit and not a promotion.','Tylko niezależne bilety trzymane do rozstrzygnięcia. To nie zysk konta PAPER i nie awans.'):journalFilter==='all'?t('PAPER account fills only. Observation and independent tickets are separate views.','Tylko wypełnienia kont PAPER. Obserwacja i niezależne bilety są osobnymi widokami.'):`${journalFilter} · ${t('filtered from latest 100 service records; full day in Export report','filtr ostatnich 100 wpisów serwera; pełny dzień w Pobierz raport')}`);text('journal-count',`${journalTrades.length} ${t('recent trades','ostatnich transakcji')}`);text('collector-health',preview?'PREVIEW':healthy?'CONNECTED':live?'DEGRADED':'OFFLINE');text('model-health',isEth()?t('NOT USED','NIE JEST UŻYWANY'):s.model.status);text('training-count',isEth()?t('Separate ETH experiment','Osobny eksperyment ETH'):`${s.model.samples||0} / 200`);$('training-progress').hidden=isEth();$('training-progress').value=Math.min(200,s.model.samples||0);const events=$('events');if(events)events.replaceChildren();if(events){for(const error of (s.worker.errors||[])){const row=node('div',undefined,'event');row.append(node('span',error.stage),node('b',error.detail||error.error));events.append(row);}if(s.worker.reference_error){events.append(node('p',s.worker.reference_error,'muted'));}s.decisions.slice(0,6).forEach(d=>{const row=node('div',undefined,'event');row.append(node('time',formatTime(d.ts)),node('span',d.strategy),node('b',reason(d.reason)));events.append(row);});if(!s.decisions.length)events.append(node('p',t('No decisions recorded. Waiting for the worker.','Brak zapisanych decyzji. Oczekiwanie na silnik.'),'muted'));}text('updated',preview?t('Preview · not connected to a market','Podgląd · bez połączenia z rynkiem'):connected?`${t('Last response','Ostatnia odpowiedź')}: ${formatTime(s.generated_at)} · Stockholm`:t('No service connected','Usługa nie jest podłączona'));tick();installHelp();renderPaperBoard(s);fillProfitBank(s);renderMitch(s);}catch(error){fetchError=String(error&&error.message||error||'render').slice(0,80);}finally{restoreScroll(scrollY);}}
 function tick(){text('clock',new Date().toLocaleTimeString('en-GB',{timeZone:'Europe/Stockholm'})+' · Stockholm');const now=Date.now()/1000;const remaining=state?.market?.end?Math.max(0,Math.floor(state.market.end-now)):null;text('countdown',remaining==null?'—:—':`${String(Math.floor(remaining/60)).padStart(2,'0')}:${String(remaining%60).padStart(2,'0')}`);const age=state?.reference?.source_ts?Math.max(0,now-state.reference.source_ts):null;text('reference-age',age==null?'—':`${age.toFixed(1)}s`);text('reference-health',preview?'PREVIEW':connected&&age!=null&&age<=5?'FRESH':'WAITING');}
-let refreshBusy=false,fetchError='';
+let refreshBusy=false;
 async function refresh(){
   if(preview||refreshBusy)return;
   refreshBusy=true;
@@ -493,7 +527,7 @@ async function refresh(){
   try{
     if(isEth()&&location.hostname.endsWith('github.io'))throw Error('ETH requires private backend');
     const endpoint=location.hostname.endsWith('github.io')?'./state.json':'./api/state?asset='+requested;
-    const opts={cache:'no-store'};
+    const opts={cache:'no-store',credentials:'same-origin'};
     if(typeof AbortSignal!=='undefined'&&typeof AbortSignal.timeout==='function')opts.signal=AbortSignal.timeout(25000);
     const res=await fetch(endpoint,opts);
     if(!res.ok)throw Error('HTTP '+res.status);
@@ -706,6 +740,8 @@ function renderOpsBar(s){
     'kolejka kopii '+(copyStep.queue==null?'brak danych':String(copyStep.queue))+' · ostatnie sprawdzenie kopiarki '+sec(copyStepAge),
     'opóźnienie wykonania '+(exec.median_ms==null?'brak pomiaru':(exec.median_ms+' ms, n='+(exec.n==null?'brak':exec.n))),
     'Mitch publikacja '+(mitchAge==null?'brak publikacji':(Number(mitchAge).toFixed(0)+' s temu'))+' · kolejka '+(mitchStep.queue==null?'brak':String(mitchStep.queue))+' · krok '+sec(mitchStepAge),
+    chainLine(s),
+    tunnelLine(s),
     'nadzór '+(watch.status||'brak danych')+(watch.noted&&watch.noted.length?' · '+watch.noted.join(','):'')+(watch.problems&&watch.problems.length?' · restart: '+watch.problems.join(','):'')+(watch.launch_wait&&watch.launch_wait.reason?' · '+watch.launch_wait.reason:''),
     'restarty '+(watch.restarts_in_window==null?'brak danych':String(watch.restarts_in_window)),
     'zegar '+(clock.status||'brak pomiaru')+' · '+moneyMs(clock.offset_ms)+' · '+(clock.source||'brak źródła')+' · '+(clock.checked_at?formatTime(clock.checked_at):'brak sprawdzenia')+' · niepewność '+moneyMs(clock.uncertainty_ms)
@@ -713,6 +749,16 @@ function renderOpsBar(s){
   el.textContent=parts.join(' · ');
   el.className='ops-status '+(stale?'bad':'ok');
   document.body.classList.toggle('data-stale',stale);
+}
+function chainLine(s){
+  const c=s.chain_status||{};
+  if(c.connected==null&&c.events_matched==null)return 'łańcuch: brak statusu';
+  return 'łańcuch '+(c.connected?'połączony':'rozłączony')+' · dopasowane '+(c.events_matched==null?'brak':String(c.events_matched))+' · porzucone '+(c.events_dropped==null?'brak':String(c.events_dropped))+' · paragon '+(c.bridged==null?'brak':String(c.bridged));
+}
+function tunnelLine(s){
+  const t=s.tunnel_status||{};
+  if(t.edge_connected==null)return 'tunel: brak statusu';
+  return 'tunel '+(t.edge_connected?'krawędź jest':'krawędź nie jest')+' · HTTP '+(t.http_status==null?'brak':String(t.http_status))+(t.reason?' · '+t.reason:'');
 }
 function openWalletDetail(s,account,row,openCount){
   const box=$('wallet-detail');if(!box)return;
@@ -729,9 +775,38 @@ function openWalletDetail(s,account,row,openCount){
   head.append(title,close);
   box.append(head,node('p','Stan: '+(account.roster_state||'brak danych')+' · wynik okresu: '+net+' · otwarte kopie: '+(openCount||0)+(row&&row.pause_reason?' · '+row.pause_reason:'')));
 }
+function mitchSignature(m){
+  if(!m)return 'none';
+  return JSON.stringify({
+    t:m.closed_today_micro,a:m.closed_all_micro,o:m.open_count,h:m.health,
+    j:m.journal,r:m.recent,b:m.book,
+    w:(m.wallets||[]).map(x=>[x.wallet,x.net_micro,x.paused,x.copies,x.open,x.reserved_micro,x.tradable_micro])
+  });
+}
 function renderMitch(s){
-  const root=$('mitch-metrics');if(!root)return;
   const m=s.mitch_copy;
+  const sig=mitchSignature(m);
+  if(sig===lastMitchSig)return;
+  lastMitchSig=sig;
+  const note=$('mitch-miha-note');
+  if(note){
+    note.textContent=(m&&m.miha_5m&&m.miha_5m.note)||'Miha 5m nie jest kopiowany. 15m zostaje jak jest.';
+  }
+  const bookBox=$('mitch-book');
+  if(bookBox){
+    bookBox.replaceChildren();
+    const book=m&&m.book;
+    if(!book){
+      bookBox.append(node('p','Brak jeszcze odczytu arkusza przy decyzji Mitcha. To nie jest ukryty bid.'));
+    }else{
+      const ask=book.has_ask?(book.best_ask+' · głębokość '+book.ask_depth):'brak ask';
+      const bid=book.has_bid?(book.best_bid+' · głębokość '+book.bid_depth):'brak bid';
+      bookBox.append(node('p',(book.slug||'brak rynku')+' · '+(book.side||'brak strony')+' · '+(book.copy_state||'brak stanu')));
+      bookBox.append(node('p','Ask: '+ask+' · Bid: '+bid+(book.error?' · '+book.error:'')));
+      if(book.seen_at)bookBox.append(node('p','Odczyt '+formatTime(book.seen_at)+' · token '+(book.token||'brak')));
+    }
+  }
+  const root=$('mitch-metrics');if(!root)return;
   const show=v=>v==null||v===''?missing():(Number(v)===0?'0,00 USD · potwierdzone zero':money(Number(v)/1e6,true));
   root.replaceChildren();
   const cards=[
@@ -752,18 +827,47 @@ function renderMitch(s){
     if(!rows.length)tiles.append(node('p','Brak danych projektu Mitch. To nie jest zero.'));
     for(const row of rows){
       const net=row.net_micro;
-      const card=node('article',undefined,'strategy-card wallet-tile'+(net>0?' profit':net<0?' loss':''));
+      const card=node('article',undefined,'strategy-card wallet-tile'+(row.paused?' paused':'')+(net>0?' profit':net<0?' loss':''));
       card.append(node('h3',row.label||String(row.wallet||'').slice(-8)));
       card.append(node('p','Wynik: '+(net==null?missing():money(net/1e6,true))));
-      card.append(node('p','Kopie: '+(row.copies==null?missing():String(row.copies))+' · wykorzystanie limitu okien: '+(row.spent_micro==null?missing():money(row.spent_micro/1e6))+' / '+(row.limit_usd||'brak')+' na okno'));
-      card.append(node('p','Otwarte: '+(row.open==null?missing():String(row.open))+' · koszt '+(row.open_cost_micro==null?missing():money(row.open_cost_micro/1e6))+(row.buy_hold?' · zakupy wstrzymane, księga się nie zgadza':'')));
+      if(row.paused)card.append(node('p','ZAKUPY WSTRZYMANE. Ujemny zamknięty wynik. Sprzedaż i rozliczenie zostają.'));
+      const since=row.spent_since_start_micro==null?missing():money(row.spent_since_start_micro/1e6);
+      const wins=Array.isArray(row.windows)?row.windows:[];
+      const current=wins.find(item=>item.open);
+      const currentText=current?(money(current.spent_micro/1e6)+' / '+money(current.limit_micro/1e6)+' w bieżącym oknie'):'brak otwartego okna';
+      const breaks=row.window_limit_breaks==null?missing():String(row.window_limit_breaks);
+      card.append(node('p','Kopie: '+(row.copies==null?missing():String(row.copies))+' · wydatki od startu: '+since+' · '+currentText+' · okna ponad limitem: '+breaks));
+      const reserved=row.reserved_micro==null?missing():money(row.reserved_micro/1e6);
+      const tradable=row.tradable_micro==null?missing():money(row.tradable_micro/1e6);
+      card.append(node('p','Otwarte: '+(row.open==null?missing():String(row.open))+' · koszt '+(row.open_cost_micro==null?missing():money(row.open_cost_micro/1e6))+' · zarezerwowane '+reserved+' · do kolejnych transakcji '+tradable+(row.buy_hold?' · zakupy wstrzymane, księga się nie zgadza':'')));
       card.onclick=()=>{
         const detail=$('mitch-detail');
         if(!detail)return;
         detail.hidden=false;
-        detail.replaceChildren(node('h2',row.label||''),node('p',row.wallet||''),node('p','Wynik zamknięty: '+(net==null?missing():money(net/1e6,true))));
+        detail.replaceChildren(node('h2',row.label||''),node('p',row.wallet||''),node('p','Wynik zamknięty: '+(net==null?missing():money(net/1e6,true))),node('p',row.paused?'Zakupy wstrzymane.':'Zakupy dozwolone tylko z łańcucha poniżej 1 s.'));
       };
       tiles.append(card);
+    }
+  }
+  const body=$('mitch-trades');
+  const empty=$('mitch-trades-empty');
+  if(body){
+    body.replaceChildren();
+    const journal=m&&Array.isArray(m.journal)?m.journal:[];
+    if(empty)empty.hidden=!!journal.length;
+    for(const row of journal){
+      const tr=document.createElement('tr');
+      const cells=[
+        formatTime(row.at),
+        String(row.wallet||'').slice(-8),
+        row.slug||'brak rynku',
+        row.source_price==null?'brak':String(row.source_price),
+        row.copy_vwap==null?'brak':String(row.copy_vwap),
+        row.status||'brak',
+        row.pnl_micro==null?missing():money(Number(row.pnl_micro)/1e6,true)
+      ];
+      for(const value of cells)tr.append(node('td',value));
+      body.append(tr);
     }
   }
   const extra=$('mitch-extra');
@@ -771,19 +875,23 @@ function renderMitch(s){
   extra.replaceChildren();
   if(!m){extra.append(node('p','Brak danych. Założenia i opóźnienia pojawią się po pierwszym zapisie projektu.'));return;}
   extra.append(node('p','Księga Mitcha: '+(m.health||'brak kontroli')+(m.breaks&&m.breaks.length?' · '+m.breaks.map(b=>String(b.wallet||'').slice(-8)+' różnica gotówki '+(b.cash_minus_capital_ledger)+', księgi '+(b.book_minus_capital_pnl)).join('; '):'')));
+  extra.append(node('p','Zakup tylko z OrderFilled albo dopasowanego printu, poniżej 1 s. Lista publiczna nie jest ceną zakupu.'));
   extra.append(node('p','Oczekiwanie na potwierdzenie ceny: '+(m.awaiting_price==null?missing():String(m.awaiting_price))));
   const reasons=m.reasons||{};
   const reasonText=Object.keys(reasons).length?Object.entries(reasons).map(([k,v])=>k+' '+v).join(' · '):'brak decyzji';
   extra.append(node('p','Decyzje: '+reasonText));
-  extra.append(node('p','Historyczne spóźnione zakupy (osobno od nowych sygnałów): '+(reasons.LATE_BUY_NOT_COPIED==null?'brak':String(reasons.LATE_BUY_NOT_COPIED))+' · przed startem: '+(reasons.HISTORICAL_BEFORE_START==null?'brak':String(reasons.HISTORICAL_BEFORE_START))));
+  const late=m.late||{};
+  extra.append(node('p','Spóźnione zakupy w okresie od startu kopiowania. Przed aktywacją: '+(late.before_activation==null?'brak':String(late.before_activation))+'. Nowe sygnały pominięte przez program: '+(late.after_activation_not_copied==null?'brak':String(late.after_activation_not_copied))+'. Bez znacznika czasu: '+(late.unstamped==null?'brak':String(late.unstamped))+'. Pominięcie nie jest utraconym zyskiem.'));
   extra.append(node('p','Wersja: '+(m.spec||missing())+' · kapitał PAPER: '+(m.capital_usd_per_wallet==null?missing():money(m.capital_usd_per_wallet))+' na portfel. '+String(m.capital_note||'')));
   extra.append(node('p',m.sum_matches?'Suma portfeli zgadza się z wynikiem projektu.':'Suma portfeli nie zgadza się z wynikiem projektu albo brakuje danych.'));
   for(const line of m.assumptions||[])extra.append(node('p',line));
   extra.append(node('p',m.grouping||''));
   const lat=m.latency||{};
   const pack=block=>!block||block.n==null?'brak danych':(block.n+' próbek, mediana '+(block.median_ms==null?'brak':block.median_ms+' ms')+', p95 '+(block.p95_ms==null?'brak':block.p95_ms+' ms')+', max '+(block.max_ms==null?'brak':block.max_ms+' ms')+', poniżej 1 s '+(block.under_1000_pct==null?'brak':block.under_1000_pct+'%'));
+  extra.append(node('p','Wykonane kopie z zapisanym pomiarem: '+(lat.samples==null?missing():String(lat.samples))+' · bez zapisanego pomiaru: '+(lat.executed_without_timing==null?missing():String(lat.executed_without_timing))));
   extra.append(node('p','Opóźnienie wykrycia: '+pack(lat.detect)));
-  extra.append(node('p','Przetwarzanie lokalne: '+pack(lat.process)));
+  extra.append(node('p','Kolejka lokalna: '+pack(lat.queue)));
+  extra.append(node('p','Księga: '+pack(lat.book)));
   extra.append(node('p','Razem: '+pack(lat.total)+(lat.total_confirmed?' · pomiar potwierdzony.':' · pomiar całkowity niepotwierdzony. '+(lat.note||''))));
   const recent=m.recent||[];
   if(!recent.length)extra.append(node('p','Brak zapisanych zdarzeń. To nie jest zero kopii z rynku, tylko pusty dziennik od startu.'));

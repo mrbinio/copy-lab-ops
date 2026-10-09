@@ -564,6 +564,13 @@ class Worker:
                 'reference_error':self.feed_error,'version':'0.6.7','asset':self.asset,
                 'execution':'PAPER ONLY','clock_skew':self.clock_skew(),
                 'hot_path':snapshot()})
+            monitor=getattr(self,'chain_monitor',None)
+            bridge=getattr(self,'chain_bridge',None)
+            if monitor:
+                status=dict(monitor.status())
+                if bridge:
+                    status.update(bridge.status())
+                await self._db(self.store.set,'chain_status',status)
             await asyncio.sleep(10)
 
     async def loop_lag_probe(self):
@@ -573,6 +580,15 @@ class Worker:
             started=time.monotonic()
             await asyncio.sleep(0.05)
             note_loop_lag(max(0.0, (time.monotonic() - started - 0.05) * 1000))
+
+    async def _research_once(self):
+        try:
+            await self._db(train,self.store)
+            built=await self._db(report,self.store)
+            await self._db(self.store.set,'report',built)
+            self.last_research=time.time()
+        except Exception as error:
+            LOG.warning('research halted: %s', error_detail(error))
 
     async def iteration(self):
         errors=[]
@@ -606,14 +622,11 @@ class Worker:
         if self.asset=='BTC':
             model=await self._db(self.store.get,'model',{}) or {}
             published=await self._db(self.store.get,'market',{}) or {}
-            if time.time()-self.last_research>3600 or model.get('feature_schema')!=(published.get('feature_schema') or 'spot-v1'):
-                try:
-                    await self._db(train,self.store)
-                    built=await self._db(report,self.store)
-                    await self._db(self.store.set,'report',built)
-                    self.last_research=time.time()
-                except Exception as e:
-                    failure('research',e)
+            due=time.time()-self.last_research>3600 or model.get('feature_schema')!=(published.get('feature_schema') or 'spot-v1')
+            task=getattr(self,'_research_task',None)
+            if due and (task is None or task.done()):
+                # Train off the supervisor loop. A blocking train froze /api/state.
+                self._research_task=asyncio.create_task(self._research_once())
         if time.time()-self.last_prune>=600:
             try:
                 dropped=await self._db(self.store.prune_ephemeral)
@@ -674,6 +687,7 @@ class Worker:
         # Same activity key as REST, so the public list cannot double-copy.
         chain_task=None
         monitor=None
+        bridge=None
         if self.asset=="BTC":
             chain_wss=os.environ.get('ALCHEMY_WSS')
             chain_urls=[u for u in ((chain_wss,) if chain_wss else DEFAULT_CHAIN_WSS) + DEFAULT_CHAIN_WSS if u]
@@ -683,6 +697,8 @@ class Worker:
                 bridge=ChainBridge(self.store,get_json)
                 monitor=ChainMonitor(chain_urls,get_active_wallets(self.store),bridge.on_event)
                 monitor.on_removed=bridge.on_removed
+                self.chain_monitor=monitor
+                self.chain_bridge=bridge
                 chain_task=asyncio.create_task(monitor.run())
                 LOG.info('chain monitor: detect on-chain → copy without waiting for the public list')
             else:
@@ -742,6 +758,11 @@ class Worker:
                 if monitor and time.time()-last_wallet_refresh>=60:
                     monitor.update_wallets(get_active_wallets(self.store))
                     last_wallet_refresh=time.time()
+                if monitor:
+                    status=dict(monitor.status())
+                    if bridge:
+                        status.update(bridge.status())
+                    self.store.set('chain_status', status)
                 await asyncio.sleep(2)
         finally:
             for task in jobs.values():

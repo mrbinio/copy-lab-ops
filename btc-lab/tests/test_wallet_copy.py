@@ -709,7 +709,7 @@ class CopyTests(unittest.TestCase):
             wallet:{'wallet':wallet,'state':'paper_test','since':self.now-100,'reason':'copying'},
         }})
         with self.store.connect() as db:
-            db.execute('INSERT OR IGNORE INTO wallet_copy_accounts VALUES (?,?)',(wallet,500_000_000))
+            db.execute('INSERT OR IGNORE INTO wallet_copy_accounts(wallet, cash) VALUES (?,?)',(wallet,500_000_000))
             db.execute('INSERT INTO wallet_copy_events VALUES (?,?,?,?,?)',(wallet,'buy-1',self.now,'PROCESSING','{}'))
         locked=threading.Event();release=threading.Event();errors=[]
         def settle():
@@ -779,3 +779,24 @@ class CopyTests(unittest.TestCase):
             self.assertEqual(db.execute('SELECT reason FROM wallet_copy_events WHERE event_key=?',('held',)).fetchone()[0],'COPY_LEDGER_HOLD')
             self.assertEqual(db.execute('SELECT reason FROM wallet_copy_events WHERE event_key=?',('open',)).fetchone()[0],'COPIED_BUY')
         self.assertFalse(self.store.get('mitch_copy'))
+
+    def test_a_third_open_waits_for_the_first_period_result(self):
+        from lab.wallet_copy import exposure_block
+        opens = [
+            {'status': 'OPEN', 'cost': 1_000_000, 'fee': 0, 'market': 'a'},
+            {'status': 'OPEN', 'cost': 1_000_000, 'fee': 0, 'market': 'b'},
+        ]
+        self.assertEqual(
+            exposure_block(opens, 'c', 1_000_000, True, 500_000_000, False, 0),
+            'COPY_WAIT_FIRST_RESULT',
+        )
+        self.assertIsNone(exposure_block(opens, 'c', 1_000_000, True, 500_000_000, True, 0))
+        self.assertIsNone(exposure_block(opens[:1], 'c', 1_000_000, True, 500_000_000, False, 0))
+
+    def test_reserved_profit_blocks_a_new_buy_not_a_sell(self):
+        from lab.wallet_copy import exposure_block
+        self.assertEqual(
+            exposure_block([], 'm', 2_000_000, True, 500_000_000, True, 499_000_000),
+            'PROFIT_RESERVED',
+        )
+        self.assertIsNone(exposure_block([], 'm', 1_000_000, False, 500_000_000, True, 0))

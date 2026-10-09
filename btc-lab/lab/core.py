@@ -280,6 +280,21 @@ class Store:
                 if a['cash'] < 0 or a['cash'] != a['initial']+delta:
                     raise LedgerError("ledger cash invariant violated")
 
+    def _tunnel_status(self):
+        """Edge probe written by the local tunnel watch. Not a login behind Access."""
+        try:
+            path = Path(self.path).resolve().parent.parent / 'logs' / 'tunnel-watch-status.json'
+            data = json.loads(path.read_text())
+        except Exception:
+            return {'edge_connected': None, 'note': 'no_tunnel_watch_status'}
+        return {
+            'edge_connected': data.get('edge_connected'),
+            'http_status': data.get('http_status'),
+            'at': data.get('at') or data.get('checked_at'),
+            'action': data.get('action'),
+            'reason': data.get('reason'),
+        }
+
     def snapshot(self):
         with self.connect() as db:
             accounts = []
@@ -312,15 +327,27 @@ class Store:
         from .wallet_observer import get_active_wallets, wallet_label
         wallets=[{**self.get('wallet_observer:'+w,{'wallet':w,'status':'NOT_STARTED','checked_at':None}),'label':wallet_label(w)} for w in get_active_wallets(self)] if self.asset=='BTC' else []
         wallet_events=[]
-        with self.connect() as db:
-            if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='wallet_activity'").fetchone():
-                indexed=db.execute("SELECT 1 FROM sqlite_master WHERE type='index' AND name='wallet_activity_seen'").fetchone()
-                hint=' INDEXED BY wallet_activity_seen' if indexed else ''
-                for row in db.execute(f'SELECT wallet,source_ts,first_seen,body FROM wallet_activity{hint} ORDER BY first_seen DESC LIMIT 30'):
-                    body=json.loads(row['body'])
-                    wallet_events.append({'wallet':row['wallet'],'source_ts':row['source_ts'],'first_seen':row['first_seen'],
-                        **{k:body.get(k) for k in ('type','side','title','price','size','transactionHash')}})
+        try:
+            with self.connect() as db:
+                db.execute('PRAGMA busy_timeout=300')
+                if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='wallet_activity'").fetchone():
+                    indexed=db.execute("SELECT 1 FROM sqlite_master WHERE type='index' AND name='wallet_activity_seen'").fetchone()
+                    hint=' INDEXED BY wallet_activity_seen' if indexed else ''
+                    for row in db.execute(f'SELECT wallet,source_ts,first_seen,body FROM wallet_activity{hint} ORDER BY first_seen DESC LIMIT 30'):
+                        body=json.loads(row['body'])
+                        wallet_events.append({'wallet':row['wallet'],'source_ts':row['source_ts'],'first_seen':row['first_seen'],
+                            **{k:body.get(k) for k in ('type','side','title','price','size','transactionHash')}})
+        except Exception:
+            wallet_events=[]
         experiment=self.get("value_surface_execution",{})
+        bank={'id':'profit-bank','label':'Rezerwa zysku','reserved_micro':0,'mitch_reserved_micro':0,'copy_reserved_micro':0,'reserve_pct':0.40,'live':False}
+        try:
+            from .profit_bank import bank_snapshot
+            with self.connect() as db:
+                db.execute('PRAGMA busy_timeout=300')
+                bank=bank_snapshot(db)
+        except Exception:
+            pass
         if experiment:
             sid="value-surface-paper-v1"
             accounts.append({"id":sid,"name":self.asset+" Value Surface · PAPER 100 USD",
@@ -342,10 +369,10 @@ class Store:
             trades.append({**{k:t.get(k) for k in ('strategy','market','side','shares','cost','fee','exit_fee','opened','status','payout')},'id':'copy:'+t['id'],'resolved':t.get('closed_at')})
         trades=sorted(trades,key=lambda t:t['opened'],reverse=True)[:300]
         from .strategy_control import pauses as strategy_pauses
-        return {"wallet_copy_execution":copies,"wallet_copy_health":self.get("wallet_copy_health",{}),"wallet_copy_progress":self.get("wallet_copy_progress",{}),"mitch_progress":self.get("mitch_progress",{}),"task_health":self.get("task_health",{}),"mitch_health":self.get("mitch_health",{}),"mitch_copy":mitch,"clock_status":self.get("clock_status",{}),"service_watch":self.get("service_watch",{}),"wallet_copy_error":self.get("wallet_copy_error",{}),"wallet_observer":wallets,"wallet_activity_recent":wallet_events,"wallet_discovery":self.get("wallet_discovery",{}),"wallet_roster":self.get("wallet_roster",{}),"opportunity_research":self.get("opportunity_research",{}),"value_surface_execution":experiment,"asset":self.asset,"mode":"PAPER","live_enabled":False,"accounts":accounts,"trades":trades,"decisions":decisions,
+        return {"wallet_copy_execution":copies,"wallet_copy_health":self.get("wallet_copy_health",{}),"wallet_copy_progress":self.get("wallet_copy_progress",{}),"mitch_progress":self.get("mitch_progress",{}),"task_health":self.get("task_health",{}),"mitch_health":self.get("mitch_health",{}),"mitch_copy":mitch,"clock_status":self.get("clock_status",{}),"service_watch":self.get("service_watch",{}),"chain_status":self.get("chain_status",{}),"tunnel_status":self._tunnel_status(),"wallet_copy_error":self.get("wallet_copy_error",{}),"wallet_observer":wallets,"wallet_activity_recent":wallet_events,"wallet_discovery":self.get("wallet_discovery",{}),"wallet_roster":self.get("wallet_roster",{}),"opportunity_research":self.get("opportunity_research",{}),"value_surface_execution":experiment,"asset":self.asset,"mode":"PAPER","live_enabled":False,"accounts":accounts,"trades":trades,"decisions":decisions,
                 "observations":count,"labels":labels,"worker":self.get("worker",{}),"market":self.get("market",{}),
                 "reference":self.get("reference",{}),"model":self.get("model",{"status":"COLLECTING","samples":0}),
-                "price_history":self.get("price_history",[]),"strategy_pauses":strategy_pauses(self),"generated_at":time.time()}
+                "price_history":self.get("price_history",[]),"strategy_pauses":strategy_pauses(self),"profit_bank":bank,"generated_at":time.time()}
 
 
 

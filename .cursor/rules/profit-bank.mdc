@@ -1,0 +1,13 @@
+---
+description: Odkładaj część zysku PAPER jako zarobek; nie wydawaj rezerwy na kolejne zakupy.
+alwaysApply: true
+---
+
+# Rezerwa zysku
+
+Gdy kopiarka albo Mitch zamyka plus, **40% tego plusu** idzie do rezerwy (`profit_bank.lock_profit`, `RESERVE_PCT=0.40`). To jest zarobek, nie kapitał na kolejny trade. `tradable_cash = cash - reserved`.
+
+- Rezerwa jest widoczna na Portfelach i Mitchu jako **Rezerwa zysku**. PAPER, nie LIVE.
+- Strata nie rusza rezerwy. Nie resetuj zarezerwowanego salda.
+- Nie wyłączaj banku i nie obniżaj 40% bez decyzji Damiana.
+- Nie traktuj rezerwy jako salda giełdy ani jako LIVE u Mitcha.

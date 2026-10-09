@@ -136,7 +136,7 @@ def fill_for_wallet(logs, wallet, token_id, shares=None):
     }
 
 
-def execution_from_receipt(reader, event):
+def execution_from_receipt(reader, event, want_block=True):
     """Receipt plus the block time. None when the RPC or the decode does not match.
 
     The block time is the chain's publication of the fill, not the moment the
@@ -165,7 +165,7 @@ def execution_from_receipt(reader, event):
     rpc_ms = (time.perf_counter() - started) * 1000
     block_ts = None
     block_hex = receipt.get('blockNumber')
-    if isinstance(block_hex, str) and rpc_ms < 800:
+    if want_block and isinstance(block_hex, str) and rpc_ms < 400:
         try:
             block = reader._rpc('eth_getBlockByNumber', [block_hex, False])
         except Exception:

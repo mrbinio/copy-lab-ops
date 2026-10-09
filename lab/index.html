@@ -1,7 +1,7 @@
 <!doctype html>
-<html lang="pl">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0b1018"><title>BTC Lab · PAPER</title><link rel="stylesheet" href="style.css?v=20261006-mitch3"><script defer src="app.js?v=20261006-path"></script></head>
-<body>
+<html lang="pl" translate="no" class="notranslate">
+<head><meta charset="utf-8"><meta name="google" content="notranslate"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0b1018"><title>BTC Lab · PAPER</title><link rel="stylesheet" href="style.css?v=20261008-dash-fix"><script defer src="app.js?v=20261008-dash-fix"></script></head>
+<body class="notranslate" translate="no">
 <aside class="sidebar"><a class="brand" href="#wynik"><span class="brand-mark">₿</span><span>BTC<span class="brand-light">LAB</span><small>PAPER</small></span></a>
 <p class="nav-label">WIDOK</p>
 <nav aria-label="Main navigation">
@@ -37,6 +37,8 @@
 </div>
 <article class="metric board-result"><div class="metric-label" id="board-net-label">Wybrany okres</div><div class="metric-value" id="board-net">brak danych</div><p class="metric-note" id="board-net-note">Zamknięte transakcje tej księgi. Otwarte pozycje są osobno.</p></article>
 <article class="metric"><div class="metric-label">Otwarte pozycje</div><div class="metric-value" id="board-open-count">brak danych</div><p class="metric-note" id="board-open-note">Aktualny wynik po szacowanych kosztach sprzedaży jest osobno od wyniku zamkniętych transakcji.</p></article>
+<section class="panel" id="profit-bank-panel"><div class="panel-heading"><div><h2>Rezerwa zysku</h2><p>40% z nowych zamkniętych plusów. Osobny portfel PAPER. Nie LIVE.</p></div></div>
+<div id="profit-bank-tile" class="strategy-grid"></div></section>
 <section class="panel"><div class="panel-heading"><div><h2>Śledzone portfele</h2><p id="wallet-track">Każdy kafel to portfel, który usługa sprawdza. Strategii 5–15 min tu nie ma.</p></div></div>
 <div id="wallet-tiles" class="strategy-grid"></div></section>
 <section class="panel" id="wallet-detail" hidden></section>
@@ -51,10 +53,20 @@
 </details>
 </section>
 <section class="page" id="mitch" hidden>
-<p class="paper-banner">PAPER — osobna księga mitch-copy-wallets-v1. To nie jest wynik kwalifikacji portfeli. Symulacja, nie prawdziwe pieniądze.</p>
+<p class="paper-banner">PAPER — osobna księga mitch-copy-wallets-v1. To nie jest wynik kwalifikacji portfeli. Symulacja, nie prawdziwe pieniądze. Tylko BTC Up/Down 15 min. Miha 5m nie jest kopiowany.</p>
+<p id="mitch-miha-note" class="metric-note"></p>
+<section class="panel" id="mitch-book-panel"><div class="panel-heading"><div><h2>Arkusz — bid i ask</h2><p>To jest ostatni odczyt CLOB przy decyzji Mitcha. Brak bidu albo asku jest powodem, nie zgadywaniem.</p></div></div>
+<div id="mitch-book"></div></section>
 <div class="metrics" id="mitch-metrics"></div>
+<section class="panel" id="mitch-bank-panel"><div class="panel-heading"><div><h2>Rezerwa zysku</h2><p>40% z nowych zamkniętych plusów Mitcha. PAPER. Nie LIVE.</p></div></div>
+<div id="mitch-bank"></div></section>
 <div id="mitch-wallets" class="strategy-grid"></div>
 <section class="panel" id="mitch-detail" hidden></section>
+<section class="panel" id="mitch-trades-panel">
+<div class="panel-heading"><div><h2>Transakcje Mitcha</h2><p>Zamknięte kopie tej księgi. Zakup spóźniony albo z listy publicznej tu nie wejdzie.</p></div></div>
+<div class="table-scroll"><table><thead><tr><th>CZAS</th><th>PORTFEL</th><th>RYNEK</th><th>ŹRÓDŁO</th><th>KOPIA</th><th>STATUS</th><th>WYNIK</th></tr></thead><tbody id="mitch-trades"></tbody></table></div>
+<p id="mitch-trades-empty" class="metric-note" style="margin:12px 22px">Brak zamkniętych kopii w tej księdze.</p>
+</section>
 <details class="panel diag-fold"><summary>Zdarzenia, opóźnienia i założenia</summary><div id="mitch-extra"></div></details>
 </section>
 <section class="page" id="dziennik" hidden>

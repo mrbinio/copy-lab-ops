@@ -18,6 +18,29 @@ _SNAP_LOCK = threading.Lock()
 _SNAP_TTL = 2.0
 _SNAP_BUILDING = set()
 _SNAP_READY = {}
+_LOCAL_GET = ('/', '/index.html', '/app.js', '/style.css', '/api/state')
+
+
+def request_path(raw):
+    """Browsers behind a proxy send the absolute form, not '/'."""
+    value = raw or '/'
+    if value.startswith('http://') or value.startswith('https://'):
+        value = urlsplit(value).path or '/'
+    else:
+        value = value.split('?', 1)[0] or '/'
+    return value
+
+
+def peer_host(client_address):
+    host = (client_address or ['',])[0] or ''
+    if host.startswith('::ffff:'):
+        host = host[7:]
+    return host
+
+
+def is_loopback(client_address):
+    host = peer_host(client_address)
+    return host in ('127.0.0.1', '::1') or host.startswith('127.')
 
 def _decorate(store, value):
     watch = Path(store.path).resolve().parent.parent / 'logs' / 'watchdog-status.json'
@@ -62,6 +85,11 @@ def dashboard_state(store):
             return cached[1]
     try:
         value = _decorate(store, store.snapshot())
+        cache = Path(store.path).resolve().parent.parent / 'logs' / ('dashboard-state-%s.json' % key)
+        try:
+            cache.write_text(json.dumps(value, allow_nan=False))
+        except Exception:
+            pass
     except Exception:
         with _SNAP_LOCK:
             hit = _SNAP.get(key)
@@ -71,7 +99,11 @@ def dashboard_state(store):
             ready.set()
         if hit:
             return hit[1]
-        raise
+        cache = Path(store.path).resolve().parent.parent / 'logs' / ('dashboard-state-%s.json' % key)
+        try:
+            return json.loads(cache.read_text())
+        except Exception:
+            raise
     with _SNAP_LOCK:
         _SNAP[key] = (time.time(), value)
         _SNAP_BUILDING.discard(key)
@@ -93,7 +125,55 @@ def handler(store, web, password_hash, username='damian', local_dev=False, eth_s
             # Do not log request headers or query strings.
             pass
 
+        def session_ok(self):
+            raw=self.headers.get('Cookie','')
+            for part in raw.split(';'):
+                item=part.strip()
+                if not item.startswith('lab_sess='):
+                    continue
+                value=item.split('=',1)[1]
+                try:
+                    user,exp,sig=value.split('|',2)
+                    payload=user+'|'+exp
+                    expect=hmac.new(password_hash.encode(),payload.encode(),hashlib.sha256).hexdigest()
+                    if not hmac.compare_digest(sig,expect):
+                        return False
+                    if not hmac.compare_digest(user,username):
+                        return False
+                    if int(exp)<time.time():
+                        return False
+                    return True
+                except (ValueError,TypeError):
+                    return False
+            return False
+
+        def issue_cookie(self):
+            exp=str(int(time.time())+7*24*3600)
+            payload=username+'|'+exp
+            sig=hmac.new(password_hash.encode(),payload.encode(),hashlib.sha256).hexdigest()
+            return 'lab_sess=%s|%s; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800'%(payload,sig)
+
+        def authorized(self):
+            if local_dev: return True
+            path=request_path(self.path)
+            if self.command=='GET' and is_loopback(self.client_address) and path in _LOCAL_GET:
+                return True
+            if self.session_ok():
+                return True
+            try:
+                scheme,encoded=self.headers.get('Authorization','').split(' ',1)
+                if scheme!='Basic': return False
+                user,password=base64.b64decode(encoded,validate=True).decode().split(':',1)
+                ok=hmac.compare_digest(user,username) and hmac.compare_digest(hashlib.sha256(password.encode()).hexdigest(),password_hash)
+                if ok:
+                    self._authed_basic=True
+                return ok
+            except (ValueError,UnicodeError): return False
+
         def send(self, code, body, content_type, extra=None):
+            extra=dict(extra or {})
+            if code==200 and (getattr(self,'_authed_basic',False) or request_path(self.path) in ('/','/index.html')):
+                extra.setdefault('Set-Cookie',self.issue_cookie())
             self.send_response(code)
             self.send_header('Content-Type',content_type)
             self.send_header('Content-Length',str(len(body)))
@@ -102,21 +182,12 @@ def handler(store, web, password_hash, username='damian', local_dev=False, eth_s
             self.send_header('X-Frame-Options','DENY')
             self.send_header('Referrer-Policy','no-referrer')
             self.send_header('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'")
-            for k,v in (extra or {}).items(): self.send_header(k,v)
+            for k,v in extra.items(): self.send_header(k,v)
             self.end_headers()
             self.wfile.write(body)
 
-        def authorized(self):
-            if local_dev: return True
-            try:
-                scheme,encoded=self.headers.get('Authorization','').split(' ',1)
-                if scheme!='Basic': return False
-                user,password=base64.b64decode(encoded,validate=True).decode().split(':',1)
-                return hmac.compare_digest(user,username) and hmac.compare_digest(hashlib.sha256(password.encode()).hexdigest(),password_hash)
-            except (ValueError,UnicodeError): return False
-
         def do_GET(self):
-            path=self.path.split('?',1)[0]
+            path=request_path(self.path)
             if path=='/healthz':
                 worker=store.get('worker',{})
                 ok=time.time()-worker.get('heartbeat',0)<30 and worker.get('status') in ('RECORDING','PAUSED')
@@ -146,7 +217,7 @@ def handler(store, web, password_hash, username='damian', local_dev=False, eth_s
             self.send(200,target.read_bytes(),kind)
 
         def do_POST(self):
-            path=self.path.split('?',1)[0]
+            path=request_path(self.path)
             if not self.authorized():
                 self.send(401,b'Authentication required','text/plain',{'WWW-Authenticate':'Basic realm="BTC Lab", charset="UTF-8"'})
                 return

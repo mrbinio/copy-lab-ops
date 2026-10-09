@@ -14,8 +14,9 @@ from .mid_window import simulate_sale
 from .reference import classify_rule
 from .wallet_observer import get_active_wallets, wallet_label
 from .strategy_control import is_paused as copy_paused, pauses as copy_pauses
-from .wallet_roster import buy_pause_reason, pause_if_period_negative
+from .wallet_roster import buy_pause_reason, pause_if_period_negative, period_results_for_pause
 from .copy_totals import paper_board, summarize as copy_summarize, path_stats, path_record
+from .profit_bank import ensure_reserved_column, lock_profit, reserved_of, tradable_cash
 from .wallet_watch import build_watch
 from .copy_policy import POLICY, band_reason, confirmed_source_price, decide_buy, decide_sell, remember_fill
 
@@ -29,6 +30,7 @@ BUDGET=5_000_000  # hard cap; the ticket itself is one market minimum
 # The whole open position, including later buys and fees, stays inside that budget.
 POSITION_LIMIT=BUDGET
 MAX_OPEN_POSITIONS=5
+MAX_OPEN_BEFORE_RESULT=2
 # Existing count cap times the existing position budget. Not a higher risk limit.
 WALLET_LIMIT=MAX_OPEN_POSITIONS*POSITION_LIMIT
 EXECUTION='copy-exec-v4'
@@ -308,20 +310,22 @@ def sell_cut(our_shares, proportion):
     return min(cut, whole), None
 
 
-def exposure_block(open_rows, market, debit, opening_new, cash):
+def exposure_block(open_rows, market, debit, opening_new, cash, period_has_result=True, reserved=0):
     """Position and wallet caps, including add-ons, fees and capital already reserved."""
     debit=int(debit)
     rows=[t for t in open_rows if t.get('status') in ('OPEN', 'RESOLVED')]
     if opening_new and len(rows)>=MAX_OPEN_POSITIONS:
         return 'COPY_POSITION_ALREADY_OPEN'
+    if opening_new and not period_has_result and len(rows)>=MAX_OPEN_BEFORE_RESULT:
+        return 'COPY_WAIT_FIRST_RESULT'
     market_tied=sum(int(t['cost'])+int(t['fee']) for t in rows if t.get('market')==market and t.get('status')=='OPEN')
     if market_tied+debit>POSITION_LIMIT:
         return 'COPY_EXPOSURE_LIMIT'
     wallet_tied=sum(int(t['cost'])+int(t['fee']) for t in rows)
     if wallet_tied+debit>WALLET_LIMIT:
         return 'COPY_EXPOSURE_LIMIT'
-    if int(cash)<debit:
-        return 'COPY_CASH_LIMIT'
+    if tradable_cash(cash, reserved)<debit:
+        return 'PROFIT_RESERVED' if reserved else 'COPY_CASH_LIMIT'
     return None
 MIN_SOURCE_PRICE=Decimal('0.20')
 MAX_SOURCE_PRICE=Decimal('0.70')
@@ -461,6 +465,7 @@ class WalletCopy:
             ''')
             db.execute("UPDATE wallet_copy_events SET reason='ABORTED_ON_RESTART' WHERE reason='PROCESSING'")
             db.execute('CREATE INDEX IF NOT EXISTS wallet_copy_events_wallet_ts ON wallet_copy_events(wallet, ts)')
+            ensure_reserved_column(db, 'wallet_copy_accounts')
         if not store.get('wallet_copy_start',{}):store.set('wallet_copy_start',{'at':clock()})
         self.started=store.get('wallet_copy_start',{})['at']
         try:
@@ -487,7 +492,7 @@ class WalletCopy:
         wallets=list(get_active_wallets(self.store))
         with self.store.connect() as db:
             for wallet in wallets:
-                db.execute('INSERT OR IGNORE INTO wallet_copy_accounts VALUES (?,?)',(wallet,INITIAL))
+                db.execute('INSERT OR IGNORE INTO wallet_copy_accounts(wallet, cash) VALUES (?,?)',(wallet,INITIAL))
         with self.store.connect() as db:
             trades=self.positions(db);accounts=[]
             if now-self._last_decision_load>=30:
@@ -502,6 +507,7 @@ class WalletCopy:
                 closed=sorted((t for t in rows if t['status'] in ('CLOSED','SETTLED')),key=lambda t:t['closed_at'])
                 pnl=sum(t['pnl_micro'] for t in closed);exposure=sum(t['cost']+t['fee'] for t in rows if t['status'] in ('OPEN','RESOLVED'))
                 cash=db.execute('SELECT cash FROM wallet_copy_accounts WHERE wallet=?',(wallet,)).fetchone()[0]
+                reserved=reserved_of(db,'wallet_copy_accounts',wallet)
                 ledger=db.execute('SELECT COALESCE(SUM(amount),0) FROM wallet_copy_ledger WHERE wallet=?',(wallet,)).fetchone()[0]
                 if cash<0 or cash!=INITIAL+ledger or cash+exposure!=INITIAL+pnl:
                     mismatches.append({
@@ -515,7 +521,7 @@ class WalletCopy:
                     total+=t['pnl_micro'];peak=max(peak,total);dd=max(dd,peak-total);curve.append({'ts':t['closed_at'],'pnl':total/1e6})
                 cached=self._last_decision.get(wallet)
                 roster_row=roster.get(wallet) or {}
-                accounts.append(dict(id='copy-'+wallet,wallet=wallet,name='Copy '+wallet_label(wallet)+' · PAPER',initial=500,cash=cash/1e6,pnl=pnl/1e6,
+                accounts.append(dict(id='copy-'+wallet,wallet=wallet,name='Copy '+wallet_label(wallet)+' · PAPER',initial=500,cash=cash/1e6,reserved=reserved/1e6,tradable=tradable_cash(cash,reserved)/1e6,pnl=pnl/1e6,
                     roster_state=roster_row.get('state'),watch=self.watch.get(wallet),
                     fees=sum(t['fee']+t.get('exit_fee',0) for t in rows)/1e6,open_cost=exposure/1e6,pending=0,
                     trades=len(rows),settled=len(closed),wins=sum(t['pnl_micro']>0 for t in closed),curve=curve[-300:],
@@ -553,7 +559,7 @@ class WalletCopy:
             execution=EXECUTION,
             flow=self.store.get('wallet_copy_flow') or {},
             scope='BTC/ETH 5m and 15m only; one market minimum per buy (not the source size), source price band 20-70c is a limit of this PAPER version; 500USD separate virtual scenarios; an added buy increases the open lot only inside the 5USD position cap; a source SELL closes the fraction of the source position immediately before that sell',
-            limitation='The 20-70c band is our version limit, not a claim that a price outside it is automatically a losing trade. Changing it belongs in a separate PAPER. The sell fraction uses detected source buys and sells, including ones we did not copy. An unknown opening position or a gap is not a faithful copy and does not invent a fraction. Settlement still runs. FOK at fresh delayed books with 50% depth. A slice below the market minimum is not filled. SELL is allowed while new buys are paused. Signal age 90s. One position including add-ons and fees stays within 5USD. Five positions cap the wallet at 25USD. No profitability guarantee.'))
+            limitation='The 20-70c band is our version limit, not a claim that a price outside it is automatically a losing trade. Changing it belongs in a separate PAPER. The sell fraction uses detected source buys and sells, including ones we did not copy. An unknown opening position or a gap is not a faithful copy and does not invent a fraction. Settlement still runs. FOK at fresh delayed books with 50% depth. A slice below the market minimum is not filled. SELL is allowed while new buys are paused. Signal age 90s. One position including add-ons and fees stays within 5USD. Until the period has a closed or official result, at most two open positions. After a plus, five positions still cap the wallet at 25USD. 40% of each new closed win is reserved and is not spent on the next buy. No profitability guarantee.'))
         self.store.set('wallet_copy_health',{
             'status':'ok','checked_at':now,'last_good_at':now,'copying':'running','held':[],'mismatch':[],
         })
@@ -618,12 +624,19 @@ class WalletCopy:
         # Caller passes the positions it already loaded. Reading them again
         # once per wallet held the publish, and the screen, for minutes.
         rows=[t for t in (self.positions(db) if trades is None else trades) if t['wallet']==wallet]
-        if extra_position and sum(1 for t in rows if t['status'] in ('OPEN','RESOLVED'))>=MAX_OPEN_POSITIONS:return 'COPY_POSITION_ALREADY_OPEN'
+        live=sum(1 for t in rows if t['status'] in ('OPEN','RESOLVED'))
+        if extra_position and live>=MAX_OPEN_POSITIONS:return 'COPY_POSITION_ALREADY_OPEN'
+        roster=((self.store.get('wallet_roster') or {}).get('wallets') or {}).get(wallet) or {}
+        since=float(roster.get('since') or 0)
+        if extra_position and live>=MAX_OPEN_BEFORE_RESULT and not period_results_for_pause(rows, since):
+            return 'COPY_WAIT_FIRST_RESULT'
         cash_row=db.execute('SELECT cash FROM wallet_copy_accounts WHERE wallet=?',(wallet,)).fetchone()
         if cash_row is None:
-            db.execute('INSERT OR IGNORE INTO wallet_copy_accounts VALUES (?,?)',(wallet,INITIAL))
+            db.execute('INSERT OR IGNORE INTO wallet_copy_accounts(wallet, cash) VALUES (?,?)',(wallet,INITIAL))
             cash_row=db.execute('SELECT cash FROM wallet_copy_accounts WHERE wallet=?',(wallet,)).fetchone()
-        if cash_row[0]<BUDGET:return 'COPY_CASH_LIMIT'
+        reserved=reserved_of(db,'wallet_copy_accounts',wallet)
+        if tradable_cash(cash_row[0], reserved)<BUDGET:
+            return 'PROFIT_RESERVED' if reserved else 'COPY_CASH_LIMIT'
         return None
 
     def risk(self,db,wallet,now,extra_position=True):return self.risk_reason(db,wallet,now,extra_position) is None
@@ -1041,7 +1054,11 @@ class WalletCopy:
                 return False
             held=[t for t in self.positions(db) if t['wallet']==wallet]
             cash=db.execute('SELECT cash FROM wallet_copy_accounts WHERE wallet=?',(wallet,)).fetchone()[0]
-            blocked=exposure_block(held,trade['market'],debit,True,cash)
+            reserved=reserved_of(db,'wallet_copy_accounts',wallet)
+            roster=((self.store.get('wallet_roster') or {}).get('wallets') or {}).get(wallet) or {}
+            since=float(roster.get('since') or 0)
+            has_result=bool(period_results_for_pause(held, since))
+            blocked=exposure_block(held,trade['market'],debit,True,cash,has_result,reserved)
             if not blocked and any(t.get('market')==trade['market'] and t.get('status') in ('OPEN','RESOLVED') for t in held):
                 blocked='COPY_POSITION_ALREADY_OPEN'
             if blocked:
@@ -1068,7 +1085,8 @@ class WalletCopy:
             held=[t for t in self.positions(db) if t['wallet']==wallet and t['id']!=trade['id']]
             held.append(current)
             cash=db.execute('SELECT cash FROM wallet_copy_accounts WHERE wallet=?',(wallet,)).fetchone()[0]
-            blocked=exposure_block(held,current['market'],debit,False,cash)
+            reserved=reserved_of(db,'wallet_copy_accounts',wallet)
+            blocked=exposure_block(held,current['market'],debit,False,cash,True,reserved)
             if blocked:
                 self._set_copy_reason(db,wallet,key,blocked,evidence)
                 return False
@@ -1110,6 +1128,7 @@ class WalletCopy:
             db.execute('UPDATE wallet_copy_accounts SET cash=cash+? WHERE wallet=?',(credit,trade['wallet']))
             db.execute('INSERT INTO wallet_copy_ledger VALUES (?,?,?)',('close:'+slice_id,trade['wallet'],credit))
             db.execute("UPDATE wallet_copy_events SET reason=?,body=? WHERE wallet=? AND event_key=?",(event_reason,json.dumps(evidence),row['wallet'],row['event_key']))
+            lock_profit(db,'wallet_copy_accounts',trade['wallet'],closed['pnl_micro'])
             pause_if_period_negative(db,trade['wallet'],now)
 
     def close(self,trade,payout,fee,now,status,evidence,row=None,event_reason='COPIED_SELL'):
@@ -1123,6 +1142,7 @@ class WalletCopy:
             db.execute('UPDATE wallet_copy_accounts SET cash=cash+? WHERE wallet=?',(payout-fee,trade['wallet']))
             db.execute('INSERT INTO wallet_copy_ledger VALUES (?,?,?)',('close:'+trade['id'],trade['wallet'],payout-fee))
             if row:db.execute("UPDATE wallet_copy_events SET reason=?,body=? WHERE wallet=? AND event_key=?",(event_reason,json.dumps(evidence),row['wallet'],row['event_key']))
+            lock_profit(db,'wallet_copy_accounts',trade['wallet'],current['pnl_micro'])
             pause_if_period_negative(db,trade['wallet'],now)
 
     async def settle(self):
@@ -1141,7 +1161,12 @@ class WalletCopy:
             if trade['token'] not in tokens:raise ValueError('SETTLEMENT_TOKEN_MISMATCH')
             trade.update(status='RESOLVED',official_seen_at=self.clock(),official_evidence=raw,
                 official_payout=trade['shares'] if str(winners[0]['token_id'])==trade['token'] else 0)
-            with self.store.connect() as db:db.execute('UPDATE wallet_copy_positions SET body=? WHERE id=?',(json.dumps(trade),trade['id']))
+            with self.store.connect() as db:
+                db.execute('BEGIN IMMEDIATE')
+                db.execute('UPDATE wallet_copy_positions SET body=? WHERE id=?',(json.dumps(trade),trade['id']))
+                # The cash close still waits. The known payout already counts,
+                # so a new buy cannot open while that loss is only "resolved".
+                pause_if_period_negative(db,trade['wallet'],self.clock())
 
     def _due_reviews(self, now):
         with self.store.connect() as db:
@@ -1199,7 +1224,7 @@ class WalletCopy:
     def _ensure_copy_accounts(self):
         with self.store.connect() as db:
             for wallet in get_active_wallets(self.store):
-                db.execute('INSERT OR IGNORE INTO wallet_copy_accounts VALUES (?,?)',(wallet,INITIAL))
+                db.execute('INSERT OR IGNORE INTO wallet_copy_accounts(wallet, cash) VALUES (?,?)',(wallet,INITIAL))
 
     def _load_pending(self, active):
         with self.store.connect() as db:

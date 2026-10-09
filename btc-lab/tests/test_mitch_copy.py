@@ -251,11 +251,210 @@ class MitchBookTests(unittest.TestCase):
         self.assertEqual(depth['history'], 1)
         self.assertEqual(depth['buys'], 1)
 
+    def test_executed_timings_survive_a_newer_rejection(self):
+        self.store.set('mitch_copy_start', {'at': 100, 'spec': 'mitch-copy-wallets-v1'})
+        timing = {
+            'detect_ms': 120.0, 'queue_ms': 4000.0, 'book_ms': 70.0,
+            'process_ms': 70.0, 'total_confirmed': False,
+        }
+        with self.store.connect() as db:
+            db.execute(
+                'INSERT INTO mitch_events VALUES (?,?,?,?,?)',
+                (FIRST, 'fill', 'MITCH_BUY', json.dumps({'timing': timing}), 150),
+            )
+            db.execute(
+                'INSERT INTO mitch_events VALUES (?,?,?,?,?)',
+                (FIRST, 'reject', 'NOT_BTC_15M', '{}', 180),
+            )
+            db.execute(
+                'INSERT INTO mitch_windows VALUES (?,?,?)',
+                (FIRST, 'btc-updown-15m-1799999100', 15_000_000),
+            )
+            db.execute(
+                'INSERT INTO mitch_windows VALUES (?,?,?)',
+                (FIRST, 'btc-updown-15m-1800000000', 15_000_000),
+            )
+            db.execute(
+                '''CREATE TABLE wallet_activity (
+                    wallet TEXT, event_key TEXT, first_seen REAL, source_ts REAL, body TEXT,
+                    PRIMARY KEY(wallet, event_key))'''
+            )
+            db.execute(
+                'INSERT INTO mitch_events VALUES (?,?,?,?,?)',
+                (FIRST, 'old-late', 'LATE_BUY_NOT_COPIED', '{}', 160),
+            )
+            db.execute(
+                'INSERT INTO mitch_events VALUES (?,?,?,?,?)',
+                (FIRST, 'new-late', 'LATE_BUY_NOT_COPIED', '{}', 170),
+            )
+            db.execute(
+                'INSERT INTO wallet_activity VALUES (?,?,?,?,?)',
+                (FIRST, 'old-late', 50, 50, '{}'),
+            )
+            db.execute(
+                'INSERT INTO wallet_activity VALUES (?,?,?,?,?)',
+                (FIRST, 'new-late', 200, 200, '{}'),
+            )
+        payload = self.engine.publish()
+        latency = payload['latency']
+        self.assertEqual(latency['samples'], 1)
+        self.assertEqual(latency['detect']['n'], 1)
+        self.assertEqual(latency['queue']['n'], 1)
+        self.assertEqual(latency['total']['n'], 0)
+        self.assertEqual(latency['executed_without_timing'], 0)
+        self.assertFalse(latency['total_confirmed'])
+        row = next(item for item in payload['wallets'] if item['wallet'] == FIRST)
+        self.assertEqual(row['spent_since_start_micro'], 30_000_000)
+        self.assertEqual(row['window_limit_breaks'], 0)
+        self.assertEqual(len(row['windows']), 2)
+        self.assertTrue(all(item['spent_micro'] == 15_000_000 for item in row['windows']))
+        self.assertTrue(all(item['within_limit'] for item in row['windows']))
+        self.assertEqual(payload['late']['before_activation'], 1)
+        self.assertEqual(payload['late']['after_activation_not_copied'], 1)
+        self.assertEqual(payload['late']['unstamped'], 0)
+
     def test_restart_keeps_the_start_and_does_not_replay(self):
         self.store.set('mitch_copy_start', {'at': 100, 'spec': 'mitch-copy-wallets-v1'})
         again = MitchCopy(self.store, fetch=None, clock=lambda: 200)
         again.ensure()
         self.assertEqual(again.started(), 100)
+
+    def test_five_minute_markets_are_skipped_with_mitch_note(self):
+        event = self.event(10, slug='btc-updown-5m-1790000000')
+        row = {
+            'wallet': MIHA, 'event_key': 'miha-5m', 'body': json.dumps(event),
+            'source_ts': self.engine.clock(), 'first_seen': self.engine.clock(),
+        }
+        pre = self.engine._prefilter(row, 0)
+        self.assertTrue(pre['stop'])
+        with self.store.connect() as db:
+            reason = db.execute(
+                'SELECT reason FROM mitch_events WHERE event_key=?', ('miha-5m',),
+            ).fetchone()[0]
+        self.assertEqual(reason, 'MITCH_SKIP_5M')
+        published = self.engine.publish()
+        self.assertFalse(published['miha_5m']['copy'])
+        self.assertIn('5m', published['miha_5m']['note'])
+
+    def test_a_chain_fast_quote_warms_the_book_instead_of_waiting_three_seconds(self):
+        event = dict(self.event(10), _source='chain_fast')
+        now = self.engine.clock()
+        row = {
+            'wallet': FIRST, 'event_key': 'fast-1', 'body': json.dumps(event),
+            'source_ts': now, 'first_seen': now,
+        }
+        pre = self.engine._prefilter(row, 0)
+        self.assertTrue(pre['stop'])
+        self.assertTrue(pre.get('prefetch'))
+        with self.store.connect() as db:
+            marked = db.execute(
+                'SELECT reason FROM mitch_events WHERE event_key=?', ('fast-1',),
+            ).fetchone()
+        self.assertIsNone(marked)
+
+    def test_reserved_cash_is_not_spent_on_the_next_buy(self):
+        event = self.event(10)
+        with self.store.connect() as db:
+            db.execute('UPDATE mitch_accounts SET reserved=? WHERE wallet=?', (499_000_000, FIRST))
+            _why, fill = self.engine.plan_buy(event, asks('0.50'), '0', '0.01', '1', 20_000_000)
+            self.assertEqual(self.engine.apply_buy(db, FIRST, 'reserved-buy', event, fill, {}), 'PROFIT_RESERVED')
+        published = self.engine.publish()
+        row = next(item for item in published['wallets'] if item['wallet'] == FIRST)
+        self.assertEqual(row['reserved_micro'], 499_000_000)
+        self.assertLess(row['tradable_micro'], fill['cost'] + fill['fee'])
+
+    def test_a_closed_win_banks_forty_percent(self):
+        from lab.profit_bank import RESERVE_PCT, bank_snapshot, lock_profit, reserved_of
+        self.assertEqual(RESERVE_PCT, Decimal('0.40'))
+        with self.store.connect() as db:
+            added = lock_profit(db, 'mitch_accounts', FIRST, 10_000_000)
+            self.assertEqual(added, 4_000_000)
+            self.assertEqual(reserved_of(db, 'mitch_accounts', FIRST), 4_000_000)
+            bank = bank_snapshot(db)
+        self.assertEqual(bank['mitch_reserved_micro'], 4_000_000)
+        self.assertFalse(bank['live'])
+        published = self.engine.publish()
+        self.assertEqual(published['profit_bank']['mitch_reserved_micro'], 4_000_000)
+
+    def test_a_public_list_buy_is_not_copied(self):
+        event = self.event(10)
+        now = self.engine.clock()
+        row = {
+            'wallet': FIRST, 'event_key': 'rest-1', 'body': json.dumps(event),
+            'source_ts': now, 'first_seen': now,
+        }
+        pre = self.engine._prefilter(row, 0)
+        self.assertTrue(pre['stop'])
+        with self.store.connect() as db:
+            reason = db.execute(
+                'SELECT reason FROM mitch_events WHERE event_key=?', ('rest-1',),
+            ).fetchone()[0]
+        self.assertEqual(reason, 'MITCH_NEED_CHAIN')
+
+    def test_a_late_chain_buy_is_not_copied(self):
+        self.store.set('mitch_copy_start', {'at': self.engine.clock() - 60, 'spec': 'mitch-copy-wallets-v1'})
+        event = dict(self.event(10), _source='order_filled')
+        now = self.engine.clock()
+        row = {
+            'wallet': FIRST, 'event_key': 'late-1', 'body': json.dumps(event),
+            'source_ts': now - 1.5, 'first_seen': now - 1.5,
+        }
+        pre = self.engine._prefilter(row, 0)
+        self.assertTrue(pre['stop'])
+        with self.store.connect() as db:
+            reason = db.execute(
+                'SELECT reason FROM mitch_events WHERE event_key=?', ('late-1',),
+            ).fetchone()[0]
+        self.assertEqual(reason, 'LATE_BUY_NOT_COPIED')
+
+    def test_chain_fast_older_than_one_second_is_skipped(self):
+        event = dict(self.event(10), _source='chain_fast')
+        now = self.engine.clock()
+        row = {
+            'wallet': FIRST, 'event_key': 'fast-old', 'body': json.dumps(event),
+            'source_ts': now - 2, 'first_seen': now - 2,
+        }
+        pre = self.engine._prefilter(row, 0)
+        self.assertTrue(pre['stop'])
+        self.assertFalse(pre.get('prefetch'))
+        with self.store.connect() as db:
+            reason = db.execute(
+                'SELECT reason FROM mitch_events WHERE event_key=?', ('fast-old',),
+            ).fetchone()[0]
+        self.assertEqual(reason, 'MITCH_NEED_CHAIN')
+
+    def test_negative_book_pauses_further_buys(self):
+        with self.store.connect() as db:
+            self.engine.anchor_source(db, FIRST, 'token-a', '25')
+            event = self.event(10, '0.40')
+            _why, fill = self.engine.plan_buy(event, asks('0.40'), '0', '0.01', '1', 20_000_000)
+            self.assertEqual(self.engine.apply_buy(db, FIRST, 'loss-buy', event, fill, {}), 'MITCH_BUY')
+            sell = dict(event, side='SELL', size=25, transactionHash='0xlosssell')
+            self.assertEqual(
+                self.engine.apply_sell(db, FIRST, 'loss-sell', sell, asks('0.01'), Decimal('1'), {}, False),
+                'MITCH_SELL',
+            )
+            again = dict(self.event(10, '0.50'), transactionHash='0xafter')
+            _why, fill2 = self.engine.plan_buy(again, asks('0.50'), '0', '0.01', '1', 20_000_000)
+            self.assertEqual(self.engine.apply_buy(db, FIRST, 'after-pause', again, fill2, {}), 'MITCH_PAUSED')
+        published = self.engine.publish()
+        row = next(item for item in published['wallets'] if item['wallet'] == FIRST)
+        self.assertTrue(row['paused'])
+        self.assertTrue(published['journal'])
+
+    def test_pause_stays_after_a_later_plus(self):
+        with self.store.connect() as db:
+            db.execute(
+                "INSERT INTO state VALUES ('mitch_pauses', ?) ON CONFLICT(key) DO UPDATE SET body=excluded.body",
+                (json.dumps({'wallets': {FIRST: {'paused': True, 'since': 1, 'reason': 'held'}}}),),
+            )
+            trade = {
+                'id': 'win1', 'wallet': FIRST, 'status': 'CLOSED',
+                'pnl_micro': 5_000_000, 'closed_at': self.engine.clock(),
+            }
+            db.execute('INSERT INTO mitch_positions VALUES (?,?,?)', ('win1', FIRST, json.dumps(trade)))
+            payload = self.engine.refresh_pauses(db)
+        self.assertTrue(payload['wallets'][FIRST]['paused'])
 
 
 if __name__ == '__main__':

@@ -89,6 +89,15 @@ class WatchdogSplitTests(unittest.TestCase):
         self.assertIn('mitch_no_useful_progress', noted)
         self.assertEqual(ages['mitch_backlog'], 40)
 
+    def test_a_recent_wake_does_not_restart_a_frozen_heartbeat(self):
+        now = 1_000_000
+        state = {'worker': {'heartbeat': now - 900, 'status': 'RECORDING'}}
+        restart, noted, _ages = watchdog.assess(
+            now, state, True, process_age=5000, wake_age=12,
+        )
+        self.assertEqual(restart, [])
+        self.assertIn('recent_wake', noted)
+
     def test_a_launch_wait_suppresses_the_restart(self):
         now = 1_000_000
         state = {'worker': {'heartbeat': now - 500}}

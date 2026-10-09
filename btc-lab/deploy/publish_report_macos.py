@@ -36,6 +36,45 @@ def api(token,path,body=None):
 def selected(value,keys):
     return {k:value[k] for k in keys.split() if k in value}
 
+def capped(value,limits):
+    """Trim unbounded history out of a state blob, recording what was dropped.
+
+    The upload has a hard size limit; copy history grew past it and every
+    hourly export failed. Dropped parts are reported, never silently removed.
+    """
+    if not isinstance(value,dict):return value
+    out=dict(value)
+    for field,keep in limits.items():
+        item=out.get(field)
+        if item is None or isinstance(item,(int,float,bool)):continue
+        total=len(item)
+        if keep==0:
+            out[field]={'omitted_entries':total}
+        elif total>keep:
+            out[field]=item[:keep] if isinstance(item,list) else item
+            out[field+'_truncated']=total
+    return out
+
+CLOCK_WARN=0.5
+
+def clock_alerts(skew):
+    """A local clock drifting away from the venue silently kills trading.
+
+    A Mac 2 s behind NTP made every fresh order book look like it came from
+    the future, so the copier rejected all of them for 50 minutes while the
+    worker still looked busy. Surface it as an alert, not a buried number.
+    """
+    if not isinstance(skew,dict):return []
+    alerts=[]
+    for venue in ('book','reference'):
+        value=skew.get(venue)
+        if not isinstance(value,(int,float)):continue
+        if abs(value)>=CLOCK_WARN:
+            alerts.append({'kind':'CLOCK_SKEW','venue':venue,'seconds':value,
+                'detail':'Local clock is %.2fs %s the %s venue. Run: sudo sntp -sS time.apple.com'
+                    %(abs(value),'behind' if value>0 else 'ahead of',venue)})
+    return alerts
+
 def snapshot(root, asset="BTC"):
     if asset not in ("BTC","ETH"):raise ValueError("unsupported asset")
     path=root/("data/lab.sqlite" if asset=="BTC" else "data/eth/lab.sqlite")
@@ -50,7 +89,7 @@ def snapshot(root, asset="BTC"):
         wallet_rows=[dict(r) for r in db.execute('SELECT wallet,event_key,first_seen,source_ts,body FROM wallet_activity ORDER BY first_seen DESC LIMIT 100')] if 'wallet_activity' in tables else []
         wallet_count=db.execute('SELECT COUNT(*) FROM wallet_activity').fetchone()[0] if 'wallet_activity' in tables else 0
         now=time.time()
-        worker=selected(state('worker'),'status heartbeat reference_status version execution')
+        worker=selected(state('worker'),'status heartbeat reference_status version execution clock_skew')
         model=selected(state('model'),'status samples required trained_at feature_schema model_id frozen_at validation_brier book_brier freeze_provenance')
         exit_fee='exit_fee' if any(r[1]=='exit_fee' for r in db.execute('PRAGMA table_info(positions)')) else '0'
         accounts=[]
@@ -79,16 +118,19 @@ def snapshot(root, asset="BTC"):
             'value_surface_execution_error':state('value_surface_execution_error'),
             'opportunity_research':state('opportunity_research'),
             'wallet_discovery':state('wallet_discovery'),
-            'wallet_copy_execution':state('wallet_copy_execution'),
+            'wallet_copy_execution':capped(state('wallet_copy_execution'),
+                {'skip_review':0,'recent_trades':20,'recent_errors':10,
+                 'recent_decisions':10,'reasons':40}),
             'wallet_copy_error':state('wallet_copy_error'),
             'opportunity_research_error':state('opportunity_research_error'),
             'wallet_observer':[json.loads(r[0]) for r in db.execute("SELECT body FROM state WHERE key LIKE 'wallet_observer:%' ORDER BY key")],
             'exit_comparison':state('exit_comparison'),
             'exit_comparison_error':state('exit_comparison_error'),
-                'complete_set_observer':state('complete_set_observer'),
+                'complete_set_observer':capped(state('complete_set_observer'),{'recent_windows':12}),
                 'complete_set_error':state('complete_set_error'),
             'trade_integer_scale':1000000,'counts':counts,'sampling_policies':policies,
             'recorded_decision_events_24h':decisions,'market':market,'reference':reference,
+            'alerts':clock_alerts(worker.get('clock_skew')),
             'limitations':['Decision counts are throttled recorded events, not every evaluation.',
                 'Export timestamp is not proof of a fresh worker. Inspect heartbeat age.',
                 'No raw orderbook history; not sufficient for exit/latency replay.']}

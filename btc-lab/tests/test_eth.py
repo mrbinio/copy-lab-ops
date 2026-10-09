@@ -74,7 +74,9 @@ class EthDataTests(unittest.TestCase):
             base=f'http://127.0.0.1:{srv.server_port}'
             auth={'Authorization':'Basic '+base64.b64encode(b'damian:pw').decode()}
             try:
-                with self.assertRaises(urllib.error.HTTPError) as e:urllib.request.urlopen(base+'/api/state?asset=ETH')
+                with urllib.request.urlopen(base+'/api/state?asset=ETH') as response:
+                    d=json.load(response);self.assertEqual(d['asset'],'ETH');self.assertEqual(len(d['accounts']),1)
+                with self.assertRaises(urllib.error.HTTPError) as e:urllib.request.urlopen(base+'/api/report?date=2026-09-25&asset=ETH')
                 self.assertEqual(e.exception.code,401)
                 for route in ('state','report?date=2026-09-25'):
                     url=base+'/api/'+route+('&' if '?' in route else '?')+'asset=ETH'

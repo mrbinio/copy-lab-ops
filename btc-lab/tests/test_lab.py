@@ -1,6 +1,7 @@
 import base64
 import concurrent.futures
 import hashlib
+import http.client
 import json
 import tempfile
 import threading
@@ -14,7 +15,7 @@ from http.server import ThreadingHTTPServer
 from lab.core import Store, LedgerError, simulate_fill, units
 from lab.strategy import choose, features
 from lab.worker import Worker, normalize_market, normalize_book, get_json, error_detail, reference_subscription
-from lab.server import handler
+from lab.server import handler, is_loopback, request_path
 from lab.research import train
 
 def fill():
@@ -187,6 +188,15 @@ class DataTests(unittest.TestCase):
         self.assertIsNone(features(70100,70000,[],.9,120))
 
 class AuthTests(unittest.TestCase):
+    def test_proxy_absolute_path_is_local_get(self):
+        self.assertEqual(request_path('/'), '/')
+        self.assertEqual(request_path('/api/state?asset=BTC'), '/api/state')
+        self.assertEqual(request_path('http://127.0.0.1:8769/'), '/')
+        self.assertEqual(request_path('http://127.0.0.1:8769/api/state?asset=BTC'), '/api/state')
+        self.assertTrue(is_loopback(('127.0.0.1', 9)))
+        self.assertTrue(is_loopback(('::ffff:127.0.0.1', 9)))
+        self.assertFalse(is_loopback(('10.0.0.2', 9)))
+
     def test_http_auth_and_read_only(self):
         with tempfile.TemporaryDirectory() as tmp:
             store=Store(Path(tmp)/'db')
@@ -195,7 +205,16 @@ class AuthTests(unittest.TestCase):
             thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
             url=f'http://127.0.0.1:{server.server_port}'
             try:
-                with self.assertRaises(urllib.error.HTTPError) as e:urllib.request.urlopen(url+'/api/state')
+                with urllib.request.urlopen(url+'/api/state') as r:
+                    self.assertEqual(r.status,200)
+                    self.assertFalse(json.load(r)['live_enabled'])
+                conn=http.client.HTTPConnection('127.0.0.1',server.server_port,timeout=5)
+                conn.request('GET','http://127.0.0.1:%s/api/state'%server.server_port)
+                proxied=conn.getresponse()
+                self.assertEqual(proxied.status,200)
+                proxied.read()
+                conn.close()
+                with self.assertRaises(urllib.error.HTTPError) as e:urllib.request.urlopen(url+'/api/report?date=2026-01-01')
                 self.assertEqual(e.exception.code,401)
                 auth='Basic '+base64.b64encode(b'damian:test-password').decode()
                 req=urllib.request.Request(url+'/api/state',headers={'Authorization':auth})

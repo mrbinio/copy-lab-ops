@@ -104,6 +104,20 @@ def _copying_now(wallet, roster_wallets, pauses):
     return state in ('paper_active', 'paper_test')
 
 
+def _pause_period_net_usd(wallet, roster_wallets):
+    """Net of the copy stint that paused buys. None when that stint was not recorded."""
+    row = roster_wallets.get(wallet) or {}
+    if row.get('state') != 'paused':
+        return None
+    last = None
+    for period in row.get('periods') or []:
+        if period.get('ended') == 'pause' and period.get('net_usd') is not None:
+            last = period
+    if not last:
+        return None
+    return float(last['net_usd'])
+
+
 def _pause_reason(wallet, roster_wallets, pauses):
     if _copying_now(wallet, roster_wallets, pauses):
         return None
@@ -160,6 +174,7 @@ def paper_board(trades, roster, pauses, now):
                 'net_micro': None if not known else sum(item['pnl_micro'] for item in items),
                 'closed': len(items),
                 'pause_reason': _pause_reason(wallet, roster_wallets, pauses),
+                'pause_period_net_usd': _pause_period_net_usd(wallet, roster_wallets),
             })
         wallet_rows.sort(key=lambda row: (not row['copying'], row['net_micro'] is None, row['net_micro'] or 0, row['wallet']))
         net_micro = None if missing else sum(trade['pnl_micro'] for trade in rows)

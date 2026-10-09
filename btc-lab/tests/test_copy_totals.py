@@ -73,10 +73,30 @@ class CopyTotalsTests(unittest.TestCase):
         self.assertFalse(off['copying'])
         self.assertEqual(off['pause_reason'], '7d net <= -15')
         self.assertEqual(off['net_micro'], -5_000_000)
+        self.assertIsNone(off['pause_period_net_usd'])
         self.assertEqual(board['periods']['week']['net_micro'], -3_000_000)
         self.assertIsNone(board['open']['mark_micro'])
         self.assertEqual(board['open']['count'], 1)
         self.assertEqual(board['open']['mark_note'], 'brak aktualnej wyceny')
+
+    def test_a_green_day_still_shows_the_negative_period_that_paused_buys(self):
+        now = datetime(2026, 10, 7, 16, 19, tzinfo=ZoneInfo('Europe/Stockholm')).timestamp()
+        trades = [
+            {'wallet': 'green', 'status': 'SETTLED', 'closed_at': now - 60, 'pnl_micro': 14_540_000,
+             'cost': 1, 'fee': 0, 'exit_fee': 0, 'opened': now - 120, 'side': 'Up', 'market': 'm'},
+        ]
+        roster = {'wallets': {
+            'green': {
+                'state': 'paused', 'reason': 'paper-roster-v3 pause: current copy period is negative',
+                'periods': [{'ended': 'pause', 'net_usd': -3.76016, 'trades': 1}],
+            },
+        }}
+        board = paper_board(trades, roster, {'copy-green': True}, now)
+        row = board['periods']['today']['wallets'][0]
+        self.assertEqual(row['net_micro'], 14_540_000)
+        self.assertAlmostEqual(row['pause_period_net_usd'], -3.76016)
+        self.assertEqual(board['periods']['today']['net_micro'], 14_540_000)
+        self.assertEqual(board['open']['count'], 0)
 
     def test_missing_pnl_is_not_a_zero(self):
         board = paper_board([

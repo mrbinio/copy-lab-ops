@@ -206,6 +206,19 @@ class BridgeTests(unittest.TestCase):
         s=ChainBridge(self.store,lambda u:[],lambda:self.now).status()
         self.assertIn('bridged',s);self.assertIn('timeouts',s);self.assertIn('off_market',s)
 
+    def test_an_order_filled_receipt_replaces_a_book_quote(self):
+        bridge=ChainBridge(self.store,lambda u:[],lambda:self.now,asyncio.sleep)
+        quote={'transactionHash':'0xfill','type':'TRADE','side':'BUY','asset':'111',
+               'price':0.99,'size':5,'_source':'chain_fast','timestamp':self.now}
+        paid=dict(quote, price=0.42, usdcSize=2.1, _source='order_filled')
+        self.assertTrue(bridge._insert(WALLET_A, quote, self.now, 'chain-fast'))
+        self.assertTrue(bridge._insert(WALLET_A, paid, self.now, 'order-filled'))
+        with self.store.connect() as db:
+            body=json.loads(db.execute('SELECT body FROM wallet_activity').fetchone()[0])
+        self.assertEqual(body['_source'],'order_filled')
+        self.assertEqual(body['price'],0.42)
+        self.assertFalse(bridge._insert(WALLET_A, quote, self.now, 'chain-fast'))
+
 class MonitorTests(unittest.IsolatedAsyncioTestCase):
     async def test_non_blocking_dispatch(self):
         calls=[]

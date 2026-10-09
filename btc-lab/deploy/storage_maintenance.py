@@ -2,10 +2,28 @@
 import re
 import shutil
 import sqlite3
+import time
 from pathlib import Path
 
 BACKUP=re.compile(r'pre-(?:(btc|eth)-)?[0-9a-f]{12}-[0-9]+\.sqlite$')
 RELEASE=re.compile(r'[0-9a-f]{12}-[0-9]+$')
+# 0-byte leftover WAL from a finished copy is not a live writer.
+STALE_JOURNAL_SECONDS=3600
+
+def _journal_hot(path):
+    """True only when a WAL/journal still looks like an in-progress writer."""
+    now=time.time()
+    for suffix in ('-journal','-wal'):
+        journal=Path(str(path)+suffix)
+        if journal.exists() and journal.stat().st_size>0 and now-journal.stat().st_mtime<STALE_JOURNAL_SECONDS:
+            return True
+    return False
+
+def _drop_journals(path):
+    for suffix in ('-journal','-wal','-shm','.partial','.partial-wal','.partial-shm'):
+        extra=Path(str(path)+suffix)
+        if extra.exists() and extra.is_file() and not extra.is_symlink():
+            extra.unlink()
 
 def cleanup(root,protected=()):
     root=Path(root);removed=[]
@@ -21,8 +39,9 @@ def cleanup(root,protected=()):
         good={'btc':0,'eth':0}
         for p in candidates:
             asset=BACKUP.fullmatch(p.name).group(1) or 'btc'
-            # Hot journals may belong to interrupted backups: leave untouched.
-            if any(Path(str(p)+suffix).exists() for suffix in ('-journal','-wal','-shm')):continue
+            if _journal_hot(p):
+                continue
+            _drop_journals(p)
             if good[asset]>=2:
                 p.unlink();removed.append(str(p));continue
             try:
@@ -32,6 +51,10 @@ def cleanup(root,protected=()):
                     valid=valid and {'accounts','positions','ledger'}<=tables
                 if valid:good[asset]+=1
             except sqlite3.Error:pass
+        for leftover in backups.iterdir():
+            name=leftover.name
+            if leftover.is_file() and not leftover.is_symlink() and (name.endswith(('-wal','-shm','-journal')) or '.partial' in name):
+                leftover.unlink();removed.append(str(leftover))
     return removed
 
 def ensure_backup_space(root):

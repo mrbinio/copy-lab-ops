@@ -482,6 +482,55 @@ class RosterTests(unittest.TestCase):
                 self.assertTrue(pause_if_period_negative(db, wallet, now))
                 self.assertEqual(buy_pause_reason(db, wallet, now), 'COPY_PAUSED')
 
+    def test_a_resolved_loss_blocks_a_buy_before_the_cash_close(self):
+        """The official payout is known. Waiting to book cash must not leave buys open."""
+        with tempfile.TemporaryDirectory() as d:
+            store = Store(Path(d) / 'lab.db')
+            now = 6_000_000
+            wallet = '0x' + '33' * 20
+            state = bootstrap(store, now=now)
+            state['wallets'][wallet] = {
+                'wallet': wallet, 'state': 'paper_test', 'since': now - 60, 'reason': 'copying',
+            }
+            store.set('wallet_roster', state)
+            with store.connect() as db:
+                db.execute('CREATE TABLE wallet_copy_positions (id INTEGER PRIMARY KEY, body TEXT)')
+                db.execute(
+                    'INSERT INTO wallet_copy_positions(body) VALUES (?)',
+                    (json.dumps({
+                        'wallet': wallet, 'status': 'RESOLVED', 'opened': now - 40,
+                        'official_seen_at': now - 20, 'official_payout': 0,
+                        'cost': 3_270_000, 'fee': 0, 'market': 'm',
+                    }),),
+                )
+                self.assertTrue(pause_if_period_negative(db, wallet, now))
+                self.assertEqual(buy_pause_reason(db, wallet, now), 'COPY_PAUSED')
+            state = store.get('wallet_roster')
+            self.assertEqual(state['wallets'][wallet]['state'], 'paused')
+
+    def test_a_resolved_win_does_not_pause(self):
+        with tempfile.TemporaryDirectory() as d:
+            store = Store(Path(d) / 'lab.db')
+            now = 6_000_000
+            wallet = '0x' + '44' * 20
+            state = bootstrap(store, now=now)
+            state['wallets'][wallet] = {
+                'wallet': wallet, 'state': 'paper_test', 'since': now - 60, 'reason': 'copying',
+            }
+            store.set('wallet_roster', state)
+            with store.connect() as db:
+                db.execute('CREATE TABLE wallet_copy_positions (id INTEGER PRIMARY KEY, body TEXT)')
+                db.execute(
+                    'INSERT INTO wallet_copy_positions(body) VALUES (?)',
+                    (json.dumps({
+                        'wallet': wallet, 'status': 'RESOLVED', 'opened': now - 40,
+                        'official_seen_at': now - 20, 'official_payout': 5_000_000,
+                        'cost': 2_000_000, 'fee': 0, 'market': 'm',
+                    }),),
+                )
+                self.assertFalse(pause_if_period_negative(db, wallet, now))
+                self.assertIsNone(buy_pause_reason(db, wallet, now))
+
     def test_plus_observation_opens_a_copy_without_waiting_for_candidate_stats(self):
         with tempfile.TemporaryDirectory() as d:
             store = Store(Path(d) / 'lab.db')

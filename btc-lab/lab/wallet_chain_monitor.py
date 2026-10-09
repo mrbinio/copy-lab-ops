@@ -331,10 +331,31 @@ class ChainBridge:
         ts = float(source_row.get('timestamp', now))
         key = _row_key(source_row)
         source_row['_detected_at'] = detected_at
+        body = json.dumps(source_row, allow_nan=False)
+        rank = {'chain_fast': 0, 'chain_accelerated': 1, 'market_trade': 2, 'order_filled': 3}
         with self.store.connect() as db:
-            cur = db.execute('INSERT OR IGNORE INTO wallet_activity VALUES (?,?,?,?,?)',
-                             (wallet, key, now, ts, json.dumps(source_row, allow_nan=False)))
-            if cur.rowcount:
+            existing = db.execute(
+                'SELECT body FROM wallet_activity WHERE wallet=? AND event_key=?',
+                (wallet, key),
+            ).fetchone()
+            if not existing:
+                db.execute(
+                    'INSERT INTO wallet_activity VALUES (?,?,?,?,?)',
+                    (wallet, key, now, ts, body),
+                )
+                wrote = True
+            else:
+                old = json.loads(existing[0] or '{}')
+                new_rank = rank.get(source_row.get('_source'), 1)
+                old_rank = rank.get(old.get('_source'), 1)
+                if new_rank <= old_rank:
+                    return False
+                db.execute(
+                    'UPDATE wallet_activity SET source_ts=?, body=? WHERE wallet=? AND event_key=?',
+                    (ts, body, wallet, key),
+                )
+                wrote = True
+            if wrote:
                 self.bridged += 1
                 LOG.info('%s: %s %s @ %s', label, source_row.get('side', '?'),
                          wallet[-8:], source_row.get('price'))
@@ -355,7 +376,7 @@ class ChainBridge:
             return _post(target, payload, timeout=1.0)
 
         try:
-            parsed = execution_from_receipt(TokenBalanceReader(url, post=post), event)
+            parsed = execution_from_receipt(TokenBalanceReader(url, post=post), event, want_block=False)
         except Exception:
             return None
         if not parsed:
@@ -545,6 +566,7 @@ class ChainBridge:
         # Only trades on an open 5m/15m window can be copied. Everything else
         # (hourly markets, share transfers) must not occupy the poll queue.
         from .hot_path import IO
+        from .mitch_copy import WALLETS as MITCH_WALLETS
         loop = asyncio.get_running_loop()
         meta = await loop.run_in_executor(IO, self._window_for, str(event.get('token_id') or ''))
         if meta is None:
@@ -552,27 +574,44 @@ class ChainBridge:
             return
 
         try:
-            fast = None
-            from .mitch_copy import WALLETS as MITCH_WALLETS
+            filled = None
             if wallet in MITCH_WALLETS:
                 from .hot_path import CHAIN
-                fast = await loop.run_in_executor(CHAIN, self._order_fill_row, event, meta)
-            if fast is None:
-                fast = await loop.run_in_executor(IO, self._fast_row, event, meta)
-            if fast:
-                # A book quote only wakes the copier. Confirmation still runs.
+                filled = await loop.run_in_executor(CHAIN, self._order_fill_row, event, meta)
+            if filled:
                 from .hot_path import DB
-                await asyncio.get_running_loop().run_in_executor(
+                await loop.run_in_executor(
+                    DB, self._insert, wallet, filled, detected_at, 'order-filled',
+                )
+                return
+            fast = await loop.run_in_executor(IO, self._fast_row, event, meta)
+            if fast:
+                from .hot_path import DB
+                await loop.run_in_executor(
                     DB, self._insert, wallet, fast, detected_at, 'chain-fast',
                 )
         except Exception as e:
             LOG.debug('fast path miss: %s', str(e)[:120])
 
-        deadline = detected_at + POLL_TIMEOUT
+        timeout = 0.85 if wallet in MITCH_WALLETS else POLL_TIMEOUT
+        interval = 0.05 if wallet in MITCH_WALLETS else POLL_INTERVAL
+        deadline = detected_at + timeout
         source_rows = None
 
-        # Poll until trade appears in Data API
+        # Poll until the receipt names the fill. For Mitch the public list is
+        # not a buy price. Retry the receipt inside one second.
         while self.clock() < deadline:
+            if wallet in MITCH_WALLETS:
+                try:
+                    from .hot_path import CHAIN, DB
+                    filled = await loop.run_in_executor(CHAIN, self._order_fill_row, event, meta)
+                    if filled:
+                        await loop.run_in_executor(
+                            DB, self._insert, wallet, filled, detected_at, 'order-filled',
+                        )
+                        return
+                except Exception as error:
+                    LOG.debug('receipt retry: %s', str(error)[:100])
             try:
                 api_rows = await loop.run_in_executor(IO, self._poll_activity, wallet, detected_at)
                 source_rows = [r for r in (api_rows or [])
@@ -582,7 +621,7 @@ class ChainBridge:
             except Exception as e:
                 LOG.debug('poll retry: %s', str(e)[:100])
             before = self.clock()
-            await self.sleep(POLL_INTERVAL)
+            await self.sleep(interval)
             # A frozen clock must not spin. Production time moves during the wait.
             if self.clock() <= before:
                 break

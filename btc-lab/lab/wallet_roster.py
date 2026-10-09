@@ -329,6 +329,32 @@ def period_closes(closed, since):
     ]
 
 
+def period_results_for_pause(closed, since):
+    """Closed stint results, plus an official payout that is not booked yet.
+
+    Settlement waits before it moves cash. That wait is not a wait before
+    the loss counts. A resolved payout uses the same formula as the later
+    close: payout minus entry cost and entry fee, with no exit fee.
+    """
+    rows = list(period_closes(closed, since))
+    for trade in closed:
+        if trade.get('status') != 'RESOLVED' or trade.get('official_payout') is None:
+            continue
+        if trade.get('opened') is None or trade.get('opened') < since:
+            continue
+        payout = int(trade['official_payout'])
+        cost = int(trade.get('cost') or 0)
+        fee = int(trade.get('fee') or 0)
+        rows.append({
+            'status': 'SETTLED',
+            'opened': trade.get('opened'),
+            'closed_at': trade.get('official_seen_at'),
+            'pnl_micro': payout - cost - fee,
+            'market': trade.get('market'),
+        })
+    return rows
+
+
 def _read_state(db, key):
     row = db.execute('SELECT body FROM state WHERE key=?', (key,)).fetchone()
     if not row:
@@ -381,7 +407,7 @@ def pause_if_period_negative(db, wallet, now):
             trade = json.loads(body)
             if trade.get('wallet') == wallet:
                 closed.append(trade)
-    book = evaluate_copy_book(period_closes(closed, since), now, since)
+    book = evaluate_copy_book(period_results_for_pause(closed, since), now, since)
     if not book['should_pause']:
         return False
     row['state'] = 'paused'

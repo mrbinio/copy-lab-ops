@@ -93,7 +93,7 @@ def _num(value):
         return None
 
 
-def assess(now, state, http_ok, launch_wait=None, process_age=None, http_failures=0, previous=None):
+def assess(now, state, http_ok, launch_wait=None, process_age=None, http_failures=0, previous=None, wake_age=None):
     """A live heartbeat does not hide a stopped copier or a publish that never moved.
 
     A ledger mismatch holds buys and is not restarted. A launch-limit wait is
@@ -184,6 +184,12 @@ def assess(now, state, http_ok, launch_wait=None, process_age=None, http_failure
     copy_oldest = _num(copy_progress.get('oldest_age_s')) or 0
     if copy_arrivals > 0 and copy_decisions == 0 and copy_oldest > 20:
         noted.append('copy_no_useful_progress')
+    # Sleep freezes the heartbeat. The tunnel dies with the network, and a
+    # check in the first minutes after wake must not restart the copier.
+    if wake_age is not None and 0 <= wake_age < 180:
+        if restart_problems:
+            noted.append('recent_wake')
+        restart_problems = []
     if waiting:
         restart_problems = []
     # A cold open of the live database stays on CPU well past ten minutes.
@@ -229,6 +235,22 @@ def notify(body):
         return 'failed'
 
 
+def last_wake_age(now):
+    """Seconds since the kernel woke. None when the clock cannot be read."""
+    try:
+        proc = subprocess.run(
+            ['/usr/sbin/sysctl', '-n', 'kern.waketime'],
+            capture_output=True, text=True, timeout=3,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    import re
+    match = re.search(r'sec = (\d+)', proc.stdout or '')
+    if not match:
+        return None
+    return round(now - int(match.group(1)), 1)
+
+
 def process_age(now):
     """Seconds since the paper wrapper started. A slow open is not a hang yet."""
     try:
@@ -272,10 +294,12 @@ def main():
     http_failures = int(previous.get('http_failures') or 0)
     http_failures = 0 if http_ok else http_failures + 1
     age = process_age(now)
+    wake_age = last_wake_age(now)
     restart_problems, noted, ages = assess(
         now, state, http_ok, launch_wait, process_age=age, http_failures=http_failures,
-        previous=previous,
+        previous=previous, wake_age=wake_age,
     )
+    ages['wake_age_s'] = wake_age
     action = 'ok'
     proof = load(ROOT / 'logs' / 'watchdog-restart.json', None)
     if proof and not proof.get('verified') and age is not None and age >= 180 and not restart_problems:
