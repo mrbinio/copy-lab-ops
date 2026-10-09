@@ -431,6 +431,14 @@ class MitchCopy:
                     today_net += pnl
             should = known and (period_net < 0 or today_net < 0 or all_net < 0)
             old = previous.get(wallet) or {}
+            # A pause carries the result that caused it. A held pause without a
+            # negative trigger in this period was not made by this rule (on
+            # 9 Oct a lifetime pause was written into the period from outside)
+            # and does not hold.
+            trigger = old.get('trigger') or {}
+            justified = (trigger.get('period_net_usd') or 0) < 0 or (trigger.get('today_net_usd') or 0) < 0
+            if old and not justified:
+                old = {}
             if should:
                 wallets[wallet] = {
                     'paused': True,
@@ -440,6 +448,9 @@ class MitchCopy:
                     'all_net_usd': all_net / 1e6,
                     'stint': stint_id,
                     'reason': PAUSE_REASON,
+                    'trigger': old.get('trigger') or {
+                        'at': now, 'period_net_usd': period_net / 1e6, 'today_net_usd': today_net / 1e6,
+                    },
                 }
             elif old.get('paused'):
                 hold = dict(old)

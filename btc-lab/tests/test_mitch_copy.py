@@ -455,7 +455,8 @@ class MitchBookTests(unittest.TestCase):
         with self.store.connect() as db:
             db.execute(
                 "INSERT INTO state VALUES ('mitch_pauses', ?) ON CONFLICT(key) DO UPDATE SET body=excluded.body",
-                (json.dumps({'wallets': {FIRST: {'paused': True, 'since': 1, 'reason': 'held', 'stint': STINT['id']}}}),),
+                (json.dumps({'wallets': {FIRST: {'paused': True, 'since': 1, 'reason': 'held', 'stint': STINT['id'],
+                                                 'trigger': {'period_net_usd': -1.0, 'today_net_usd': -1.0}}}}),),
             )
             trade = {
                 'id': 'win1', 'wallet': FIRST, 'status': 'CLOSED', 'opened': self.engine.clock(),
@@ -475,6 +476,15 @@ class MitchBookTests(unittest.TestCase):
         row = payload['wallets'][FIRST]
         self.assertTrue(row['paused'])
         self.assertEqual(row['all_net_usd'], -9.0)
+
+    def test_a_pause_without_a_negative_trigger_does_not_hold(self):
+        with self.store.connect() as db:
+            db.execute(
+                "INSERT INTO state VALUES ('mitch_pauses', ?) ON CONFLICT(key) DO UPDATE SET body=excluded.body",
+                (json.dumps({'wallets': {FIRST: {'paused': True, 'since': 1, 'reason': 'outside', 'stint': STINT['id']}}}),),
+            )
+            payload = self.engine.refresh_pauses(db)
+        self.assertNotIn(FIRST, payload['wallets'])
 
     def test_the_pause_file_stops_new_buys(self):
         (Path(self.store.path).parent / 'PAUSE').write_text('telegram')

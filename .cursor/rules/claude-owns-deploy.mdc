@@ -1,0 +1,22 @@
+---
+description: BTC Lab — who may change and deploy (Damian, 9 Oct 2026)
+alwaysApply: true
+---
+
+Damian decided on 9 Oct 2026: **only Claude Code changes code, deploys to
+`~/Library/Application Support/BTC Lab/releases/…` and restarts launchd jobs.**
+
+In this repository and on this Mac, a Cursor agent may only **read and report**:
+
+- Do not edit files in `btc-lab/lab/`, `lab/`, `btc-lab/deploy/`.
+- Do not copy anything into the release directory.
+- Do not run `launchctl kickstart`, `bootstrap`, `bootout` or restart any BTC Lab job.
+- Do not write to the sqlite database or to `state` keys (`mitch_pauses`, `mitch_stint`, `profit_bank:*`, …).
+- Do not run a recurring loop that "fixes" BTC Lab.
+
+Current decisions are in `docs/HANDOFF-OPS-BTC-FAST-MATCH-2026-10-09.md` (section "Aktualizacja"):
+a new Mitch test period (`mitch_stint`) where only copies inside the period can pause a wallet,
+the reserve as 40% of each new ledger high, qualifier buys stopped, own 5–15 min strategies archived.
+They replace the older rules in `HANDOFF-OPS-BTC-AUDIT-BRIEF-2026-10-09.md`.
+
+If something looks wrong, write a note in `docs/` and tell Damian. Do not change it.
