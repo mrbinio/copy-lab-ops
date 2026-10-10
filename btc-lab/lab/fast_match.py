@@ -31,11 +31,11 @@ _TOKENS = {}
 CURRENT = None
 
 
-def remember_window(token, slug, condition):
-    """Slug and condition of a token the market channel is subscribed to."""
-    _TOKENS[str(token)] = (str(slug), str(condition or ''))
-    if len(_TOKENS) > 64:
-        for old in list(_TOKENS)[:16]:
+def remember_window(token, slug, condition, outcome=None):
+    """Slug, condition and outcome of a token the market channel is subscribed to."""
+    _TOKENS[str(token)] = (str(slug), str(condition or ''), outcome)
+    if len(_TOKENS) > 128:
+        for old in list(_TOKENS)[:32]:
             _TOKENS.pop(old, None)
 
 
@@ -65,7 +65,8 @@ def _lookup(url, tx):
 
 def activity_row(leg, tx, match_ts, arrived, resolved_at, meta):
     """The fill as a wallet_activity body. usdcSize includes his fee like the public list."""
-    slug, condition = meta
+    slug, condition = meta[0], meta[1]
+    outcome = meta[2] if len(meta) > 2 else None
     return {
         'transactionHash': tx,
         'type': 'TRADE',
@@ -74,6 +75,7 @@ def activity_row(leg, tx, match_ts, arrived, resolved_at, meta):
         'slug': slug,
         'conditionId': condition,
         'asset': leg['token'],
+        'outcome': outcome,
         'size': format(leg['shares'], 'f'),
         'usdcSize': format(leg['usdc'] + leg['fee'], 'f'),
         'price': format(leg['price'], 'f'),
@@ -101,6 +103,10 @@ class FastMatch:
         self.counts = {'prints': 0, 'resolved': 0, 'missed': 0, 'other_shape': 0,
                        'watched': 0, 'dropped': 0, 'errors': 0}
         self._resolve_ms = []
+
+    def set_wallets(self, wallets):
+        """Replace the watched set (Mitch plus the qualifier's copying wallets)."""
+        self.wallets = {str(w).lower() for w in wallets}
 
     def note(self, item, arrived=None):
         """Called for each last_trade_price. Never blocks the socket loop."""
@@ -231,3 +237,32 @@ def insert_row(store, wallet, body, detected_at):
             first_seen = now
     return {'wallet': wallet, 'event_key': key, 'first_seen': first_seen,
             'source_ts': float(body['timestamp']), 'body': text}
+
+
+def route(mitch_sink, qualifier_sink, mitch_wallets):
+    """Mitch wallets go to his copier; every other watched wallet to the qualifier."""
+    mitch = {str(w).lower() for w in mitch_wallets}
+
+    async def sink(wallet, row, arrived):
+        if str(wallet).lower() in mitch:
+            await mitch_sink(wallet, row, arrived)
+        else:
+            await qualifier_sink(wallet, row, arrived)
+    return sink
+
+
+QUALIFIER_POOL = ThreadPoolExecutor(max_workers=1, thread_name_prefix='lab-fast-q')
+
+
+def qualifier_sink(store):
+    """Store the fill for the qualifier's queue. It picks the row up like any source row."""
+    async def sink(wallet, row, arrived):
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(QUALIFIER_POOL, insert_row, store, wallet, row, arrived)
+    return sink
+
+
+def copying_wallets(store, mitch_wallets):
+    roster = ((store.get('wallet_roster') or {}).get('wallets') or {})
+    copying = {w for w, row in roster.items() if (row or {}).get('state') in ('paper_test', 'paper_active')}
+    return set(mitch_wallets) | copying

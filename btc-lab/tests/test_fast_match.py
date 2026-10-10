@@ -163,6 +163,37 @@ class HandOffTests(unittest.TestCase):
             main.close()
 
 
+class RouteTests(unittest.TestCase):
+    def test_mitch_wallets_to_mitch_others_to_qualifier(self):
+        from lab.fast_match import route, copying_wallets
+        got = []
+
+        async def mitch(w, r, a):
+            got.append(('mitch', w))
+
+        async def qual(w, r, a):
+            got.append(('qualifier', w))
+
+        sink = route(mitch, qual, ['0xAAA'])
+        asyncio.run(sink('0xaaa', {}, 1))
+        asyncio.run(sink('0xbbb', {}, 1))
+        self.assertEqual(got, [('mitch', '0xaaa'), ('qualifier', '0xbbb')])
+
+        class Store:
+            def get(self, key):
+                return {'wallets': {'0xt': {'state': 'paper_test'}, '0xa': {'state': 'paper_active'},
+                                    '0xo': {'state': 'observed'}, '0xp': {'state': 'paused'}}}
+        self.assertEqual(copying_wallets(Store(), ['0xm']), {'0xm', '0xt', '0xa'})
+
+    def test_outcome_rides_along(self):
+        from lab.fast_match import activity_row
+        from decimal import Decimal
+        leg = {'side': 'BUY', 'wallet': '0xw', 'token': '1', 'shares': Decimal(2), 'usdc': Decimal(1),
+               'fee': Decimal(0), 'price': Decimal('0.5'), 'role': 'taker', 'signed_at': None}
+        row = activity_row(leg, '0xt', 10.0, 10.1, 10.2, ('eth-updown-5m-900', '0xc', 'Down'))
+        self.assertEqual((row['slug'], row['outcome'], row['price']), ('eth-updown-5m-900', 'Down', '0.5'))
+
+
 class InsertTests(unittest.TestCase):
     def test_a_match_row_is_not_replaced_and_keeps_its_source(self):
         with tempfile.TemporaryDirectory() as tmp:

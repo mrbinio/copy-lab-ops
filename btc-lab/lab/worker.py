@@ -722,7 +722,10 @@ class Worker:
             # The copy is decided on the lane's own loop. Handing it to the
             # worker loop cost a 2-4 s median on 9-10 Oct, when that loop was
             # busy; 495 of ~520 Mitch buys came out later than one second.
-            fast=fast_match.FastMatch(MITCH_WALLETS, submit_fast)
+            fast=fast_match.FastMatch(
+                fast_match.copying_wallets(self.store, MITCH_WALLETS),
+                fast_match.route(submit_fast, fast_match.qualifier_sink(self.store), MITCH_WALLETS),
+            )
             fast_match.CURRENT=fast
             LOG.info('fast lane: match print -> pending tx -> Mitch (%d rpc, own thread)', len(fast.urls))
             prints=asyncio.create_task(asyncio.to_thread(run_market_prints_thread, get_json, fast))
@@ -775,6 +778,9 @@ class Worker:
                 if dead or births:
                     self.store.set('task_health', {'at': time.time(), 'dead': dead, 'restarts': births})
                 # Refresh chain monitor wallet set every 60s
+                if fast is not None and time.time()-last_wallet_refresh>=60:
+                    from .mitch_copy import WALLETS as MITCH_WALLETS
+                    fast.set_wallets(fast_match.copying_wallets(self.store, MITCH_WALLETS))
                 if monitor and time.time()-last_wallet_refresh>=60:
                     monitor.update_wallets(get_active_wallets(self.store))
                     last_wallet_refresh=time.time()

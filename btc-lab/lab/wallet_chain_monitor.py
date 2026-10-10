@@ -687,21 +687,36 @@ def _print_tokens(raw, stamp):
 
 
 async def _window_tokens(fetch):
+    """Tokens of every market the copiers trade: BTC and ETH, 5m and 15m, current and next window."""
     from .hot_path import IO
+    from .fast_match import remember_window
     now = int(time.time())
-    start = now - (now % 900)
     ids = []
     loop = asyncio.get_running_loop()
-    from .fast_match import remember_window
-    for stamp in (start, start + 900):
-        slug = 'btc-updown-15m-%s' % stamp
-        raw = await loop.run_in_executor(
-            IO, fetch, 'https://gamma-api.polymarket.com/markets/slug/' + slug,
-        )
-        tokens = _print_tokens(raw, stamp)
-        for token in tokens:
-            remember_window(token, slug, raw.get('conditionId') if isinstance(raw, dict) else None)
-        ids.extend(tokens)
+    for asset in ('btc', 'eth'):
+        for interval, length in (('15m', 900), ('5m', 300)):
+            start = now - (now % length)
+            for stamp in (start, start + length):
+                slug = '%s-updown-%s-%s' % (asset, interval, stamp)
+                try:
+                    raw = await loop.run_in_executor(
+                        IO, fetch, 'https://gamma-api.polymarket.com/markets/slug/' + slug,
+                    )
+                except Exception:
+                    continue
+                if not isinstance(raw, dict):
+                    continue
+                tokens = raw.get('clobTokenIds')
+                outcomes = raw.get('outcomes')
+                try:
+                    tokens = json.loads(tokens) if isinstance(tokens, str) else tokens
+                    outcomes = json.loads(outcomes) if isinstance(outcomes, str) else outcomes
+                except ValueError:
+                    continue
+                for i, token in enumerate(tokens or []):
+                    outcome = outcomes[i] if isinstance(outcomes, list) and i < len(outcomes) else None
+                    remember_window(str(token), slug, raw.get('conditionId'), outcome)
+                    ids.append(str(token))
     return ids
 
 
@@ -726,7 +741,7 @@ async def run_market_prints(fetch, sleep=asyncio.sleep, fast=None):
                 await sleep(5)
                 continue
             async with websockets.connect(url, open_timeout=15, ping_interval=None) as ws:
-                subscribed = tuple(ids[:8])
+                subscribed = tuple(ids)
                 await ws.send(json.dumps({
                     'assets_ids': list(subscribed), 'type': 'market', 'custom_feature_enabled': True,
                 }))
@@ -752,7 +767,7 @@ async def run_market_prints(fetch, sleep=asyncio.sleep, fast=None):
                         last_ping = now_m
                     if now_m - last_refresh >= 20:
                         last_refresh = now_m
-                        fresh = tuple((await _window_tokens(fetch))[:8])
+                        fresh = tuple(await _window_tokens(fetch))
                         if fresh and fresh != subscribed:
                             subscribed = fresh
                             await ws.send(json.dumps({
