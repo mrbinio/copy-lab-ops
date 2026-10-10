@@ -982,7 +982,7 @@ function renderMitch(s){
       const pnet=row.period_net_micro;
       card.append(node('p','Okres testu: '+(pnet==null?missing():money(pnet/1e6,true))+' · '+(row.period_copies||0)+' kopii, '+(row.period_closed||0)+' zamkniętych'));
       card.append(node('p','Od startu: '+(net==null?missing():money(net/1e6,true))));
-      if(row.paused)card.append(node('p','ZAKUPY WSTRZYMANE: minus w okresie testu albo dziś. Sprzedaż i rozliczenie zostają. Nie zdejmuje się sama.'));
+      if(row.paused)card.append(node('p','ZAKUPY WSTRZYMANE. '+(row.pause_reason||'Minus w okresie testu.')+' Sprzedaż i rozliczenie działają.'));
       const since=row.spent_since_start_micro==null?missing():money(row.spent_since_start_micro/1e6);
       const wins=Array.isArray(row.windows)?row.windows:[];
       const current=wins.find(item=>item.open);

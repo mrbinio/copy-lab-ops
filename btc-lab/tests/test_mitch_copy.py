@@ -456,7 +456,7 @@ class MitchBookTests(unittest.TestCase):
             db.execute(
                 "INSERT INTO state VALUES ('mitch_pauses', ?) ON CONFLICT(key) DO UPDATE SET body=excluded.body",
                 (json.dumps({'wallets': {FIRST: {'paused': True, 'since': 1, 'reason': 'held', 'stint': STINT['id'],
-                                                 'trigger': {'period_net_usd': -1.0, 'today_net_usd': -1.0}}}}),),
+                                                 'kind': 'period', 'trigger': {'period_net_usd': -25.0, 'verdict': True}}}}),),
             )
             trade = {
                 'id': 'win1', 'wallet': FIRST, 'status': 'CLOSED', 'opened': self.engine.clock(),
@@ -491,6 +491,44 @@ class MitchBookTests(unittest.TestCase):
         self.assertEqual(row['period_net_usd'], -0.000001)
         self.assertEqual(row['trigger']['period_net_usd'], -0.000001)
 
+    def _close(self, db, key, pnl, opened_delta=10, closed_at=None):
+        clock = self.engine.clock()
+        trade = {'id': key, 'wallet': FIRST, 'status': 'CLOSED', 'opened': clock + opened_delta,
+                 'pnl_micro': pnl, 'closed_at': closed_at if closed_at is not None else clock + 20}
+        db.execute('INSERT INTO mitch_positions VALUES (?,?,?)', (key, FIRST, json.dumps(trade)))
+
+    def test_a_period_loss_over_twenty_dollars_pauses_for_good(self):
+        with self.store.connect() as db:
+            self._close(db, 'l1', -21_000_000)
+            payload = self.engine.refresh_pauses(db)
+        self.assertEqual(payload['wallets'][FIRST]['kind'], 'period')
+        self.engine.clock = lambda: 1_800_000_000 + 3 * 86400
+        with self.store.connect() as db:
+            self._close(db, 'w1', 30_000_000, closed_at=1_800_000_000 + 3 * 86400)
+            payload = self.engine.refresh_pauses(db)
+        self.assertTrue(payload['wallets'][FIRST]['paused'])
+
+    def test_a_small_loss_pauses_only_until_midnight(self):
+        with self.store.connect() as db:
+            self._close(db, 'l1', -2_000_000)
+            payload = self.engine.refresh_pauses(db)
+        self.assertEqual(payload['wallets'][FIRST]['kind'], 'day')
+        self.engine.clock = lambda: 1_800_000_000 + 86400
+        with self.store.connect() as db:
+            payload = self.engine.refresh_pauses(db)
+        self.assertNotIn(FIRST, payload['wallets'])
+
+    def test_twenty_closed_copies_in_minus_is_a_verdict(self):
+        later = 1_800_000_000 + 2 * 86400
+        with self.store.connect() as db:
+            for i in range(19):
+                self._close(db, 'a%d' % i, 1_000_000, closed_at=1_800_000_000 - 86400 + 100)
+            self._close(db, 'b', -19_500_000, closed_at=1_800_000_000 - 86400 + 200)
+            self.engine.clock = lambda: later
+            payload = self.engine.refresh_pauses(db)
+        row = payload['wallets'][FIRST]
+        self.assertEqual((row['kind'], row['period_closed']), ('period', 20))
+        self.assertAlmostEqual(row['period_net_usd'], -0.5)
     def test_a_pause_without_a_negative_trigger_does_not_hold(self):
         with self.store.connect() as db:
             db.execute(

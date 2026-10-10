@@ -218,7 +218,7 @@ def alerts(state, memory):
         now = bool(row.get('paused'))
         if wallet in paused and paused[wallet] != now and not first:
             out.append('Mitch %s: %s' % (row.get('label') or label(wallet),
-                                         'PAUZA (minus w okresie)' if now else 'pauza zdjęta'))
+                                         ('PAUZA. ' + (row.get('pause_reason') or 'minus w okresie testu')) if now else 'pauza zdjęta, kupno wraca'))
         paused[wallet] = now
     if state.get('live_enabled'):
         out.append('UWAGA: pulpit zgłasza live_enabled=true. Sprawdź natychmiast.')

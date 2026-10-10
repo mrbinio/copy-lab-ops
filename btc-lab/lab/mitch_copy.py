@@ -40,6 +40,11 @@ STINT = {
             'Damian chose a new test period on 9 Oct 2026.',
 }
 PAUSE_REASON = 'mitch-copy-wallets-v1 pause: closed copy period is negative'
+# Damian, 10 Oct 2026: one window cap of loss, or a negative result after a
+# sample big enough to judge, ends a wallet's test. A negative day only pauses
+# until midnight.
+PERIOD_LOSS_LIMIT_MICRO = 20_000_000
+MIN_CLOSED_FOR_VERDICT = 20
 # Mitch did not name a paper bankroll. This only keeps the window caps
 # from being confused with an empty account. It is not his rule.
 CAPITAL_MICRO = 500_000_000
@@ -49,7 +54,7 @@ ASSUMPTIONS = (
     'A partial sell uses source shares sold divided by source shares just before that sell. Needs Mitch to confirm.',
     'Paper capital is $500 per wallet because Mitch did not set it. The window caps are the binding limit.',
     'A new buy needs his fill from the exchange transaction or the chain, and it must land inside one second of the match. A late public-list copy is not his trade.',
-    'A negative closed book, today or in the current test period, pauses further buys. There is no automatic retest. The book since start is kept and shown.',
+    'In the test period a loss over 20 USD, or a negative result after 20 closed copies, pauses buys for good. A negative day pauses until midnight. The book since start is kept and shown.',
 )
 GROUPING = (
     'One activity row is one buy. The shared collector key is transaction hash, '
@@ -399,7 +404,14 @@ class MitchCopy:
         return body
 
     def refresh_pauses(self, db):
-        """Stop new buys when the closed book, today or in this period, is negative."""
+        """Pause rule in the test period (Damian, 10 Oct 2026).
+
+        Permanent: the period loses more than PERIOD_LOSS_LIMIT, or it has at
+        least MIN_CLOSED_FOR_VERDICT closed copies and is negative. Nothing
+        lifts a permanent pause. Daily: a negative day pauses until midnight
+        Stockholm. Losses before the period stay in the book since start and
+        do not pause. Every pause records the result that caused it.
+        """
         now = self.clock()
         today = datetime.fromtimestamp(now, STOCKHOLM).date().isoformat()
         previous = (self._pause_state(db).get('wallets') or {})
@@ -410,6 +422,7 @@ class MitchCopy:
         for wallet in WALLETS:
             all_net = 0
             period_net = 0
+            period_closed = 0
             today_net = 0
             known = True
             for (body,) in db.execute('SELECT body FROM mitch_positions WHERE wallet=?', (wallet,)):
@@ -426,41 +439,39 @@ class MitchCopy:
                 if not inside:
                     continue
                 period_net += pnl
+                period_closed += 1
                 closed = trade.get('closed_at')
                 if closed and datetime.fromtimestamp(float(closed), STOCKHOLM).date().isoformat() == today:
                     today_net += pnl
-            should = known and (period_net < 0 or today_net < 0)
+            numbers = {'today_net_usd': today_net / 1e6, 'period_net_usd': period_net / 1e6,
+                       'period_closed': period_closed, 'all_net_usd': all_net / 1e6}
             old = previous.get(wallet) or {}
             if old.get('stint') != stint_id:
                 old = {}
-            # A pause carries the result that caused it. A held pause without a
-            # negative trigger in this period was not made by this rule (on
-            # 9 Oct a lifetime pause was written into the period from outside)
-            # and does not hold.
             trigger = old.get('trigger') or {}
-            justified = (trigger.get('period_net_usd') or 0) < 0 or (trigger.get('today_net_usd') or 0) < 0
-            if old and not justified:
-                old = {}
-            if should:
-                wallets[wallet] = {
-                    'paused': True,
-                    'since': old.get('since') or now,
-                    'today_net_usd': today_net / 1e6,
-                    'period_net_usd': period_net / 1e6,
-                    'all_net_usd': all_net / 1e6,
-                    'stint': stint_id,
-                    'reason': PAUSE_REASON,
-                    'trigger': old.get('trigger') or {
-                        'at': now, 'period_net_usd': period_net / 1e6, 'today_net_usd': today_net / 1e6,
-                    },
-                }
-            elif old.get('paused'):
-                hold = dict(old)
-                hold['paused'] = True
-                hold['today_net_usd'] = today_net / 1e6
-                hold['period_net_usd'] = period_net / 1e6
-                hold['all_net_usd'] = all_net / 1e6
-                wallets[wallet] = hold
+            # A held pause must have been made by this rule: a permanent one
+            # by a period verdict, a daily one on this calendar day.
+            if old.get('kind') == 'period' and trigger.get('verdict'):
+                held = old
+            elif old.get('kind') == 'day' and old.get('day') == today:
+                held = old
+            else:
+                held = None
+            verdict = known and (period_net < -PERIOD_LOSS_LIMIT_MICRO or
+                                 (period_closed >= MIN_CLOSED_FOR_VERDICT and period_net < 0))
+            daily = known and today_net < 0
+            if verdict or (held and held.get('kind') == 'period'):
+                base = held if held and held.get('kind') == 'period' else None
+                wallets[wallet] = dict(numbers, paused=True, kind='period', stint=stint_id,
+                    since=(base or {}).get('since') or now,
+                    reason='Okres testu: strata ponad %d USD albo minus po %d zamkniętych kopiach.' % (
+                        PERIOD_LOSS_LIMIT_MICRO // 1_000_000, MIN_CLOSED_FOR_VERDICT),
+                    trigger=(base or {}).get('trigger') or dict(numbers, at=now, verdict=True))
+            elif daily or held:
+                wallets[wallet] = dict(numbers, paused=True, kind='day', day=today, stint=stint_id,
+                    since=(held or {}).get('since') or now,
+                    reason='Minus dzisiaj. Zakupy wracają o północy (Stockholm).',
+                    trigger=(held or {}).get('trigger') or dict(numbers, at=now))
         payload = {'updated_at': now, 'stint': stint, 'wallets': wallets}
         db.execute(
             "INSERT INTO state VALUES ('mitch_pauses', ?) ON CONFLICT(key) DO UPDATE SET body=excluded.body",
