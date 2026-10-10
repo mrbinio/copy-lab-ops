@@ -642,6 +642,25 @@ class CopyTests(unittest.TestCase):
         sell_end=next(item[1] for item in order if item[0]=='end')
         self.assertLess(buy_at, sell_end)
 
+    def test_slow_sell_read_stops_at_the_limit(self):
+        import time
+        import lab.wallet_copy as wallet_copy
+        class Slow:
+            def transfers(self, tx):
+                time.sleep(1)
+                return None
+        self.engine.source_reader=Slow()
+        limit=wallet_copy.SELL_READ_LIMIT_S
+        wallet_copy.SELL_READ_LIMIT_S=0.1
+        try:
+            started=time.perf_counter()
+            result,elapsed=asyncio.run(self.engine._prepare_sell(self.row('sell','SELL',wallet=WALLETS[0])))
+        finally:
+            wallet_copy.SELL_READ_LIMIT_S=limit
+        # None hands the sell to the local source book.
+        self.assertIsNone(result)
+        self.assertLess(elapsed, 0.5)
+
     def test_copy_flow_names_the_real_block(self):
         now=1_000
         self.assertEqual(decide_copy_flow(now,1,now-10,0,1,False)['code'],'copying')

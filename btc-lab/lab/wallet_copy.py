@@ -36,6 +36,8 @@ WALLET_LIMIT=MAX_OPEN_POSITIONS*POSITION_LIMIT
 EXECUTION='copy-exec-v4'
 
 
+SELL_READ_LIMIT_S=4
+
 def _event_size(event):
     raw=(event or {}).get('size')
     if raw in (None,''):
@@ -796,11 +798,13 @@ class WalletCopy:
             return None,0.0
         started=time_module.perf_counter()
         try:
-            result=await asyncio.to_thread(
+            # 10 Oct: one read took 62 s and held the whole batch. Past the limit
+            # the sell uses the local source book, like any unknown proportion.
+            result=await asyncio.wait_for(asyncio.to_thread(
                 historical_sell_proportion,reader,row['wallet'],str(event.get('asset') or ''),
-                event.get('transactionHash'),event.get('size'))
+                event.get('transactionHash'),event.get('size')),SELL_READ_LIMIT_S)
         except Exception:
-            result={'proportion':None,'known':False}
+            result=None
         elapsed=time_module.perf_counter()-started
         self.last_sell_read_s=elapsed
         return result,elapsed
