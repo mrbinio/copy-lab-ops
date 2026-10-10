@@ -27,6 +27,14 @@ RESOLVE_DEADLINE = 0.6
 RETRY_EVERY = 0.04
 MAX_INFLIGHT = 48
 RPC_POOL = ThreadPoolExecutor(max_workers=6, thread_name_prefix='lab-fast')
+# Mitch trades only BTC 15m. Since 10 Oct the lane also reads ETH and 5m
+# prints for the qualifier; those must not queue in front of his.
+PRIORITY_POOL = ThreadPoolExecutor(max_workers=6, thread_name_prefix='lab-fast-btc15')
+
+
+def _priority(item):
+    meta = window_of(item.get('asset_id')) if isinstance(item, dict) else None
+    return bool(meta) and str(meta[0]).startswith('btc-updown-15m-')
 _TOKENS = {}
 CURRENT = None
 
@@ -119,7 +127,8 @@ class FastMatch:
         if len(self._seen) > 5000:
             self._seen.popitem(last=False)
         self.counts['prints'] += 1
-        if len(self._inflight) >= MAX_INFLIGHT:
+        priority = _priority(item)
+        if len(self._inflight) >= MAX_INFLIGHT and not priority:
             self.counts['dropped'] += 1
             return None
         try:
@@ -129,14 +138,15 @@ class FastMatch:
         if match_ts > 10_000_000_000:
             match_ts /= 1000
         arrived = self.clock() if arrived is None else arrived
-        task = asyncio.ensure_future(self.resolve(tx, match_ts or arrived, arrived))
+        task = asyncio.ensure_future(self.resolve(tx, match_ts or arrived, arrived,
+                                                  PRIORITY_POOL if priority else RPC_POOL))
         self._inflight.add(task)
         task.add_done_callback(self._inflight.discard)
         return task
 
-    async def _try_all(self, tx):
+    async def _try_all(self, tx, pool=RPC_POOL):
         loop = asyncio.get_running_loop()
-        calls = [loop.run_in_executor(RPC_POOL, self.lookup, url, tx) for url in self.urls]
+        calls = [loop.run_in_executor(pool, self.lookup, url, tx) for url in self.urls]
         for call in calls:
             # The first answer wins. A slower endpoint's error is not news.
             call.add_done_callback(lambda f: f.cancelled() or f.exception())
@@ -149,11 +159,11 @@ class FastMatch:
                 return found
         return None
 
-    async def resolve(self, tx, match_ts, arrived):
+    async def resolve(self, tx, match_ts, arrived, pool=RPC_POOL):
         deadline = arrived + RESOLVE_DEADLINE
         found = None
         while True:
-            found = await self._try_all(tx)
+            found = await self._try_all(tx, pool)
             if found or self.clock() >= deadline:
                 break
             await self.sleep(RETRY_EVERY)

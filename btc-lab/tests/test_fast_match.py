@@ -222,5 +222,15 @@ class LiveGateTests(unittest.TestCase):
             CLOBClient(private_key='0x' + '1' * 64)
 
 
+class Priority(unittest.TestCase):
+    def test_btc_15m_prints_use_their_own_pool(self):
+        from lab import fast_match
+        fast_match.remember_window('111', 'btc-updown-15m-1791627000', '0xc')
+        fast_match.remember_window('222', 'eth-updown-5m-1791627000', '0xd')
+        self.assertTrue(fast_match._priority({'asset_id': '111'}))
+        self.assertFalse(fast_match._priority({'asset_id': '222'}))
+        self.assertFalse(fast_match._priority({'asset_id': 'unknown'}))
+
+
 if __name__ == '__main__':
     unittest.main()
