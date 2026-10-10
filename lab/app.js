@@ -830,6 +830,24 @@ function renderMitchFast(m){
     'Pauza liczy tylko ten okres. Wynik od startu zostaje poniżej.'));
   renderMitchDecisions(m);
 }
+function renderMitchDiscovery(s){
+  const body=$('mitch-discovery');if(!body)return;
+  const d=s.mitch_discovery||{};const rows=d.rows||[];
+  const sig=String(d.finished_at||'');if(body.dataset.sig===sig)return;body.dataset.sig=sig;
+  text('mitch-discovery-when',d.finished_at?('przeliczone '+new Date(d.finished_at*1000).toLocaleString('pl-PL',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})+' · przeszło '+(d.passed||[]).length):'czeka na pierwsze przeliczenie');
+  body.replaceChildren();
+  const usd=v=>v==null?'—':money(v,true);
+  for(const r of rows){
+    const tr=document.createElement('tr');
+    const who=(r.in_mitch_book?'★ ':'')+(r.label||String(r.wallet||'').slice(0,6)+'…'+String(r.wallet||'').slice(-4));
+    tr.append(node('td',who),node('td',r.market||'—'));
+    for(const v of [r.copy_90d,r.copy_90d_without_best,r.copy_30d,r.copy_7d]){const td=node('td',usd(v));td.className=v>0?'positive':v<0?'negative':'';tr.append(td);}
+    tr.append(node('td',String(r.windows??'—')),node('td',(r.days_up??'—')+' / '+(r.days_down??'—')));
+    const verdict=node('td',(r.verdict?'KOPIOWAĆ · ':'NIE · ')+(r.why||''));verdict.className=r.verdict?'decision-ok':'decision-skip';tr.append(verdict);
+    body.append(tr);
+  }
+}
+
 function renderMitchDecisions(m){
   const body=$('mitch-decisions');if(!body)return;
   const rows=m&&Array.isArray(m.period_events)?m.period_events:[];
@@ -935,6 +953,7 @@ function renderOverview(s){
 function renderMitch(s){
   const m=s.mitch_copy;
   renderMitchFast(m);
+  renderMitchDiscovery(s);
   const sig=mitchSignature(m);
   if(sig===lastMitchSig)return;
   lastMitchSig=sig;

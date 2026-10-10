@@ -280,6 +280,29 @@ class Store:
                 if a['cash'] < 0 or a['cash'] != a['initial']+delta:
                     raise LedgerError("ledger cash invariant violated")
 
+    def _mitch_discovery(self):
+        """Compact view of the latest 90-day Mitch-style replay (data/mitch_discovery.json)."""
+        try:
+            data = json.loads((Path(self.path).resolve().parent / 'mitch_discovery.json').read_text())
+        except Exception:
+            return {}
+        rows = []
+        for w in data.get('wallets') or []:
+            for market, v in (w.get('markets') or {}).items():
+                c90 = v.get('mitch15_90d') or {}
+                rows.append({
+                    'wallet': w.get('wallet'), 'label': w.get('label'), 'source': w.get('source'),
+                    'in_mitch_book': w.get('in_mitch_book'), 'market': market,
+                    'copy_90d': c90.get('pnl'), 'copy_90d_without_best': c90.get('pnl_without_best_window'),
+                    'copy_30d': (v.get('mitch15_30d') or {}).get('pnl'), 'copy_7d': (v.get('mitch15_7d') or {}).get('pnl'),
+                    'windows': c90.get('windows'), 'days_up': c90.get('days_up'), 'days_down': c90.get('days_down'),
+                    'worst_day': c90.get('worst_day'), 'source_90d': (v.get('source_90d') or {}).get('pnl'),
+                    'verdict': v.get('verdict'), 'why': v.get('why'),
+                })
+        rows.sort(key=lambda r: (not r['in_mitch_book'], not r['verdict'], -(r['copy_90d'] or -1e9)))
+        return {'finished_at': data.get('finished_at'), 'days': data.get('days'), 'slip_usd': data.get('slip_usd'),
+                'note': data.get('note'), 'passed': data.get('passed') or [], 'rows': rows[:80]}
+
     def _recorder_status(self):
         """Research recorder heartbeat (com.btc-lab.recorder). It never trades."""
         try:
@@ -395,7 +418,7 @@ class Store:
             trades.append({**{k:t.get(k) for k in ('strategy','market','side','shares','cost','fee','exit_fee','opened','status','payout')},'id':'copy:'+t['id'],'resolved':t.get('closed_at')})
         trades=sorted(trades,key=lambda t:t['opened'],reverse=True)[:300]
         from .strategy_control import pauses as strategy_pauses
-        return {"wallet_copy_execution":copies,"wallet_copy_health":self.get("wallet_copy_health",{}),"wallet_copy_progress":self.get("wallet_copy_progress",{}),"mitch_progress":self.get("mitch_progress",{}),"task_health":self.get("task_health",{}),"mitch_health":self.get("mitch_health",{}),"mitch_copy":mitch,"clock_status":self.get("clock_status",{}),"service_watch":self.get("service_watch",{}),"chain_status":self.get("chain_status",{}),"tunnel_status":self._tunnel_status(),"telegram_status":self._telegram_status(),"recorder_status":self._recorder_status(),"wallet_copy_error":self.get("wallet_copy_error",{}),"wallet_observer":wallets,"wallet_activity_recent":wallet_events,"wallet_discovery":self.get("wallet_discovery",{}),"wallet_roster":self.get("wallet_roster",{}),"opportunity_research":self.get("opportunity_research",{}),"value_surface_execution":experiment,"asset":self.asset,"mode":"PAPER","live_enabled":False,"accounts":accounts,"trades":trades,"decisions":decisions,
+        return {"wallet_copy_execution":copies,"wallet_copy_health":self.get("wallet_copy_health",{}),"wallet_copy_progress":self.get("wallet_copy_progress",{}),"mitch_progress":self.get("mitch_progress",{}),"task_health":self.get("task_health",{}),"mitch_health":self.get("mitch_health",{}),"mitch_copy":mitch,"clock_status":self.get("clock_status",{}),"service_watch":self.get("service_watch",{}),"chain_status":self.get("chain_status",{}),"tunnel_status":self._tunnel_status(),"telegram_status":self._telegram_status(),"recorder_status":self._recorder_status(),"mitch_discovery":self._mitch_discovery(),"wallet_copy_error":self.get("wallet_copy_error",{}),"wallet_observer":wallets,"wallet_activity_recent":wallet_events,"wallet_discovery":self.get("wallet_discovery",{}),"wallet_roster":self.get("wallet_roster",{}),"opportunity_research":self.get("opportunity_research",{}),"value_surface_execution":experiment,"asset":self.asset,"mode":"PAPER","live_enabled":False,"accounts":accounts,"trades":trades,"decisions":decisions,
                 "observations":count,"labels":labels,"worker":self.get("worker",{}),"market":self.get("market",{}),
                 "reference":self.get("reference",{}),"model":self.get("model",{"status":"COLLECTING","samples":0}),
                 "price_history":self.get("price_history",[]),"strategy_pauses":strategy_pauses(self),"profit_bank":bank,"generated_at":time.time()}

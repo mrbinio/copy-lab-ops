@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="pl" translate="no" class="notranslate">
-<head><meta charset="utf-8"><meta name="google" content="notranslate"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0b1018"><title>BTC Lab · PAPER</title><link rel="stylesheet" href="style.css?v=20261010-pause"><script defer src="app.js?v=20261010-pause"></script></head>
+<head><meta charset="utf-8"><meta name="google" content="notranslate"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0b1018"><title>BTC Lab · PAPER</title><link rel="stylesheet" href="style.css?v=20261010-discovery"><script defer src="app.js?v=20261010-discovery"></script></head>
 <body class="notranslate" translate="no">
 <aside class="sidebar"><a class="brand" href="#wynik"><span class="brand-mark">₿</span><span>BTC<span class="brand-light">LAB</span><small>PAPER</small></span></a>
 <p class="nav-label">WIDOK</p>
@@ -77,6 +77,10 @@
 <div class="panel-heading"><div><h2>Decyzje w okresie testu</h2><p>Każda transakcja Mitcha na BTC 15m i co z nią zrobiliśmy. Czas liczony od jego transakcji na giełdzie do naszej decyzji.</p></div><span class="chip" id="mitch-decisions-count">brak danych</span></div>
 <div class="table-scroll"><table><thead><tr><th>CZAS</th><th>PORTFEL</th><th>DECYZJA</th><th>STRONA</th><th>RYNEK</th><th>OD JEGO TRANSAKCJI</th></tr></thead><tbody id="mitch-decisions"></tbody></table></div>
 <p id="mitch-decisions-empty" class="metric-note" style="margin:12px 22px">Mitch jeszcze nie handlował w tym okresie.</p>
+</section>
+<section class="panel" id="mitch-discovery-panel">
+<div class="panel-heading"><div><h2>Odkrywanie metodą Mitcha (90 dni)</h2><p>Każdy portfel i rynek: nasza kopia jego transakcji o 2 centy gorzej od jego ceny, z opłatami, rozmiarem i limitem jak u Mitcha. Przechodzi, gdy kopia jest na plusie przez 90 i 30 dni, także bez najlepszego okna, i ma co najmniej 100 okien. Nowe portfele nie trafiają same do księgi Mitcha.</p></div><span class="chip" id="mitch-discovery-when">brak danych</span></div>
+<div class="table-scroll"><table><thead><tr><th>PORTFEL</th><th>RYNEK</th><th>KOPIA 90 DNI</th><th>BEZ NAJLEPSZEGO OKNA</th><th>30 DNI</th><th>7 DNI</th><th>OKNA</th><th>DNI +/−</th><th>WERDYKT</th></tr></thead><tbody id="mitch-discovery"></tbody></table></div>
 </section>
 <section class="panel" id="mitch-trades-panel">
 <div class="panel-heading"><div><h2>Transakcje Mitcha</h2><p>Zamknięte kopie tej księgi. Zakup spóźniony albo z listy publicznej tu nie wejdzie.</p></div></div>

@@ -281,9 +281,34 @@ def morning_text(state, day, now):
     return '\n'.join(lines)
 
 
+def discovery_text(d):
+    lines = ['Odkrywanie metodą Mitcha (90 dni, kopia o 2 centy gorzej)']
+    book = [r for r in d.get('rows') or [] if r.get('in_mitch_book')]
+    if book:
+        lines.append('Portfele Mitcha:')
+        for r in book:
+            lines.append('  %s %s: 90 dni %+.0f · 30 dni %+.0f · %s' % (
+                r.get('label') or r['wallet'][-6:], r['market'], r.get('copy_90d') or 0, r.get('copy_30d') or 0,
+                'KOPIOWAĆ' if r.get('verdict') else 'nie'))
+    new = [p for p in d.get('passed') or [] if not p.get('in_mitch_book')]
+    if new:
+        lines.append('Nowi kandydaci (decyzja Twoja albo Mitcha):')
+        for p in new[:8]:
+            lines.append('  %s… %s: 90 dni %+.0f · 30 dni %+.0f · %d okien' % (
+                p['wallet'][:8], p['market'], p['copy_90d'], p['copy_30d'], p['windows']))
+    else:
+        lines.append('Nowych kandydatów, którzy przeszli test, brak.')
+    return '\n'.join(lines)
+
+
 def alerts(state, memory):
     """New things worth a message. Updates memory in place."""
     out = []
+    found = state.get('mitch_discovery') or {}
+    if found.get('finished_at') and found.get('finished_at') != memory.get('discovery_at'):
+        if memory.get('primed'):
+            out.append(discovery_text(found))
+        memory['discovery_at'] = found.get('finished_at')
     mitch = state.get('mitch_copy') or {}
     seen = set(memory.get('seen') or [])
     first = not memory.get('primed')
