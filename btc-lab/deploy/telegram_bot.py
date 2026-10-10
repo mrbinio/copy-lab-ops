@@ -37,6 +37,15 @@ CHECK_EVERY = 15
 DOWN_AFTER = 120
 DAILY_HOUR = 21
 TRADE_REASONS = ('MITCH_BUY', 'MITCH_ADD', 'MITCH_SELL')
+CALENDAR = ROOT / 'market_calendar.json'
+MARKET_LOG = ROOT / 'logs' / 'market-events.jsonl'
+BINANCE_PRICE = 'https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT'
+BINANCE_DAY = 'https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT'
+MOVE_5M = 1.0
+MOVE_15M = 2.0
+MOVE_COOLDOWN = 1800
+MORNING_HOUR = 8
+WARN_BEFORE = (60, 10)
 LABELS = {
     '0x16217458b59b3458149918058754cd234096b159': '096b159',
     '0xeda9247a2b3c99a9e0bf46cdac6e1974365cf589': '0x9f672c31',
@@ -52,6 +61,7 @@ HELP = (
     '/rezerwa – rezerwa zysku 40%\n'
     '/stop – STOP wszystkich nowych kupna (sprzedaż i rozliczenia działają)\n'
     '/wznow – usuń STOP\n'
+    '/rynek – cena BTC, ruch 24 h i najbliższe wydarzenia makro\n'
     'LIVE jest wyłączone w kodzie. Bot nie składa zleceń.'
 )
 
@@ -192,6 +202,85 @@ def close_text(row):
         label(row.get('wallet')), row.get('slug') or '', usd(row.get('pnl_micro')))
 
 
+def log_market(kind, body):
+    try:
+        MARKET_LOG.parent.mkdir(parents=True, exist_ok=True)
+        with MARKET_LOG.open('a') as handle:
+            handle.write(json.dumps(dict(body, kind=kind, at=time.time())) + '\n')
+    except OSError:
+        pass
+
+
+def get_json(url, opener=urllib.request.urlopen):
+    with opener(urllib.request.Request(url, headers={'User-Agent': 'BTC-Lab-Bot/1.0'}), timeout=8) as reply:
+        return json.loads(reply.read().decode())
+
+
+def market_moves(memory, price, now):
+    """Alert on a sharp BTC move. Keeps 20 minutes of prices in memory."""
+    history = [p for p in memory.get('prices') or [] if now - p[0] <= 1200]
+    history.append([now, price])
+    memory['prices'] = history
+    out = []
+    for minutes, limit in ((5, MOVE_5M), (15, MOVE_15M)):
+        past = [p for p in history if now - p[0] >= minutes * 60 - 30]
+        if not past:
+            continue
+        ref = past[-1][1]
+        change = (price - ref) / ref * 100
+        key = 'move_%dm_at' % minutes
+        if abs(change) >= limit and now - float(memory.get(key) or 0) >= MOVE_COOLDOWN:
+            memory[key] = now
+            direction = 'w górę' if change > 0 else 'w dół'
+            out.append('RYNEK: BTC %+.2f%% w %d min (%s), teraz %.0f USD.\n'
+                       'Krótkie rynki 5m/15m mogą się teraz gwałtownie przestawiać. '
+                       'Jeśli chcesz wstrzymać nowe kupna: /stop' % (change, minutes, direction, price))
+            log_market('move', {'minutes': minutes, 'change_pct': round(change, 3), 'price': price})
+    return out
+
+
+def calendar_events():
+    data = load(CALENDAR, {})
+    return [e for e in data.get('events') or [] if isinstance(e, dict) and e.get('at') and e.get('name')]
+
+
+def calendar_alerts(memory, now):
+    out = []
+    sent = set(memory.get('calendar_sent') or [])
+    for event in calendar_events():
+        at = float(event['at'])
+        for minutes in WARN_BEFORE:
+            key = '%s|%d' % (event['name'], minutes)
+            if key in sent:
+                continue
+            if 0 <= at - now <= minutes * 60:
+                sent.add(key)
+                when = datetime.fromtimestamp(at, STOCKHOLM).strftime('%H:%M') if STOCKHOLM else ''
+                out.append('KALENDARZ: za %d min (%s) %s.\n%s' % (
+                    max(1, int((at - now) // 60)), when, event['name'], event.get('note') or ''))
+                if minutes == min(WARN_BEFORE):
+                    log_market('macro', {'name': event['name'], 'event_at': at})
+    memory['calendar_sent'] = sorted(sent)[-200:]
+    return out
+
+
+def morning_text(state, day, now):
+    lines = ['Dzień dobry. Raport BTC Lab (PAPER)']
+    if day:
+        lines.append('BTC %.0f USD · 24 h %+.2f%% · zakres %.0f–%.0f' % (
+            float(day['lastPrice']), float(day['priceChangePercent']), float(day['lowPrice']), float(day['highPrice'])))
+    upcoming = [e for e in calendar_events() if 0 <= float(e['at']) - now <= 36 * 3600]
+    if upcoming:
+        lines.append('Najbliższe wydarzenia:')
+        for e in sorted(upcoming, key=lambda e: e['at']):
+            lines.append('  %s  %s' % (datetime.fromtimestamp(float(e['at']), STOCKHOLM).strftime('%a %H:%M'), e['name']))
+    else:
+        lines.append('Brak ważnych publikacji makro w ciągu 36 h.')
+    lines.append('')
+    lines.append(mitch_text(state))
+    return '\n'.join(lines)
+
+
 def alerts(state, memory):
     """New things worth a message. Updates memory in place."""
     out = []
@@ -260,6 +349,12 @@ def handle(command, chat, tg, allowed, opener=urllib.request.urlopen):
         tg.send(chat, wallets_text(state))
     elif command == '/rezerwa':
         tg.send(chat, bank_text(state))
+    elif command == '/rynek':
+        try:
+            day = get_json(BINANCE_DAY, opener)
+        except Exception:
+            day = None
+        tg.send(chat, morning_text(state, day, time.time()).replace('Dzień dobry. Raport BTC Lab (PAPER)', 'Rynek teraz'))
     else:
         tg.send(chat, HELP)
 
@@ -311,6 +406,20 @@ def main():
                 memory['stale_alerted'] = stale
                 messages.extend(alerts(state, memory))
                 today = now_local().date().isoformat()
+                now_ts = time.time()
+                try:
+                    price = float(get_json(BINANCE_PRICE)['price'])
+                    messages.extend(market_moves(memory, price, now_ts))
+                except Exception as error:
+                    print('binance:', str(error)[:120], file=sys.stderr, flush=True)
+                messages.extend(calendar_alerts(memory, now_ts))
+                if now_local().hour >= MORNING_HOUR and memory.get('morning') != today:
+                    memory['morning'] = today
+                    try:
+                        day = get_json(BINANCE_DAY)
+                    except Exception:
+                        day = None
+                    messages.append(morning_text(state, day, now_ts))
                 if now_local().hour >= DAILY_HOUR and memory.get('daily') != today:
                     memory['daily'] = today
                     messages.append('Podsumowanie dnia\n\n' + mitch_text(state) + '\n\n' + wallets_text(state) + '\n\n' + bank_text(state))

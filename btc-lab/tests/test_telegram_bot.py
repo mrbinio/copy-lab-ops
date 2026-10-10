@@ -60,6 +60,30 @@ class AlertTests(unittest.TestCase):
         self.assertTrue(any('live_enabled' in text for text in out))
 
 
+class MarketGuardTests(unittest.TestCase):
+    def test_a_sharp_move_alerts_once_per_cooldown(self):
+        memory = {}
+        now = 1_000_000.0
+        self.assertEqual(bot.market_moves(memory, 80000.0, now), [])
+        out = bot.market_moves(memory, 80000.0 * 1.012, now + 300)
+        self.assertEqual(len(out), 1)
+        self.assertIn('+1.20% w 5 min', out[0])
+        self.assertEqual(bot.market_moves(memory, 80000.0 * 1.013, now + 330), [])
+
+    def test_calendar_warns_at_60_and_10_minutes(self):
+        import json as _json
+        with tempfile.TemporaryDirectory() as tmp:
+            bot.CALENDAR = Path(tmp) / 'cal.json'
+            bot.MARKET_LOG = Path(tmp) / 'events.jsonl'
+            bot.CALENDAR.write_text(_json.dumps({'events': [{'name': 'CPI', 'at': 10_000.0, 'note': 'x'}]}))
+            memory = {}
+            self.assertEqual(bot.calendar_alerts(memory, 10_000 - 4000), [])
+            self.assertEqual(len(bot.calendar_alerts(memory, 10_000 - 3000)), 1)
+            self.assertEqual(bot.calendar_alerts(memory, 10_000 - 2000), [])
+            self.assertEqual(len(bot.calendar_alerts(memory, 10_000 - 300)), 1)
+            self.assertTrue(bot.MARKET_LOG.exists())
+
+
 class CommandTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

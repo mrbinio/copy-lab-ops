@@ -1,0 +1,29 @@
+{
+ "note": "Czas wydarzeń w sekundach UTC. Uzupełnia Claude podczas sesji. Źródła: kalendarze makro z 10.10.2026.",
+ "events": [
+  {
+   "name": "USA: inflacja CPI (wrzesień)",
+   "at": 1791981000.0,
+   "note": "Oczekiwane 3,6–3,7% r/r, wyżej niż poprzednio. Gorący odczyt = ryzyko spadku BTC, chłodny = wzrost. Duże ruchy w pierwszych minutach.",
+   "stockholm": "2026-10-14 14:30"
+  },
+  {
+   "name": "USA: PPI, sprzedaż detaliczna i wnioski o zasiłek",
+   "at": 1792067400.0,
+   "note": "Druga dawka danych o inflacji i konsumpcji.",
+   "stockholm": "2026-10-15 14:30"
+  },
+  {
+   "name": "Fed: decyzja w sprawie stóp (FOMC)",
+   "at": 1793210400.0,
+   "note": "Rynek wycenia możliwą podwyżkę do grudnia. Konferencja 30 min później.",
+   "stockholm": "2026-10-28 19:00"
+  },
+  {
+   "name": "Fed: konferencja prezesa po FOMC",
+   "at": 1793212200.0,
+   "note": "Słowa prezesa często ruszają BTC mocniej niż sama decyzja.",
+   "stockholm": "2026-10-28 19:30"
+  }
+ ]
+}
