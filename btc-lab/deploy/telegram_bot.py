@@ -79,6 +79,9 @@ LABELS = {
     '0x943cea746e701823b6902a6f4eaeed58207e77c2': '0xdc27',
     '0x454c48b436e5dda7a186cc7e0ebeee2a1d1865cf': 'checkr3',
     '0xa82365c8e854728c472812fba6202ca125386215': 'mihaXd',
+    '0x94f471f68396ff4a3cab8cb5c47c86274b8b77a2': 'izzyaussie',
+    '0xbadb9af986ee66437bd39e6cd3d3036cbbdc31a7': '0xBadB9af',
+    '0x2a989ed9be66328c6d80a60758eadff6f279ff22': '1Speed',
 }
 HELP = (
     'BTC Lab (PAPER). Komendy są też w menu „/” obok pola wiadomości.\n'
@@ -192,6 +195,8 @@ def mitch_text(state):
              'Od startu: %s · dziś: %s · otwarte: %s' % (
                  usd(mitch.get('closed_all_micro')), usd(mitch.get('closed_today_micro')),
                  mitch.get('open_count'))]
+    if desk_line(mitch):
+        lines.append(desk_line(mitch))
     stint = mitch.get('stint') or {}
     if stint.get('at'):
         lines.append('Okres testu %s od %s' % (
@@ -218,6 +223,11 @@ def wallets_text(state):
 
 def bank_text(state):
     bank = state.get('profit_bank') or {}
+    desk = desk_line(state.get('mitch_copy') or {})
+    if desk:
+        return 'Rezerwa zysku (PAPER)\nRazem: %s USD\nMitch: %s (wszystko ponad 500 biurka + 40%% sprzed biurka)\nKwalifikator: %s (40%% z nowych szczytów)\n%s' % (
+            usd(bank.get('reserved_micro')).lstrip('+'), usd(bank.get('mitch_reserved_micro')).lstrip('+'),
+            usd(bank.get('copy_reserved_micro')).lstrip('+'), desk)
     return 'Rezerwa zysku (40%% z nowych zamkniętych plusów, PAPER)\nRazem: %s USD\nMitch: %s · kwalifikator: %s' % (
         usd(bank.get('reserved_micro')).lstrip('+'), usd(bank.get('mitch_reserved_micro')).lstrip('+'),
         usd(bank.get('copy_reserved_micro')).lstrip('+'))
@@ -390,6 +400,36 @@ def trade_text(event):
         '%.0f ms' % total if total is not None else 'nieznane')
 
 
+def window_text(w):
+    """One finished window, in the shape of Mitch's own message."""
+    try:
+        start = int(str(w.get('market')).rsplit('-', 1)[-1])
+        when = datetime.fromtimestamp(start, STOCKHOLM).strftime('%H:%M') if STOCKHOLM else str(start)
+    except ValueError:
+        when = '?'
+    lines = ['15m okno %s, %s kupna (PAPER) · %s' % (when, w.get('fills'), ', '.join(w.get('wallets') or []))]
+    sides = w.get('sides') or {}
+    for side, r in sides.items():
+        lines.append('%s: %s USD w, %.0f akcji, śr. %.0f¢' % (
+            side, usd(r.get('in_micro')).lstrip('+'), (r.get('shares_micro') or 0) / 1e6, (r.get('avg') or 0) * 100))
+    for side, r in sides.items():
+        lines.append('Jeśli wygra %s: %s USD z powrotem (%s)' % (
+            side, usd(r.get('if_wins_micro')).lstrip('+'), usd(r.get('if_wins_net_micro'))))
+    if w.get('pnl_micro') is not None:
+        lines.append('Wynik: %s %s USD' % ('WYGRANA' if w['pnl_micro'] > 0 else 'STRATA' if w['pnl_micro'] < 0 else 'zero',
+                                           usd(w['pnl_micro'])))
+    return '\n'.join(lines)
+
+
+def desk_line(mitch):
+    d = mitch.get('desk') or {}
+    if not d:
+        return None
+    return 'Biurko: %s USD (linia 500) · w grze %s · stop przy 50: zapas %s · do rezerwy od startu biurka %s' % (
+        usd(d.get('money_micro')).lstrip('+'), usd(d.get('in_play_micro')).lstrip('+'),
+        usd(d.get('room_micro')).lstrip('+'), usd(d.get('swept_micro')).lstrip('+'))
+
+
 def close_text(row):
     return 'Mitch zamknięcie (PAPER) · %s · %s\nwynik %s USD' % (
         label(row.get('wallet')), row.get('slug') or '', usd(row.get('pnl_micro')))
@@ -513,12 +553,15 @@ def alerts(state, memory):
             seen.add(key)
             if not first:
                 out.append(trade_text(event))
-    for row in mitch.get('journal') or []:
-        key = 'close|%s|%s|%s' % (row.get('at'), row.get('wallet'), row.get('slug'))
-        if key not in seen:
+    # Closes are reported once per window, when every copy in it is closed.
+    for w in mitch.get('windows') or []:
+        key = 'window|%s' % w.get('market')
+        if w.get('done') and key not in seen:
             seen.add(key)
             if not first:
-                out.append(close_text(row))
+                text = window_text(w)
+                desk = desk_line(mitch)
+                out.append(text + ('\n' + desk if desk else ''))
     paused = memory.get('paused') or {}
     for row in mitch.get('wallets') or []:
         wallet = row.get('wallet')

@@ -143,7 +143,7 @@ class MitchBookTests(unittest.TestCase):
         self.assertEqual(cash, 123)
         published = self.engine.publish()
         self.assertEqual(published['spec'], 'mitch-copy-wallets-v1')
-        self.assertEqual(len(published['wallets']), 5)
+        self.assertEqual(len(published['wallets']), 8)
 
     def test_chain_fast_quote_is_not_the_price_he_paid(self):
         from lab.mitch_copy import source_dollars, source_price
@@ -367,6 +367,8 @@ class MitchBookTests(unittest.TestCase):
         from lab.profit_bank import RESERVE_PCT, bank_snapshot, lock_profit, reserved_of
         self.assertEqual(RESERVE_PCT, Decimal('0.40'))
         with self.store.connect() as db:
+            # The 40% rule is what ran before Mitch's desk started.
+            db.execute("DELETE FROM state WHERE key='mitch_desk'")
             added = lock_profit(db, 'mitch_accounts', FIRST, 10_000_000)
             self.assertEqual(added, 4_000_000)
             # The reserve sits on the ledger, not on one account.
@@ -376,8 +378,12 @@ class MitchBookTests(unittest.TestCase):
             bank = bank_snapshot(db)
         self.assertEqual(bank['mitch_reserved_micro'], 4_000_000)
         self.assertFalse(bank['live'])
+        with self.store.connect() as db:
+            self.engine.start_desk(db)
+            self.engine.desk_close(db, self.engine.clock(), 7_000_000)
         published = self.engine.publish()
-        self.assertEqual(published['profit_bank']['mitch_reserved_micro'], 4_000_000)
+        # Before the desk 4 stays banked; the desk adds all 7 above its line.
+        self.assertEqual(published['profit_bank']['mitch_reserved_micro'], 11_000_000)
 
     def test_a_public_list_buy_is_not_copied(self):
         event = self.event(10)
@@ -476,13 +482,51 @@ class MitchBookTests(unittest.TestCase):
             self.engine.refresh_pauses(db)
             self.assertEqual(self.engine.apply_buy(db, FIRST, 'back', event, fill, {}), 'MITCH_BUY')
 
-    def test_the_desk_stops_when_cash_falls_to_fifty(self):
+    def test_the_desk_stops_when_its_money_falls_to_fifty(self):
         with self.store.connect() as db:
-            self.engine.refresh_pauses(db)
-            db.execute('UPDATE mitch_accounts SET cash=?', (10_000_000,))
+            self.assertIsNotNone(self.engine.desk(db))
+            self.engine.desk_close(db, self.engine.clock(), -451_000_000)
             payload = self.engine.refresh_pauses(db)
         self.assertTrue(payload['desk_stop'])
         self.assertTrue(all(row['kind'] == 'desk' for row in payload['wallets'].values()))
+
+    def test_desk_sweeps_everything_above_500_and_refills_a_loss_first(self):
+        # Mitch: one desk of 500; above the line is locked at the win.
+        clock = self.engine.clock()
+        with self.store.connect() as db:
+            self.assertEqual(self.engine.desk_close(db, clock, 66_000_000), 66_000_000)
+            self.assertEqual(self.engine.desk_close(db, clock, -10_000_000), 0)
+            self.assertEqual(self.engine.desk_close(db, clock, 4_000_000), 0)
+            self.assertEqual(self.engine.desk_close(db, clock, 9_000_000), 3_000_000)
+            # A position opened before the desk is not desk money.
+            self.assertEqual(self.engine.desk_close(db, clock - 999_999, 50_000_000), 0)
+            desk = self.engine.desk_numbers(db)
+        self.assertEqual(desk['swept_micro'], 69_000_000)
+        self.assertEqual(desk['money_micro'], 500_000_000)
+        self.assertEqual(desk['room_micro'], 450_000_000)
+
+    def test_window_report_sums_sides_and_shows_the_result(self):
+        clock = self.engine.clock()
+        with self.store.connect() as db:
+            for key, side, cost, shares, status, pnl in (
+                    ('a', 'Down', 20_000_000, 50_000_000, 'SETTLED', 30_000_000),
+                    ('b', 'Down', 35_000_000, 90_000_000, 'SETTLED', 55_000_000)):
+                trade = {'id': key, 'wallet': FIRST, 'market': 'btc-updown-15m-1800000000', 'end': 1800000900,
+                         'side': side, 'cost': cost, 'fee': 0, 'shares': shares, 'opened': clock + 1,
+                         'status': status, 'pnl_micro': pnl, 'closed_at': clock + 2}
+                db.execute('INSERT INTO mitch_positions VALUES (?,?,?)', (key, FIRST, json.dumps(trade)))
+            report = self.engine.window_report(db)
+        w = report[0]
+        self.assertEqual((w['fills'], w['in_micro'], w['done'], w['pnl_micro']), (2, 55_000_000, True, 85_000_000))
+        self.assertEqual(w['sides']['Down']['shares_micro'], 140_000_000)
+        self.assertEqual(w['sides']['Down']['if_wins_net_micro'], 85_000_000)
+
+    def test_a_buy_needs_free_desk_money(self):
+        event = self.event(10)
+        with self.store.connect() as db:
+            self.engine.desk_close(db, self.engine.clock(), -495_000_000)
+            _why, fill = self.engine.plan_buy(event, asks('0.50'), '0', '0.01', '1', 20_000_000)
+            self.assertEqual(self.engine.apply_buy(db, FIRST, 'no-money', event, fill, {}), 'DESK_CASH')
 
     def test_a_losing_week_is_flagged_for_review_not_paused(self):
         later = 1_800_000_000 + 8 * 86400

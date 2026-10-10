@@ -40,7 +40,7 @@ class AlertTests(unittest.TestCase):
         self.assertEqual(bot.alerts(state([buy]), memory), [])
         self.assertEqual(bot.alerts(state([buy]), memory), [])
 
-    def test_a_new_buy_a_close_and_a_pause_are_sent_once(self):
+    def test_a_new_buy_and_a_pause_are_sent_once(self):
         memory = {}
         bot.alerts(state(), memory)
         buy = {'at': 2, 'wallet': WALLET, 'reason': 'MITCH_BUY',
@@ -48,11 +48,11 @@ class AlertTests(unittest.TestCase):
         skip = {'at': 3, 'wallet': WALLET, 'reason': 'LATE_BUY_NOT_COPIED', 'detail': {}}
         close = {'at': 4, 'wallet': WALLET, 'slug': 'btc-updown-15m-1', 'pnl_micro': -1_500_000}
         out = bot.alerts(state([buy, skip], [close], paused=True), memory)
-        self.assertEqual(len(out), 3)
+        # A single close is no longer its own message; the window report carries it.
+        self.assertEqual(len(out), 2)
         self.assertIn('KUPNO', out[0])
         self.assertIn('240 ms', out[0])
-        self.assertIn('-1.50', out[1])
-        self.assertIn('PAUZA', out[2])
+        self.assertIn('PAUZA', out[1])
         self.assertEqual(bot.alerts(state([buy, skip], [close], paused=True), memory), [])
 
     def test_live_flag_is_always_alerted(self):
@@ -165,6 +165,24 @@ class ManualPause(unittest.TestCase):
         self.assertIn('mihaXd', text)
         self.assertIn('do sprawdzenia', text)
         self.assertIn('2400.50', text)
+
+
+class WindowReport(unittest.TestCase):
+    def test_window_text_like_mitch(self):
+        w = {'market': 'btc-updown-15m-1791627000', 'fills': 14, 'wallets': ['0xdc27'], 'done': True,
+             'pnl_micro': 84_900_000, 'sides': {'Down': {'in_micro': 55_000_000, 'shares_micro': 140_000_000,
+             'avg': 0.3929, 'if_wins_micro': 140_000_000, 'if_wins_net_micro': 85_000_000}}}
+        text = bot.window_text(w)
+        self.assertIn('14 kupna', text)
+        self.assertIn('Down: 55.00 USD w, 140 akcji, śr. 39¢', text)
+        self.assertIn('WYGRANA', text)
+
+    def test_a_finished_window_is_sent_once(self):
+        state = {'mitch_copy': {'windows': [{'market': 'btc-updown-15m-1', 'done': True, 'fills': 1,
+                                             'sides': {}, 'pnl_micro': -1_000_000, 'wallets': []}]}}
+        memory = {'primed': True}
+        self.assertEqual(len([m for m in bot.alerts(state, memory) if 'okno' in m]), 1)
+        self.assertEqual(len([m for m in bot.alerts(state, memory) if 'okno' in m]), 0)
 
 
 if __name__ == '__main__':

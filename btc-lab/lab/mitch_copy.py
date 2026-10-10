@@ -45,7 +45,7 @@ PAUSE_REASON = 'mitch-copy-wallets-v1 pause: paused by hand or desk stop'
 # human call after about a week of trading. The only automatic stop is for
 # the whole desk, when cash falls to 50.
 PAUSE_RULE = 'mitch-manual-review-v1'
-DESK_STOP_CASH_MICRO = 50_000_000
+DESK_STOP_CASH_MICRO = 50_000_000  # desk money (free cash plus money in play)
 REVIEW_DAYS = 7
 SILENT_DAYS = 3
 MANUAL_PAUSES_FILE = 'mitch_manual_pauses.json'
@@ -73,8 +73,19 @@ WALLETS = {
     '0xeda9247a2b3c99a9e0bf46cdac6e1974365cf589': {'label': '0x9f672c31', 'limit_usd': Decimal('20')},
     '0x943cea746e701823b6902a6f4eaeed58207e77c2': {'label': '0xdc27', 'limit_usd': Decimal('20')},
     '0x454c48b436e5dda7a186cc7e0ebeee2a1d1865cf': {'label': 'checkr3', 'limit_usd': Decimal('20')},
-    '0xa82365c8e854728c472812fba6202ca125386215': {'label': 'mihaXd', 'limit_usd': Decimal('5')},
+    # Mitch, 10 Oct 2026: miha went to 10 after a good week; new wallets start at 5.
+    '0xa82365c8e854728c472812fba6202ca125386215': {'label': 'mihaXd', 'limit_usd': Decimal('10')},
+    # Mitch's three newer wallets (his status of 10 Oct). Each passed our
+    # 90-day replay on BTC 15m: +1488, +615, +1279 at 2 cents worse.
+    '0x94f471f68396ff4a3cab8cb5c47c86274b8b77a2': {'label': 'izzyaussie', 'limit_usd': Decimal('5')},
+    '0xbadb9af986ee66437bd39e6cd3d3036cbbdc31a7': {'label': '0xBadB9af', 'limit_usd': Decimal('5')},
+    '0x2a989ed9be66328c6d80a60758eadff6f279ff22': {'label': '1Speed', 'limit_usd': Decimal('5')},
 }
+
+# Mitch runs one desk of 500 for every wallet. Money above the 500 line is
+# locked the moment a window wins and leaves the desk; a loss is refilled
+# from later wins first. The desk stops buying at 50.
+DESK = {'id': 'desk-500-v1', 'line_micro': 500_000_000}
 
 
 ACTIVE = None
@@ -294,6 +305,7 @@ class MitchCopy:
                 db.execute('ALTER TABLE mitch_source ADD COLUMN baseline TEXT')
             ensure_reserved_column(db, 'mitch_accounts')
             rebuild_high_water(db, 'mitch_accounts', 'mitch_positions')
+            self.start_desk(db)
             self.refresh_pauses(db)
             for wallet in WALLETS:
                 db.execute(
@@ -406,6 +418,101 @@ class MitchCopy:
             return None
         return body
 
+    def desk(self, db):
+        """The shared 500 desk. None before it starts."""
+        row = db.execute("SELECT body FROM state WHERE key='mitch_desk'").fetchone()
+        body = json.loads(row[0]) if row else None
+        return body if isinstance(body, dict) and body.get('id') == DESK['id'] else None
+
+    def _save_desk(self, db, body):
+        db.execute(
+            "INSERT INTO state VALUES ('mitch_desk', ?) ON CONFLICT(key) DO UPDATE SET body=excluded.body",
+            (json.dumps(body),),
+        )
+
+    def start_desk(self, db):
+        if self.desk(db) is not None:
+            return False
+        from .profit_bank import ledger_state
+        self._save_desk(db, {
+            'id': DESK['id'], 'start_at': self.clock(), 'line_micro': DESK['line_micro'],
+            'realized_micro': 0, 'swept_micro': 0, 'sweeps': [],
+            'reserve_before_micro': ledger_state(db, 'mitch_accounts')['reserved_micro'],
+        })
+        return True
+
+    def desk_close(self, db, opened, pnl):
+        """A close inside the desk. Above the line goes to the reserve at once."""
+        desk = self.desk(db)
+        if desk is None or pnl is None or float(opened or 0) < float(desk['start_at']):
+            return 0
+        desk['realized_micro'] = int(desk['realized_micro']) + int(pnl)
+        # Money above the line: line + realized - swept - line.
+        above = desk['realized_micro'] - int(desk['swept_micro'])
+        swept = 0
+        if above > 0:
+            swept = above
+            desk['swept_micro'] = int(desk['swept_micro']) + swept
+            desk['sweeps'] = (desk.get('sweeps') or [])[-49:] + [{'at': self.clock(), 'micro': swept}]
+        self._save_desk(db, desk)
+        return swept
+
+    def desk_numbers(self, db):
+        desk = self.desk(db)
+        if desk is None:
+            return None
+        in_play = 0
+        for (body,) in db.execute('SELECT body FROM mitch_positions'):
+            trade = json.loads(body)
+            if trade.get('status') in ('OPEN', 'RESOLVED') and float(trade.get('opened') or 0) >= float(desk['start_at']):
+                in_play += int(trade.get('cost') or 0) + int(trade.get('fee') or 0)
+        money = int(desk['line_micro']) + int(desk['realized_micro']) - int(desk['swept_micro'])
+        return {
+            'id': desk['id'], 'start_at': desk['start_at'], 'line_micro': desk['line_micro'],
+            'money_micro': money, 'in_play_micro': in_play, 'free_micro': money - in_play,
+            'realized_micro': desk['realized_micro'], 'swept_micro': desk['swept_micro'],
+            'stop_micro': DESK_STOP_CASH_MICRO, 'room_micro': money - DESK_STOP_CASH_MICRO,
+            'reserve_before_micro': desk.get('reserve_before_micro') or 0,
+            'sweeps': desk.get('sweeps') or [],
+        }
+
+    def window_report(self, db, limit=12):
+        """Per window, like Mitch's Telegram: money in, shares and average per side,
+        what each outcome pays back, and the result once every copy is closed."""
+        desk = self.desk(db)
+        since = float(desk['start_at']) if desk else float((self.stint(db) or {}).get('at') or 0)
+        windows = {}
+        for (body,) in db.execute('SELECT body FROM mitch_positions'):
+            trade = json.loads(body)
+            if float(trade.get('opened') or 0) < since or not trade.get('market'):
+                continue
+            w = windows.setdefault(trade['market'], {'market': trade['market'], 'end': trade.get('end'),
+                                                     'fills': set(), 'sides': {}, 'open': 0, 'pnl_micro': 0,
+                                                     'wallets': set()})
+            side = str(trade.get('side') or '?')
+            row = w['sides'].setdefault(side, {'in_micro': 0, 'shares_micro': 0})
+            row['in_micro'] += int(trade.get('cost') or 0) + int(trade.get('fee') or 0)
+            row['shares_micro'] += int(trade.get('shares') or 0)
+            # A partial sell copies the lots into the closed piece; count each buy once.
+            w['fills'].add(str(trade.get('id') or '').split(':sell:')[0])
+            w['fills'].update('lot:' + str(lot.get('key')) for lot in trade.get('lots') or [])
+            w['wallets'].add(WALLETS.get(trade.get('wallet'), {}).get('label') or str(trade.get('wallet'))[-6:])
+            if trade.get('status') in ('OPEN', 'RESOLVED'):
+                w['open'] += 1
+            elif trade.get('pnl_micro') is not None:
+                w['pnl_micro'] += int(trade['pnl_micro'])
+        out = []
+        for w in windows.values():
+            total_in = sum(r['in_micro'] for r in w['sides'].values())
+            for side, r in w['sides'].items():
+                r['avg'] = round(r['in_micro'] / r['shares_micro'], 4) if r['shares_micro'] else None
+                r['if_wins_micro'] = r['shares_micro']
+                r['if_wins_net_micro'] = r['shares_micro'] - total_in
+            out.append(dict(w, wallets=sorted(w['wallets']), fills=len(w['fills']), in_micro=total_in,
+                            done=w['open'] == 0, pnl_micro=w['pnl_micro'] if w['open'] == 0 else None))
+        out.sort(key=lambda x: (x.get('end') or 0, x['market']), reverse=True)
+        return out[:limit]
+
     def manual_pauses(self):
         """Wallets a person paused (Telegram /mitch_pauza). Mitch: every wallet change is a human call."""
         from pathlib import Path
@@ -431,8 +538,13 @@ class MitchCopy:
         stint_at = float(stint['at']) if stint else None
         stint_id = stint.get('id') if stint else None
         manual = self.manual_pauses()
-        cash = sum(int(r[0] or 0) for r in db.execute('SELECT cash FROM mitch_accounts'))
-        desk_stop = bool(db.execute('SELECT 1 FROM mitch_accounts LIMIT 1').fetchone()) and cash <= DESK_STOP_CASH_MICRO
+        numbers_desk = self.desk_numbers(db)
+        if numbers_desk is not None:
+            cash = numbers_desk['money_micro']
+            desk_stop = cash <= DESK_STOP_CASH_MICRO
+        else:
+            cash = sum(int(r[0] or 0) for r in db.execute('SELECT cash FROM mitch_accounts'))
+            desk_stop = bool(db.execute('SELECT 1 FROM mitch_accounts LIMIT 1').fetchone()) and cash <= DESK_STOP_CASH_MICRO
         wallets = {}
         for wallet in WALLETS:
             all_net = period_net = period_closed = today_net = week_net = week_closed = 0
@@ -476,7 +588,7 @@ class MitchCopy:
                     trigger=dict(numbers, at=hand.get('since') or now, by=hand.get('by')))
             elif desk_stop:
                 wallets[wallet] = dict(numbers, paused=True, kind='desk', stint=stint_id, since=now,
-                    review=review, reason='Stop całego biurka: gotówka Mitcha spadła do %d USD.' % (
+                    review=review, reason='Stop całego biurka: pieniądze biurka spadły do %d USD.' % (
                         DESK_STOP_CASH_MICRO // 1_000_000),
                     trigger=dict(numbers, at=now, desk_cash_usd=cash / 1e6))
             else:
@@ -522,6 +634,12 @@ class MitchCopy:
         ).fetchone():
             self._mark(db, wallet, key, 'DUPLICATE', {'timing': timing})
             return 'DUPLICATE'
+        desk = self.desk_numbers(db)
+        if desk is not None and desk['free_micro'] < debit:
+            self._mark(db, wallet, key, 'DESK_CASH', {
+                'timing': timing, 'free': desk['free_micro'], 'debit': debit,
+            })
+            return 'DESK_CASH'
         cash = db.execute('SELECT cash FROM mitch_accounts WHERE wallet=?', (wallet,)).fetchone()[0]
         reserved = reserved_of(db, 'mitch_accounts', wallet)
         if tradable_cash(cash, reserved) < debit:
@@ -682,6 +800,7 @@ class MitchCopy:
         db.execute('UPDATE mitch_accounts SET cash=cash+? WHERE wallet=?', (credit, wallet))
         db.execute('INSERT OR IGNORE INTO mitch_ledger VALUES (?,?,?)', ('sell:' + key, wallet, credit))
         lock_profit(db, 'mitch_accounts', wallet, pnl)
+        self.desk_close(db, open_trade.get('opened'), pnl)
         self.refresh_pauses(db)
         self._mark(db, wallet, key, reason, {
             'timing': timing, 'delayed': delayed, 'fraction': str(fraction),
@@ -939,6 +1058,8 @@ class MitchCopy:
                 row['reserved_micro'] = reserved
                 row['tradable_micro'] = tradable_cash(cash, reserved)
             pauses = self.refresh_pauses(db)
+            desk_now = self.desk_numbers(db)
+            windows_now = self.window_report(db)
             stint = self.stint(db)
             stint_at = float(stint['at']) if stint else None
             for row in wallets:
@@ -1011,6 +1132,8 @@ class MitchCopy:
             'fast': fast_status(),
             'stop_active': self.stopped(),
             'pause_rule': pauses.get('rule'),
+            'desk': desk_now,
+            'windows': windows_now,
             'desk_cash_usd': pauses.get('desk_cash_usd'),
             'desk_stop': pauses.get('desk_stop'),
             'period_reasons': period_reasons,
@@ -1671,6 +1794,7 @@ class MitchCopy:
             )
             pnl = payout - int(current['cost']) - int(current['fee'])
             lock_profit(db, 'mitch_accounts', current['wallet'], pnl)
+            self.desk_close(db, current.get('opened'), pnl)
             current.update(
                 status='SETTLED', payout=payout, exit_fee=0, closed_at=self.clock(),
                 pnl_micro=pnl, official_winner=str(winners[0].get('token_id')),

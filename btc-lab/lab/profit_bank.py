@@ -127,6 +127,14 @@ def bank_snapshot(db):
     ledgers = {table: ledger_state(db, table) if has_state else {} for table in LEDGERS}
     mitch = int((ledgers.get('mitch_accounts') or {}).get('reserved_micro') or 0)
     copy = int((ledgers.get('wallet_copy_accounts') or {}).get('reserved_micro') or 0)
+    # Mitch's desk (10 Oct 2026): from its start, everything above the 500
+    # line is reserved; the 40% reserve banked before it stays.
+    desk = None
+    if has_state:
+        row = db.execute("SELECT body FROM state WHERE key='mitch_desk'").fetchone()
+        desk = json.loads(row[0]) if row else None
+    if isinstance(desk, dict) and desk.get('start_at'):
+        mitch = int(desk.get('reserve_before_micro') or 0) + int(desk.get('swept_micro') or 0)
     return {
         'id': 'profit-bank',
         'label': 'Rezerwa zysku',
@@ -137,6 +145,8 @@ def bank_snapshot(db):
         'reserve_pct': float(RESERVE_PCT),
         'rule': RULE,
         'live': False,
-        'note': '40% z każdego nowego szczytu wyniku netto księgi (Mitch i kwalifikator osobno). '
+        'mitch_desk': desk if isinstance(desk, dict) else None,
+        'note': 'Mitch: jedno biurko 500 USD, wszystko powyżej 500 idzie do rezerwy w chwili wygranej '
+                '(plus 40% odłożone przed biurkiem). Kwalifikator: 40% z każdego nowego szczytu. '
                 'Wygrana, która tylko odrabia stratę, nic nie dodaje. Raz odłożone zostaje. PAPER.',
     }
