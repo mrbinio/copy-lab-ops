@@ -506,12 +506,22 @@ function fillProfitBank(s){
   for(const id of ['profit-bank-tile','mitch-bank']){
     const el=$(id);if(!el)continue;
     el.replaceChildren();
-    const card=node('article',undefined,'strategy-card wallet-tile'+(Number(bank.reserved_micro)>0?' profit':''));
-    card.append(node('h3','Rezerwa zysku'));
-    const amount=bank.reserved_micro==null?missing():money(Number(bank.reserved_micro)/1e6);
-    card.append(node('p','Zarezerwowane: '+amount+(bank.live?' · LIVE':' · PAPER, nie LIVE')));
-    card.append(node('p','Mitch '+(bank.mitch_reserved_micro==null?missing():money(Number(bank.mitch_reserved_micro)/1e6))+' · kwalifikator '+(bank.copy_reserved_micro==null?missing():money(Number(bank.copy_reserved_micro)/1e6))));
-    card.append(node('p',bank.note||'40% z nowych zamkniętych plusów. To nie jest saldo giełdy.'));
+    const card=node('article',undefined,'strategy-card wallet-tile bank-card'+(Number(bank.reserved_micro)>0?' profit':''));
+    card.append(node('div','Rezerwa zysku'+(bank.live?' · LIVE':' · PAPER'),'metric-label'));
+    card.append(node('div',bank.reserved_micro==null?missing():money(Number(bank.reserved_micro)/1e6),'bank-amount'));
+    const L=bank.ledgers||{};
+    const grid=node('div',undefined,'bank-grid');
+    for(const [name,l] of [['Mitch',L.mitch_accounts],['Portfele',L.wallet_copy_accounts]]){
+      if(!l)continue;
+      const box=node('div',undefined,'bank-ledger');
+      const gap=(l.peak_micro||0)-(l.realized_micro||0);
+      box.append(node('b',name+': '+money((l.reserved_micro||0)/1e6)));
+      box.append(node('span','wynik '+money((l.realized_micro||0)/1e6,true)+' · szczyt '+money((l.peak_micro||0)/1e6,true)));
+      box.append(node('span',gap>0?'do nowego szczytu brakuje '+money(gap/1e6):'na szczycie — każdy nowy plus dodaje 40%'));
+      grid.append(box);
+    }
+    card.append(grid);
+    card.append(node('p','Jak to działa: gdy wynik księgi bije swój rekord, 40% tej nadwyżki idzie do rezerwy i już tam zostaje. Wygrana, która tylko odrabia wcześniejszą stratę, nic nie dodaje. Na LIVE rezerwa będzie przenoszona na osobny portfel, z którego się nie handluje.','bank-note'));
     el.append(card);
   }
 }

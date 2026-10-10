@@ -718,7 +718,10 @@ class Worker:
             from . import fast_match
             from .mitch_copy import WALLETS as MITCH_WALLETS, submit_fast
             from .wallet_chain_monitor import run_market_prints_thread
-            fast=fast_match.FastMatch(MITCH_WALLETS, fast_match.hand_to_loop(asyncio.get_running_loop(), submit_fast))
+            # The copy is decided on the lane's own loop. Handing it to the
+            # worker loop cost a 2-4 s median on 9-10 Oct, when that loop was
+            # busy; 495 of ~520 Mitch buys came out later than one second.
+            fast=fast_match.FastMatch(MITCH_WALLETS, submit_fast)
             fast_match.CURRENT=fast
             LOG.info('fast lane: match print -> pending tx -> Mitch (%d rpc, own thread)', len(fast.urls))
             prints=asyncio.create_task(asyncio.to_thread(run_market_prints_thread, get_json, fast))
