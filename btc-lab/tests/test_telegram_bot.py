@@ -1,3 +1,4 @@
+import json
 import importlib.util
 import tempfile
 import unittest
@@ -137,6 +138,33 @@ class CommandTests(unittest.TestCase):
         self.assertTrue(bot.PAUSE.exists())
         bot.handle('/wznow', 1, tg, allowed={1})
         self.assertFalse(bot.PAUSE.exists())
+
+
+class ManualPause(unittest.TestCase):
+    def test_pause_and_resume_one_wallet_by_label(self):
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as tmp:
+            old = bot.MITCH_MANUAL
+            bot.MITCH_MANUAL = Path(tmp) / 'mitch_manual_pauses.json'
+            try:
+                self.assertIn('wstrzymane', bot.manual_pause('dc27', 'tydzień minus', 1, True))
+                body = json.loads(bot.MITCH_MANUAL.read_text())
+                self.assertEqual(body['wallets']['0x943cea746e701823b6902a6f4eaeed58207e77c2']['reason'], 'tydzień minus')
+                self.assertIn('wraca', bot.manual_pause('0xdc27', '', 1, False))
+                self.assertEqual(json.loads(bot.MITCH_MANUAL.read_text())['wallets'], {})
+                self.assertIn('Nie znam', bot.manual_pause('nobody', '', 1, True))
+            finally:
+                bot.MITCH_MANUAL = old
+
+    def test_review_lists_flags_and_desk_cash(self):
+        state = {'mitch_copy': {'desk_cash_usd': 2400.5, 'wallets': [
+            {'wallet': '0xa82365c8e854728c472812fba6202ca125386215', 'label': 'mihaXd', 'week_net_usd': -4.2,
+             'week_closed': 9, 'period_net_micro': -4_200_000, 'review': ['minus na kopiach przez ostatni tydzień']}]}}
+        text = bot.review_text(state)
+        self.assertIn('mihaXd', text)
+        self.assertIn('do sprawdzenia', text)
+        self.assertIn('2400.50', text)
 
 
 if __name__ == '__main__':

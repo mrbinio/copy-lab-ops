@@ -34,6 +34,9 @@ STATE = ROOT / 'logs' / 'telegram-state.json'
 PAUSE = ROOT / 'data' / 'PAUSE'
 QUALIFIER_OFF = ROOT / 'data' / 'QUALIFIER_OFF'
 MITCH_OFF = ROOT / 'data' / 'MITCH_OFF'
+MITCH_MANUAL = ROOT / 'data' / 'mitch_manual_pauses.json'
+WEEKLY_DAY = 6  # Sunday
+WEEKLY_HOUR = 20
 COMMANDS = [
     ('status', 'Czy wszystko działa'),
     ('mitch', 'Portfele Mitcha: wynik i pauzy'),
@@ -47,6 +50,9 @@ COMMANDS = [
     ('system', 'Usługi na Macu, dysk, rejestrator'),
     ('kwalifikator_stop', 'Wstrzymaj kupno w Twoich portfelach'),
     ('kwalifikator_start', 'Włącz kupno w Twoich portfelach'),
+    ('przeglad', 'Tygodniowy przegląd portfeli Mitcha'),
+    ('mitch_pauza', 'Wstrzymaj jeden portfel Mitcha, np. /mitch_pauza dc27'),
+    ('mitch_wznow', 'Wznów jeden portfel Mitcha, np. /mitch_wznow dc27'),
     ('mitch_stop', 'Wstrzymaj kupno Mitcha'),
     ('mitch_start', 'Włącz kupno Mitcha'),
     ('stop', 'STOP: wszystkie nowe kupna'),
@@ -89,7 +95,9 @@ HELP = (
     '/wydarzenia – kalendarz makro\n'
     '/system – usługi, dysk, rejestrator\n'
     '/kwalifikator_stop, /kwalifikator_start – Twoje portfele\n'
-    '/mitch_stop, /mitch_start – portfele Mitcha\n'
+    '/mitch_stop, /mitch_start – wszystkie portfele Mitcha\n'
+    '/przeglad – tydzień każdego portfela Mitcha i co sprawdzić\n'
+    '/mitch_pauza dc27 [powód], /mitch_wznow dc27 – jeden portfel (jak u Mitcha: decyzja człowieka)\n'
     'LIVE jest wyłączone w kodzie. Bot nie składa zleceń.'
 )
 
@@ -309,6 +317,59 @@ def system_text(state, code):
     ])
 
 
+def find_wallet(name):
+    name = (name or '').lower().strip()
+    if not name:
+        return None
+    hits = [w for w, short in LABELS.items()
+            if name == short.lower() or name in short.lower() or w.startswith(name) or w.endswith(name)]
+    return hits[0] if len(hits) == 1 else None
+
+
+def manual_pause(name, why, chat, on):
+    wallet = find_wallet(name)
+    if wallet is None:
+        return 'Nie znam portfela „%s”. Użyj: %s' % (name, ', '.join(LABELS.values()))
+    body = load(MITCH_MANUAL, {'wallets': {}})
+    wallets = body.setdefault('wallets', {})
+    if on:
+        wallets[wallet] = {'since': time.time(), 'reason': why or None, 'by': 'telegram %s' % chat}
+        text = '%s: kupno wstrzymane ręcznie%s. Sprzedaż i rozliczenia działają. /mitch_wznow %s wznawia.' % (
+            LABELS[wallet], ' (%s)' % why if why else '', LABELS[wallet])
+    else:
+        if wallets.pop(wallet, None) is None:
+            return '%s nie był wstrzymany ręcznie.' % LABELS[wallet]
+        text = '%s: kupno wraca (pauza ręczna zdjęta).' % LABELS[wallet]
+    save(MITCH_MANUAL, body)
+    return text
+
+
+def review_text(state):
+    m = state.get('mitch_copy') or {}
+    lines = ['Przegląd tygodnia: Mitch (PAPER)',
+             'Zasada Mitcha: brak automatycznej pauzy. Portfel odpada po przeglądzie, '
+             'gdy przez tydzień traci na naszych kopiach, milczy od dni albo nowy skan pokazuje słaby wynik.']
+    for w in m.get('wallets') or []:
+        last = w.get('last_copy_at')
+        when = datetime.fromtimestamp(float(last), STOCKHOLM).strftime('%d.%m %H:%M') if last and STOCKHOLM else 'brak'
+        flags = w.get('review') or []
+        lines.append('%s: tydzień %s na %s zamkn. · okres %s · ostatnia kopia %s%s%s' % (
+            w.get('label') or label(w.get('wallet')),
+            usd(int(round(float(w.get('week_net_usd') or 0) * 1e6))), w.get('week_closed') or 0,
+            usd(w.get('period_net_micro')), when,
+            ' · PAUZA' if w.get('paused') else '',
+            ' · do sprawdzenia: ' + ', '.join(flags) if flags else ''))
+    found = state.get('mitch_discovery') or {}
+    weak = [r.get('label') or label(r.get('wallet')) for r in (found.get('rows') or [])
+            if r.get('in_mitch_book') and r.get('market') == 'BTC 15m' and r.get('verdict') is False]
+    if weak:
+        lines.append('Skan 90 dni: słabe: ' + ', '.join(weak))
+    if m.get('desk_cash_usd') is not None:
+        lines.append('Gotówka biurka: %.2f USD (stop przy 50).' % float(m['desk_cash_usd']))
+    lines.append('Decyzja należy do Ciebie: /mitch_pauza <nazwa> [powód] albo nic.')
+    return '\n'.join(lines)
+
+
 def switch(path, on, chat, what):
     if on:
         if path.exists():
@@ -475,7 +536,8 @@ def alerts(state, memory):
 
 
 def handle(command, chat, tg, allowed, opener=urllib.request.urlopen):
-    command = command.split()[0].split('@')[0].lower() if command else ''
+    words = command.split() if command else []
+    command = words[0].split('@')[0].lower() if words else ''
     if chat not in allowed:
         if command == '/start':
             tg.send(chat, 'Twój chat id: %s\nDodaj go do telegram.json → chat_ids.' % chat)
@@ -500,6 +562,12 @@ def handle(command, chat, tg, allowed, opener=urllib.request.urlopen):
     if command == '/mitch_start':
         tg.send(chat, switch(MITCH_OFF, True, chat, 'Mitch'))
         return
+    if command in ('/mitch_pauza', '/mitch_wznow', '/mitch_wznów'):
+        if len(words) < 2:
+            tg.send(chat, 'Podaj portfel, np. %s dc27. Portfele: %s' % (command, ', '.join(LABELS.values())))
+        else:
+            tg.send(chat, manual_pause(words[1], ' '.join(words[2:]), chat, command == '/mitch_pauza'))
+        return
     if command == '/wydarzenia':
         tg.send(chat, events_text(time.time()))
         return
@@ -521,6 +589,8 @@ def handle(command, chat, tg, allowed, opener=urllib.request.urlopen):
         tg.send(chat, wallets_detail_text(state))
     elif command == '/kopie':
         tg.send(chat, copies_text(state))
+    elif command in ('/przeglad', '/przegląd'):
+        tg.send(chat, review_text(state))
     elif command == '/pauzy':
         tg.send(chat, pauses_text(state))
     elif command == '/odkrywanie':
@@ -612,6 +682,11 @@ def main():
                     except Exception:
                         day = None
                     messages.append(morning_text(state, day, now_ts))
+                week = '%d-%02d' % now_local().isocalendar()[:2]
+                if (now_local().weekday() == WEEKLY_DAY and now_local().hour >= WEEKLY_HOUR
+                        and memory.get('weekly') != week):
+                    memory['weekly'] = week
+                    messages.append(review_text(state))
                 if now_local().hour >= DAILY_HOUR and memory.get('daily') != today:
                     memory['daily'] = today
                     messages.append('Podsumowanie dnia\n\n' + mitch_text(state) + '\n\n' + wallets_text(state) + '\n\n' + bank_text(state))

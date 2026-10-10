@@ -426,7 +426,9 @@ class MitchBookTests(unittest.TestCase):
             ).fetchone()[0]
         self.assertEqual(reason, 'MITCH_NEED_CHAIN')
 
-    def test_negative_book_pauses_further_buys(self):
+    def test_a_loss_does_not_pause_a_wallet(self):
+        # Mitch, 10 Oct 2026: no automatic pause; a loss or a bad day only
+        # goes to the weekly review.
         with self.store.connect() as db:
             self.engine.anchor_source(db, FIRST, 'token-a', '25')
             event = self.event(10, '0.40')
@@ -437,59 +439,17 @@ class MitchBookTests(unittest.TestCase):
                 self.engine.apply_sell(db, FIRST, 'loss-sell', sell, asks('0.01'), Decimal('1'), {}, False),
                 'MITCH_SELL',
             )
+            self._close(db, 'big-loss', -25_000_000)
+            payload = self.engine.refresh_pauses(db)
+            self.assertFalse(payload['wallets'][FIRST]['paused'])
             again = dict(self.event(10, '0.50'), transactionHash='0xafter')
             _why, fill2 = self.engine.plan_buy(again, asks('0.50'), '0', '0.01', '1', 20_000_000)
-            self.assertEqual(self.engine.apply_buy(db, FIRST, 'after-pause', again, fill2, {}), 'MITCH_PAUSED')
+            self.assertEqual(self.engine.apply_buy(db, FIRST, 'after-loss', again, fill2, {}), 'MITCH_BUY')
         published = self.engine.publish()
         row = next(item for item in published['wallets'] if item['wallet'] == FIRST)
-        self.assertTrue(row['paused'])
-        self.assertTrue(published['journal'])
+        self.assertFalse(row['paused'])
         self.assertLess(row['period_net_micro'], 0)
-        self.assertEqual(row['period_closed'], 1)
-        self.assertEqual(row['period_copies'], 1)
-        self.assertEqual(published['period_reasons'].get('MITCH_PAUSED'), 1)
-        self.assertIn('MITCH_PAUSED', {e['reason'] for e in published['period_events']})
-        self.assertFalse(published['stop_active'])
-
-    def test_pause_stays_after_a_later_plus(self):
-        with self.store.connect() as db:
-            db.execute(
-                "INSERT INTO state VALUES ('mitch_pauses', ?) ON CONFLICT(key) DO UPDATE SET body=excluded.body",
-                (json.dumps({'wallets': {FIRST: {'paused': True, 'since': 1, 'reason': 'held', 'stint': STINT['id'],
-                                                 'kind': 'period', 'trigger': {'period_net_usd': -25.0, 'verdict': True}}}}),),
-            )
-            trade = {
-                'id': 'win1', 'wallet': FIRST, 'status': 'CLOSED', 'opened': self.engine.clock(),
-                'pnl_micro': 5_000_000, 'closed_at': self.engine.clock(),
-            }
-            db.execute('INSERT INTO mitch_positions VALUES (?,?,?)', ('win1', FIRST, json.dumps(trade)))
-            payload = self.engine.refresh_pauses(db)
-        self.assertTrue(payload['wallets'][FIRST]['paused'])
-
-    def test_a_new_period_does_not_carry_the_late_path_losses_but_keeps_them(self):
-        # Damian, 9 Oct 2026: a new test period. Losses before it stay in the
-        # book since start and do not pause; a minus inside it does.
-        clock = self.engine.clock()
-        with self.store.connect() as db:
-            db.execute(
-                "INSERT INTO state VALUES ('mitch_pauses', ?) ON CONFLICT(key) DO UPDATE SET body=excluded.body",
-                (json.dumps({'wallets': {FIRST: {'paused': True, 'since': 1, 'reason': 'old'}}}),),
-            )
-            old = {'id': 'old', 'wallet': FIRST, 'status': 'CLOSED', 'opened': clock - 3600,
-                   'pnl_micro': -9_000_000, 'closed_at': clock - 3000}
-            db.execute('INSERT INTO mitch_positions VALUES (?,?,?)', ('old', FIRST, json.dumps(old)))
-            payload = self.engine.refresh_pauses(db)
-        self.assertNotIn(FIRST, payload['wallets'])
-        with self.store.connect() as db:
-            new = {'id': 'new', 'wallet': FIRST, 'status': 'CLOSED', 'opened': clock + 10,
-                   'pnl_micro': -1, 'closed_at': clock + 20}
-            db.execute('INSERT INTO mitch_positions VALUES (?,?,?)', ('new', FIRST, json.dumps(new)))
-            payload = self.engine.refresh_pauses(db)
-        row = payload['wallets'][FIRST]
-        self.assertTrue(row['paused'])
-        self.assertEqual(row['all_net_usd'], -9.000001)
-        self.assertEqual(row['period_net_usd'], -0.000001)
-        self.assertEqual(row['trigger']['period_net_usd'], -0.000001)
+        self.assertEqual(published['pause_rule'], 'mitch-manual-review-v1')
 
     def _close(self, db, key, pnl, opened_delta=10, closed_at=None):
         clock = self.engine.clock()
@@ -497,47 +457,53 @@ class MitchBookTests(unittest.TestCase):
                  'pnl_micro': pnl, 'closed_at': closed_at if closed_at is not None else clock + 20}
         db.execute('INSERT INTO mitch_positions VALUES (?,?,?)', (key, FIRST, json.dumps(trade)))
 
-    def test_a_period_loss_over_twenty_dollars_pauses_for_good(self):
-        with self.store.connect() as db:
-            self._close(db, 'l1', -21_000_000)
-            payload = self.engine.refresh_pauses(db)
-        self.assertEqual(payload['wallets'][FIRST]['kind'], 'period')
-        self.engine.clock = lambda: 1_800_000_000 + 3 * 86400
-        with self.store.connect() as db:
-            self._close(db, 'w1', 30_000_000, closed_at=1_800_000_000 + 3 * 86400)
-            payload = self.engine.refresh_pauses(db)
-        self.assertTrue(payload['wallets'][FIRST]['paused'])
+    def _manual(self, wallets):
+        path = Path(self.store.path).parent / 'mitch_manual_pauses.json'
+        path.write_text(json.dumps({'wallets': wallets}))
 
-    def test_a_small_loss_pauses_only_until_midnight(self):
-        with self.store.connect() as db:
-            self._close(db, 'l1', -2_000_000)
-            payload = self.engine.refresh_pauses(db)
-        self.assertEqual(payload['wallets'][FIRST]['kind'], 'day')
-        self.engine.clock = lambda: 1_800_000_000 + 86400
+    def test_a_hand_pause_stops_buys_and_lifting_it_resumes(self):
+        self._manual({FIRST.upper(): {'since': 5, 'reason': 'tydzień na minusie', 'by': 'telegram'}})
+        event = self.event(10)
         with self.store.connect() as db:
             payload = self.engine.refresh_pauses(db)
-        self.assertNotIn(FIRST, payload['wallets'])
+            row = payload['wallets'][FIRST]
+            self.assertEqual((row['paused'], row['kind']), (True, 'manual'))
+            self.assertIn('tydzień na minusie', row['reason'])
+            _why, fill = self.engine.plan_buy(event, asks('0.50'), '0', '0.01', '1', 20_000_000)
+            self.assertEqual(self.engine.apply_buy(db, FIRST, 'held', event, fill, {}), 'MITCH_PAUSED')
+        self._manual({})
+        with self.store.connect() as db:
+            self.engine.refresh_pauses(db)
+            self.assertEqual(self.engine.apply_buy(db, FIRST, 'back', event, fill, {}), 'MITCH_BUY')
 
-    def test_twenty_closed_copies_in_minus_is_a_verdict(self):
-        later = 1_800_000_000 + 2 * 86400
+    def test_the_desk_stops_when_cash_falls_to_fifty(self):
         with self.store.connect() as db:
-            for i in range(19):
-                self._close(db, 'a%d' % i, 1_000_000, closed_at=1_800_000_000 - 86400 + 100)
-            self._close(db, 'b', -19_500_000, closed_at=1_800_000_000 - 86400 + 200)
+            self.engine.refresh_pauses(db)
+            db.execute('UPDATE mitch_accounts SET cash=?', (10_000_000,))
+            payload = self.engine.refresh_pauses(db)
+        self.assertTrue(payload['desk_stop'])
+        self.assertTrue(all(row['kind'] == 'desk' for row in payload['wallets'].values()))
+
+    def test_a_losing_week_is_flagged_for_review_not_paused(self):
+        later = 1_800_000_000 + 8 * 86400
+        with self.store.connect() as db:
+            self._close(db, 'w1', -3_000_000, opened_delta=7 * 86400, closed_at=later - 3600)
             self.engine.clock = lambda: later
             payload = self.engine.refresh_pauses(db)
         row = payload['wallets'][FIRST]
-        self.assertEqual((row['kind'], row['period_closed']), ('period', 20))
-        self.assertAlmostEqual(row['period_net_usd'], -0.5)
-    def test_a_pause_without_a_negative_trigger_does_not_hold(self):
-        with self.store.connect() as db:
-            db.execute(
-                "INSERT INTO state VALUES ('mitch_pauses', ?) ON CONFLICT(key) DO UPDATE SET body=excluded.body",
-                (json.dumps({'wallets': {FIRST: {'paused': True, 'since': 1, 'reason': 'outside', 'stint': STINT['id']}}}),),
-            )
-            payload = self.engine.refresh_pauses(db)
-        self.assertNotIn(FIRST, payload['wallets'])
+        self.assertFalse(row['paused'])
+        self.assertIn('minus na kopiach przez ostatni tydzień', row['review'])
+        self.assertEqual(row['week_closed'], 1)
 
+    def test_losses_before_the_period_stay_in_the_book_since_start(self):
+        clock = self.engine.clock()
+        with self.store.connect() as db:
+            self._close(db, 'old', -9_000_000, opened_delta=-3600, closed_at=clock - 3000)
+            self._close(db, 'new', -1, opened_delta=10, closed_at=clock + 20)
+            payload = self.engine.refresh_pauses(db)
+        row = payload['wallets'][FIRST]
+        self.assertEqual(row['all_net_usd'], -9.000001)
+        self.assertEqual(row['period_net_usd'], -0.000001)
     def test_the_pause_file_stops_new_buys(self):
         (Path(self.store.path).parent / 'PAUSE').write_text('telegram')
         event = self.event(10)

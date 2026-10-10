@@ -3,7 +3,8 @@
 mitch-copy-wallets-v1 follows the sizing, window caps and one-sided 10 cent
 rule Mitch wrote down. A late public-list copy is not his trade: new buys
 need a chain fill or a matched print, and they must land inside one second.
-A negative closed book pauses further buys. It never writes the qualifier
+A wallet pauses only by hand after review; the desk stops at 50 USD cash.
+It never writes the qualifier
 ledger and it never turns LIVE on.
 """
 import asyncio
@@ -39,12 +40,15 @@ STINT = {
             'The book since start keeps the losses of the late public-list path. '
             'Damian chose a new test period on 9 Oct 2026.',
 }
-PAUSE_REASON = 'mitch-copy-wallets-v1 pause: closed copy period is negative'
-# Damian, 10 Oct 2026: one window cap of loss, or a negative result after a
-# sample big enough to judge, ends a wallet's test. A negative day only pauses
-# until midnight.
-PERIOD_LOSS_LIMIT_MICRO = 20_000_000
-MIN_CLOSED_FOR_VERDICT = 20
+PAUSE_REASON = 'mitch-copy-wallets-v1 pause: paused by hand or desk stop'
+# Mitch, 10 Oct 2026: no automatic wallet pause; every wallet change is a
+# human call after about a week of trading. The only automatic stop is for
+# the whole desk, when cash falls to 50.
+PAUSE_RULE = 'mitch-manual-review-v1'
+DESK_STOP_CASH_MICRO = 50_000_000
+REVIEW_DAYS = 7
+SILENT_DAYS = 3
+MANUAL_PAUSES_FILE = 'mitch_manual_pauses.json'
 # Mitch did not name a paper bankroll. This only keeps the window caps
 # from being confused with an empty account. It is not his rule.
 CAPITAL_MICRO = 500_000_000
@@ -54,7 +58,7 @@ ASSUMPTIONS = (
     'A partial sell uses source shares sold divided by source shares just before that sell. Needs Mitch to confirm.',
     'Paper capital is $500 per wallet because Mitch did not set it. The window caps are the binding limit.',
     'A new buy needs his fill from the exchange transaction or the chain, and it must land inside one second of the match. A late public-list copy is not his trade.',
-    'In the test period a loss over 20 USD, or a negative result after 20 closed copies, pauses buys for good. A negative day pauses until midnight. The book since start is kept and shown.',
+    'No automatic wallet pause (Mitch, 10 Oct). A wallet is paused by hand after a weekly review. Buys stop for all wallets when total Mitch paper cash falls to 50 USD. Mitch counts that on his real desk; here it is the sum of the five paper accounts.',
 )
 GROUPING = (
     'One activity row is one buy. The shared collector key is transaction hash, '
@@ -391,8 +395,7 @@ class MitchCopy:
 
         The book since start stays as it is. A pause looks only at copies
         opened inside the period, so losses of an earlier copy path do not
-        block a test of the new one. Inside the period a minus still pauses
-        and nothing unpauses it.
+        count in the weekly review of the new one.
         """
         if db is not None:
             row = db.execute("SELECT body FROM state WHERE key='mitch_stint'").fetchone()
@@ -403,36 +406,44 @@ class MitchCopy:
             return None
         return body
 
-    def refresh_pauses(self, db):
-        """Pause rule in the test period (Damian, 10 Oct 2026).
+    def manual_pauses(self):
+        """Wallets a person paused (Telegram /mitch_pauza). Mitch: every wallet change is a human call."""
+        from pathlib import Path
+        path = Path(self.store.path).parent / MANUAL_PAUSES_FILE
+        try:
+            body = json.loads(path.read_text())
+        except (OSError, ValueError):
+            return {}
+        return {str(k).lower(): v for k, v in (body.get('wallets') or {}).items() if isinstance(v, dict)}
 
-        Permanent: the period loses more than PERIOD_LOSS_LIMIT, or it has at
-        least MIN_CLOSED_FOR_VERDICT closed copies and is negative. Nothing
-        lifts a permanent pause. Daily: a negative day pauses until midnight
-        Stockholm. Losses before the period stay in the book since start and
-        do not pause. Every pause records the result that caused it.
+    def refresh_pauses(self, db):
+        """Mitch's rule (his answer, 10 Oct 2026): no automatic wallet pause.
+
+        A wallet stops only when a person pauses it after review. The one
+        automatic stop is for the whole desk: buys stop when the cash of all
+        Mitch accounts falls to DESK_STOP_CASH_MICRO. The numbers for the
+        weekly review are kept per wallet: a wallet losing on our copies over
+        a week, or silent for days, is flagged for review, not paused.
         """
         now = self.clock()
         today = datetime.fromtimestamp(now, STOCKHOLM).date().isoformat()
-        previous = (self._pause_state(db).get('wallets') or {})
         stint = self.stint(db)
         stint_at = float(stint['at']) if stint else None
         stint_id = stint.get('id') if stint else None
+        manual = self.manual_pauses()
+        cash = sum(int(r[0] or 0) for r in db.execute('SELECT cash FROM mitch_accounts'))
+        desk_stop = bool(db.execute('SELECT 1 FROM mitch_accounts LIMIT 1').fetchone()) and cash <= DESK_STOP_CASH_MICRO
         wallets = {}
         for wallet in WALLETS:
-            all_net = 0
-            period_net = 0
-            period_closed = 0
-            today_net = 0
-            known = True
+            all_net = period_net = period_closed = today_net = week_net = week_closed = 0
+            last_open = None
             for (body,) in db.execute('SELECT body FROM mitch_positions WHERE wallet=?', (wallet,)):
                 trade = json.loads(body)
-                if trade.get('status') not in ('CLOSED', 'SETTLED'):
-                    continue
-                inside = stint_at is None or float(trade.get('opened') or 0) >= stint_at
-                if trade.get('pnl_micro') is None:
-                    if inside:
-                        known = False
+                opened = float(trade.get('opened') or 0)
+                inside = stint_at is None or opened >= stint_at
+                if inside and opened:
+                    last_open = max(last_open or 0, opened)
+                if trade.get('status') not in ('CLOSED', 'SETTLED') or trade.get('pnl_micro') is None:
                     continue
                 pnl = int(trade['pnl_micro'])
                 all_net += pnl
@@ -440,39 +451,38 @@ class MitchCopy:
                     continue
                 period_net += pnl
                 period_closed += 1
-                closed = trade.get('closed_at')
-                if closed and datetime.fromtimestamp(float(closed), STOCKHOLM).date().isoformat() == today:
+                closed = float(trade.get('closed_at') or 0)
+                if closed and now - closed <= REVIEW_DAYS * 86400:
+                    week_net += pnl
+                    week_closed += 1
+                if closed and datetime.fromtimestamp(closed, STOCKHOLM).date().isoformat() == today:
                     today_net += pnl
             numbers = {'today_net_usd': today_net / 1e6, 'period_net_usd': period_net / 1e6,
-                       'period_closed': period_closed, 'all_net_usd': all_net / 1e6}
-            old = previous.get(wallet) or {}
-            if old.get('stint') != stint_id:
-                old = {}
-            trigger = old.get('trigger') or {}
-            # A held pause must have been made by this rule: a permanent one
-            # by a period verdict, a daily one on this calendar day.
-            if old.get('kind') == 'period' and trigger.get('verdict'):
-                held = old
-            elif old.get('kind') == 'day' and old.get('day') == today:
-                held = old
+                       'period_closed': period_closed, 'all_net_usd': all_net / 1e6,
+                       'week_net_usd': week_net / 1e6, 'week_closed': week_closed,
+                       'last_copy_at': last_open}
+            review = []
+            if stint_at is not None and now - stint_at >= REVIEW_DAYS * 86400:
+                if week_closed and week_net < 0:
+                    review.append('minus na kopiach przez ostatni tydzień')
+                if last_open is None or now - last_open >= SILENT_DAYS * 86400:
+                    review.append('cisza od %d dni' % SILENT_DAYS)
+            hand = manual.get(wallet)
+            if hand:
+                wallets[wallet] = dict(numbers, paused=True, kind='manual', stint=stint_id,
+                    since=hand.get('since') or now, review=review,
+                    reason='Wstrzymany ręcznie po przeglądzie%s.' % (
+                        ': ' + str(hand['reason']) if hand.get('reason') else ''),
+                    trigger=dict(numbers, at=hand.get('since') or now, by=hand.get('by')))
+            elif desk_stop:
+                wallets[wallet] = dict(numbers, paused=True, kind='desk', stint=stint_id, since=now,
+                    review=review, reason='Stop całego biurka: gotówka Mitcha spadła do %d USD.' % (
+                        DESK_STOP_CASH_MICRO // 1_000_000),
+                    trigger=dict(numbers, at=now, desk_cash_usd=cash / 1e6))
             else:
-                held = None
-            verdict = known and (period_net < -PERIOD_LOSS_LIMIT_MICRO or
-                                 (period_closed >= MIN_CLOSED_FOR_VERDICT and period_net < 0))
-            daily = known and today_net < 0
-            if verdict or (held and held.get('kind') == 'period'):
-                base = held if held and held.get('kind') == 'period' else None
-                wallets[wallet] = dict(numbers, paused=True, kind='period', stint=stint_id,
-                    since=(base or {}).get('since') or now,
-                    reason='Okres testu: strata ponad %d USD albo minus po %d zamkniętych kopiach.' % (
-                        PERIOD_LOSS_LIMIT_MICRO // 1_000_000, MIN_CLOSED_FOR_VERDICT),
-                    trigger=(base or {}).get('trigger') or dict(numbers, at=now, verdict=True))
-            elif daily or held:
-                wallets[wallet] = dict(numbers, paused=True, kind='day', day=today, stint=stint_id,
-                    since=(held or {}).get('since') or now,
-                    reason='Minus dzisiaj. Zakupy wracają o północy (Stockholm).',
-                    trigger=(held or {}).get('trigger') or dict(numbers, at=now))
-        payload = {'updated_at': now, 'stint': stint, 'wallets': wallets}
+                wallets[wallet] = dict(numbers, paused=False, kind=None, stint=stint_id, review=review)
+        payload = {'updated_at': now, 'stint': stint, 'rule': PAUSE_RULE, 'desk_cash_usd': cash / 1e6,
+                   'desk_stop': desk_stop, 'wallets': wallets}
         db.execute(
             "INSERT INTO state VALUES ('mitch_pauses', ?) ON CONFLICT(key) DO UPDATE SET body=excluded.body",
             (json.dumps(payload),),
@@ -937,6 +947,10 @@ class MitchCopy:
                 row['pause_reason'] = hold.get('reason')
                 row['pause_today_net_usd'] = hold.get('today_net_usd')
                 row['pause_all_net_usd'] = hold.get('all_net_usd')
+                row['pause_kind'] = hold.get('kind')
+                row['review'] = hold.get('review') or []
+                row['week_net_usd'] = hold.get('week_net_usd')
+                row['week_closed'] = hold.get('week_closed')
                 inside = [p for p in closed if p.get('wallet') == row['wallet']
                           and stint_at is not None and float(p.get('opened') or 0) >= stint_at]
                 row['period_net_micro'] = sum(int(p['pnl_micro']) for p in inside)
@@ -996,6 +1010,9 @@ class MitchCopy:
             'stint': self.stint(),
             'fast': fast_status(),
             'stop_active': self.stopped(),
+            'pause_rule': pauses.get('rule'),
+            'desk_cash_usd': pauses.get('desk_cash_usd'),
+            'desk_stop': pauses.get('desk_stop'),
             'period_reasons': period_reasons,
             'period_events': period_events,
             'journal': [{
