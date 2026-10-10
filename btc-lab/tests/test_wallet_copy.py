@@ -266,6 +266,28 @@ class CopyTests(unittest.TestCase):
         self.assertEqual(pending[0]['wallet'], WALLETS[0])
         self.assertLessEqual(sum(1 for row in pending if row['wallet'] == observed), 19)
 
+    def test_observed_rows_go_to_the_slow_lane(self):
+        self.now = 1102
+        observed = '0x' + 'cd' * 20
+        roster = self.store.get('wallet_roster')
+        roster['wallets'][observed] = {'wallet': observed, 'state': 'observed', 'since': 1}
+        self.store.set('wallet_roster', roster)
+        observer = WalletObserver(self.store, None)
+        for i in range(5):
+            body = json.loads(self.row('o' + str(i), wallet=observed)['body'])
+            body['transactionHash'] = 'o' + str(i)
+            observer.ingest(observed, [body], self.now - 1)
+        observer.ingest(WALLETS[0], [json.loads(self.row('seed')['body'])], self.now)
+        active = [WALLETS[0], observed]
+        with self.store.connect() as db:
+            fast, slow = self.engine.pending_lanes(db, active)
+            self.assertEqual({r['wallet'] for r in fast}, {WALLETS[0]})
+            self.assertEqual({r['wallet'] for r in slow}, {observed})
+            # While the slow lane is busy, only the fast lane is read.
+            fast, slow = self.engine.pending_lanes(db, active, want_slow=False)
+        self.assertEqual(slow, [])
+        self.assertEqual(len(fast), 1)
+
     def test_pending_read_uses_the_recent_time_index(self):
         self.now = 5000
         observer = WalletObserver(self.store, None)

@@ -712,6 +712,32 @@ class WalletCopy:
                 rows.append(row)
         return rows
 
+    def pending_lanes(self,db,active,want_slow=True):
+        """Copying wallets in one lane, paused and observed in another.
+
+        10 Oct 2026: the observed backlog (about 80 rows a minute) held the
+        copying wallets' rows for 30-150 s. The slow lane now runs beside the
+        fast one and never delays it.
+        """
+        now=self.clock()
+        roster=(self.store.get('wallet_roster') or {}).get('wallets') or {}
+        copying=[];paused=[];lo=[]
+        for wallet in active:
+            state=(roster.get(wallet) or {}).get('state')
+            if state=='observed':lo.append(wallet)
+            elif state in ('paper_test','paper_active'):copying.append(wallet)
+            else:paused.append(wallet)
+        fast=self._pending_query(db,copying,now,20)
+        seen={(r['wallet'],r['event_key']) for r in fast}
+        for row in self._late_sell_query(db,copying,now,2 if fast else 5):
+            if (row['wallet'],row['event_key']) not in seen:
+                fast.append(row)
+        slow=[]
+        if want_slow:
+            slow=self._pending_query(db,paused,now,20)
+            if len(slow)<20:slow.extend(self._pending_query(db,lo,now,20-len(slow)))
+        return fast,slow
+
     def _late_sell_query(self, db, wallets, now, limit):
         """Sells missed during an outage. They update the source book and are
         recorded. They are not filled at a historical price."""
@@ -1247,6 +1273,11 @@ class WalletCopy:
             has=db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='wallet_activity'").fetchone()
             return self.pending_activity(db, active) if has else []
 
+    def _load_lanes(self, active, want_slow):
+        with self.store.connect() as db:
+            has=db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='wallet_activity'").fetchone()
+            return self.pending_lanes(db, active, want_slow) if has else ([], [])
+
     def _load_backlog(self):
         with self.store.connect() as db:
             return self.activity_backlog(db, self.clock())
@@ -1316,7 +1347,16 @@ class WalletCopy:
             # The read runs off the event loop so a slow query cannot freeze RTDS.
             active=list(get_active_wallets(self.store))
             from .hot_path import READ
-            rows=await asyncio.get_running_loop().run_in_executor(READ, self._load_pending, active)
+            slow_task=getattr(self,'_slow_task',None)
+            if slow_task is not None and slow_task.done():
+                self._slow_task=None
+                if not slow_task.cancelled() and slow_task.exception() is not None:
+                    log.error('slow copy lane: %s',slow_task.exception())
+                slow_task=None
+            rows,slow=await asyncio.get_running_loop().run_in_executor(
+                READ, self._load_lanes, active, slow_task is None)
+            if slow:
+                self._slow_task=asyncio.create_task(self._apply_batch(slow))
             await self._apply_batch(rows)
             # A hypothetical ticket stays on the direct process() path.
             # The full decision-table scan is cached inside publish.
@@ -1326,7 +1366,7 @@ class WalletCopy:
                 # failed publish is re-raised forever and the dashboard stays frozen.
                 self._publish_task=None
                 task.result()
-            if (rows or self.clock()-self.last_publish>=2) and (task is None or task.done()):
+            if (rows or slow or self.clock()-self.last_publish>=2) and (task is None or task.done()):
                 self._publish_task=asyncio.create_task(self._publish_bg())
                 self.last_publish=self.clock()
             from .hot_path import DB, READ, latest_stage, snapshot
@@ -1420,3 +1460,5 @@ class WalletCopy:
                 except asyncio.TimeoutError:pass
         finally:
             upkeep.cancel()
+            if getattr(self,'_slow_task',None) is not None:
+                self._slow_task.cancel()
