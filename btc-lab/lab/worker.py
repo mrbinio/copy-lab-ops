@@ -34,6 +34,9 @@ RTDS='wss://ws-live-data.polymarket.com'
 # Damian, 10 Oct 2026: qualifier buys stay on (30-day rules). The switch is the
 # QUALIFIER_OFF file in the data folder, set from Telegram (/kwalifikator stop).
 QUALIFIER_BUYS=True
+# The qualifier runs in its own process (run_qualifier). False puts it back
+# in this process.
+QUALIFIER_PROCESS=True
 # Free public Polygon log stream. Replaces paid Alchemy when no URL is set.
 # blockmachine held 90s with live TransferSingle logs; drpc drops ~30s; llamarpc fails DNS here.
 DEFAULT_CHAIN_WSS=('wss://rpc-polygon.blockmachine.io','wss://polygon.drpc.org')
@@ -649,10 +652,15 @@ class Worker:
         warmer=asyncio.create_task(self.warm_books())
         pulse=asyncio.create_task(self.heartbeat_loop())
         lag=asyncio.create_task(self.loop_lag_probe())
-        observer=WalletObserver(self.store,get_json) if self.asset=="BTC" else None
+        # 10 Oct 2026: the qualifier (observer of ~120 wallets, discovery and
+        # its copier) runs in its own process. In one process it held the
+        # heartbeat 30-90 s and the watchdog restarted everything, Mitch too.
+        split=self.asset=="BTC" and QUALIFIER_PROCESS
+        observer=WalletObserver(self.store,get_json) if self.asset=="BTC" and not split else None
         wallets=asyncio.create_task(observer.run()) if observer else None
         # Hourly shortlist only. Candidates are never auto-copied.
-        discovery=asyncio.create_task(WalletDiscovery(self.store,get_json).run()) if self.asset=='BTC' else None
+        discovery=asyncio.create_task(WalletDiscovery(self.store,get_json).run()) if self.asset=='BTC' and not split else None
+        qualifier=asyncio.create_task(self.qualifier_process()) if split else None
         # --- CLOB live order support (optional, off by default) ---
         clob_client = None
         if self.asset == "BTC":
@@ -683,7 +691,7 @@ class Worker:
                     LOG.warning('Failed to initialize CLOB client: %s', e)
                     clob_client = None
         from .hot_path import fetch_copy
-        copier=asyncio.create_task(WalletCopy(self.store,fetch_copy,self.is_paused,clob_client=clob_client,buys_enabled=QUALIFIER_BUYS).run()) if self.asset=="BTC" else None
+        copier=asyncio.create_task(WalletCopy(self.store,fetch_copy,self.is_paused,clob_client=clob_client,buys_enabled=QUALIFIER_BUYS).run()) if self.asset=="BTC" and not split else None
         mitch=None
         clock_task=None
         if self.asset=="BTC":
@@ -733,7 +741,7 @@ class Worker:
             'reference': reference, 'flush': flush, 'warmer': warmer, 'pulse': pulse, 'lag': lag,
             'wallets': wallets, 'discovery': discovery,
             'copier': copier, 'mitch': mitch, 'clock': clock_task,
-            'chain': chain_task, 'prints': prints,
+            'chain': chain_task, 'prints': prints, 'qualifier': qualifier,
         }
         births={}
         last_wallet_refresh=time.time()
@@ -750,7 +758,11 @@ class Worker:
                         error=None if caught is None else str(caught)[:200]
                     births[name]=births.get(name, 0)+1
                     dead.append({'name': name, 'error': error, 'restarts': births[name]})
-                    if births[name]<=5 and name in ('copier', 'mitch', 'wallets', 'chain', 'prints', 'flush', 'warmer', 'pulse', 'lag'):
+                    if name=='qualifier':
+                        # The child process supervisor restarts the process itself.
+                        LOG.warning('restarting the qualifier supervisor (%s)', error)
+                        jobs[name]=asyncio.create_task(self.qualifier_process())
+                    elif births[name]<=5 and name in ('copier', 'mitch', 'wallets', 'chain', 'prints', 'flush', 'warmer', 'pulse', 'lag'):
                         LOG.warning('restarting %s after it stopped (%s)', name, error)
                         if name=='copier':
                             from .hot_path import fetch_copy
@@ -796,6 +808,31 @@ class Worker:
                     task.cancel()
             await asyncio.gather(*[task for task in jobs.values() if task is not None], return_exceptions=True)
 
+    async def qualifier_process(self):
+        """Run the qualifier as a child process and restart it when it exits."""
+        import sys
+        env=dict(os.environ, LAB_ROLE='qualifier')
+        delay=1
+        while True:
+            started=time.time()
+            child=await asyncio.create_subprocess_exec(
+                sys.executable, '-m', 'lab.worker', env=env,
+                cwd=str(Path(__file__).resolve().parent.parent))
+            LOG.info('qualifier process started (pid %s)', child.pid)
+            try:
+                code=await child.wait()
+            except asyncio.CancelledError:
+                if child.returncode is None:
+                    child.terminate()
+                    try:
+                        await asyncio.wait_for(child.wait(), 10)
+                    except asyncio.TimeoutError:
+                        child.kill()
+                raise
+            LOG.warning('qualifier process exited with %s', code)
+            delay=1 if time.time()-started>300 else min(delay*2, 60)
+            await asyncio.sleep(delay)
+
     async def clock_loop(self):
         """Measure the Mac clock against NTP. A settings toggle is not a measurement."""
         from .clock_status import measure_clock
@@ -816,6 +853,34 @@ class Worker:
             await self._db(self.store.set,'clock_status', sample)
             await asyncio.sleep(15 if jumped else 60)
 
+async def run_qualifier(store):
+    """The qualifier process: observer, discovery and the qualifier copier.
+    PAPER only; it never builds a CLOB client."""
+    from .hot_path import fetch_copy
+    data=Path(store.path).parent
+    def paused():
+        return (data/'PAUSE').exists()
+    def build():
+        observer=WalletObserver(store,get_json)
+        return {
+            'wallets': lambda: observer.run(),
+            'discovery': lambda: WalletDiscovery(store,get_json).run(),
+            'copier': lambda: WalletCopy(store,fetch_copy,paused,clob_client=None,buys_enabled=QUALIFIER_BUYS).run(),
+        }
+    makers=build()
+    jobs={name: asyncio.create_task(make()) for name, make in makers.items()}
+    births={}
+    while True:
+        for name, task in list(jobs.items()):
+            if task.done():
+                error=None if task.cancelled() or task.exception() is None else str(task.exception())[:200]
+                births[name]=births.get(name,0)+1
+                LOG.warning('qualifier: restarting %s (%s)', name, error)
+                jobs[name]=asyncio.create_task(makers[name]())
+        await asyncio.to_thread(store.set,'qualifier_process',{'at':time.time(),'pid':os.getpid(),'restarts':births})
+        await asyncio.sleep(5)
+
+
 def main():
     import fcntl
     logging.basicConfig(level=logging.INFO)
@@ -824,9 +889,13 @@ def main():
     if asset not in ('BTC','ETH'):raise SystemExit('unsupported asset')
     if asset=='ETH':data=data/'eth'
     data.mkdir(parents=True,exist_ok=True)
-    with (data/'worker.lock').open('w') as lock:
+    role=os.environ.get('LAB_ROLE','main')
+    with (data/('qualifier.lock' if role=='qualifier' else 'worker.lock')).open('w') as lock:
         fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
         store=Store(data/'lab.sqlite',asset=asset)
+        if role=='qualifier':
+            asyncio.run(run_qualifier(store))
+            return
         if asset=='ETH':store.set('model',{'status':'NOT_USED','samples':0,'reason':'Separate normalized-momentum PAPER hypothesis; no BTC-trained model.'})
         asyncio.run(Worker(store,data).run())
 
