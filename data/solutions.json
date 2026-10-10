@@ -38,12 +38,12 @@
     "botbot · SPORTS · jeden event / veto"
   ],
   "error": "http 400 claude-sonnet-4-20250514",
-  "updated_at": "2026-10-10T09:56:29.694611+00:00",
-  "hunt_updated_at": "2026-10-10T09:56:28.772379+00:00",
+  "updated_at": "2026-10-10T17:28:18.165646+00:00",
+  "hunt_updated_at": "2026-10-10T17:28:17.337070+00:00",
   "x_source": "error",
   "x_model": null,
   "x_error": "http 403 grok-4.6 {\"code\":\"permission-denied\",\"error\":\"Your newly created team doesn't have any credits or licenses yet. You can purchase those on https://conso",
   "x_pl": "Filtr X: błąd API. Zostają sity. Copy off.",
   "x_en": "X filter: API error. Gates stand. Copy off.",
-  "x_updated_at": "2026-10-10T09:56:29.824817+00:00"
+  "x_updated_at": "2026-10-10T17:28:18.342970+00:00"
 }
