@@ -555,7 +555,7 @@ class WalletCopy:
         totals=copy_summarize(trades,copy_pauses(self.store),now,observed=len(get_active_wallets(self.store)),copy_wallets=list(get_active_wallets(self.store)),roster=roster_state)
         board=paper_board(trades,roster_state,copy_pauses(self.store),now)
         self.store.set(KEY,dict(spec='wallet-signal-copy-v1',status=status,error=error,updated_at=now,started_at=self.started,board=board,
-            mode='PAPER + CLOB' if self.clob_client else 'PAPER ONLY',buys_enabled=self.buys_enabled,accounts=accounts,recent_trades=[public_trade(t) for t in sorted(trades,key=lambda t:t['opened'],reverse=True)[:100]],
+            mode='PAPER + CLOB' if self.clob_client else 'PAPER ONLY',buys_enabled=self.buys_enabled and not self.qualifier_off(),accounts=accounts,recent_trades=[public_trade(t) for t in sorted(trades,key=lambda t:t['opened'],reverse=True)[:100]],
             trades_truncated=len(trades)>100,reasons=reasons,recent_decisions=recent,
             skip_review=self._scan['skip'],recent_errors=errors,entry_policy='copy-immediate-v7',
             totals=totals,path_ms=path_stats(samples[-200:]),
@@ -870,7 +870,7 @@ class WalletCopy:
             # or the official settlement path, which never enters this function.
             if kind=='BUY' and self.paused():
                 self.reason(row,'PAUSED');return {'stop':True}
-            if kind=='BUY' and not self.buys_enabled:
+            if kind=='BUY' and (not self.buys_enabled or self.qualifier_off()):
                 self.reason(row,'QUALIFIER_BUYS_OFF');return {'stop':True}
             if kind=='BUY':
                 roster_state=((self.store.get('wallet_roster') or {}).get('wallets') or {}).get(wallet,{}).get('state')
@@ -1022,6 +1022,11 @@ class WalletCopy:
         db.execute('UPDATE wallet_copy_events SET reason=?,body=? WHERE wallet=? AND event_key=?',
             (reason,json.dumps(evidence),wallet,key))
         self._last_decision[wallet]=(self.clock(), reason)
+
+    def qualifier_off(self):
+        """Telegram switch: a QUALIFIER_OFF file next to the database stops new qualifier buys."""
+        from pathlib import Path
+        return (Path(self.store.path).parent/'QUALIFIER_OFF').exists()
 
     def _buy_block(self,db,wallet,now):
         """Pause and a ledger hold, read on the reservation transaction."""

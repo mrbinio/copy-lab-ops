@@ -88,6 +88,37 @@ class CommandTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         bot.PAUSE = Path(self.tmp.name) / 'data' / 'PAUSE'
+        bot.QUALIFIER_OFF = Path(self.tmp.name) / 'data' / 'QUALIFIER_OFF'
+        bot.MITCH_OFF = Path(self.tmp.name) / 'data' / 'MITCH_OFF'
+
+    def test_qualifier_and_mitch_switches(self):
+        tg = FakeTelegram()
+        bot.handle('/kwalifikator_stop', 1, tg, allowed={1})
+        self.assertTrue(bot.QUALIFIER_OFF.exists())
+        bot.handle('/mitch_stop', 1, tg, allowed={1})
+        self.assertTrue(bot.MITCH_OFF.exists())
+        bot.handle('/kwalifikator_start', 1, tg, allowed={1})
+        bot.handle('/mitch_start', 1, tg, allowed={1})
+        self.assertFalse(bot.QUALIFIER_OFF.exists() or bot.MITCH_OFF.exists())
+        self.assertIn('WYŁĄCZONE', tg.sent[0][1])
+        bot.handle('/kwalifikator_stop', 99, tg, allowed={1})
+        self.assertFalse(bot.QUALIFIER_OFF.exists())
+
+    def test_text_views(self):
+        st = {'mitch_copy': {'wallets': [{'wallet': WALLET, 'label': '0xdc27', 'paused': True,
+                                          'pause_reason': 'Minus dzisiaj.'}],
+                             'period_reasons': {'MITCH_BUY': 2, 'LATE_BUY_NOT_COPIED': 5},
+                             'period_events': [{'at': 1_791_600_000, 'wallet': WALLET, 'reason': 'MITCH_BUY',
+                                                'side': 'BUY', 'total_ms': 240}]},
+              'accounts': [{'id': 'copy-0xaaaa1111', 'pnl': 3.5, 'trades': 4},
+                           {'id': 'copy-0xbbbb2222', 'pnl': -9.0, 'trades': 7}],
+              'wallet_roster': {'wallets': {'a': {'state': 'paper_test'}, 'b': {'state': 'paused'}}}}
+        self.assertIn('240 ms', bot.copies_text(st))
+        self.assertIn('kupiono', bot.copies_text(st))
+        self.assertIn('Minus dzisiaj', bot.pauses_text(st))
+        detail = bot.wallets_detail_text(st)
+        self.assertIn('Na plusie 1 z 2', detail)
+        self.assertIn('aaaa1111', detail)
 
     def tearDown(self):
         self.tmp.cleanup()

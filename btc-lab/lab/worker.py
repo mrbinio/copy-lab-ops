@@ -31,8 +31,9 @@ LOG=logging.getLogger('btc-lab')
 GAMMA='https://gamma-api.polymarket.com'
 CLOB='https://clob.polymarket.com'
 RTDS='wss://ws-live-data.polymarket.com'
-# Damian, 9 Oct 2026: the qualifier stops new buys until it has a sub-second path.
-QUALIFIER_BUYS=False
+# Damian, 10 Oct 2026: qualifier buys stay on (30-day rules). The switch is the
+# QUALIFIER_OFF file in the data folder, set from Telegram (/kwalifikator stop).
+QUALIFIER_BUYS=True
 # Free public Polygon log stream. Replaces paid Alchemy when no URL is set.
 # blockmachine held 90s with live TransferSingle logs; drpc drops ~30s; llamarpc fails DNS here.
 DEFAULT_CHAIN_WSS=('wss://rpc-polygon.blockmachine.io','wss://polygon.drpc.org')

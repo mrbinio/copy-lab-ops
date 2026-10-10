@@ -480,9 +480,10 @@ class MitchCopy:
         return payload
 
     def stopped(self):
-        """The same PAUSE file that stops the other copiers. Sells and settlement go on."""
+        """PAUSE stops every copier; MITCH_OFF only this one (Telegram). Sells and settlement go on."""
         from pathlib import Path
-        return (Path(self.store.path).parent / 'PAUSE').exists()
+        folder = Path(self.store.path).parent
+        return (folder / 'PAUSE').exists() or (folder / 'MITCH_OFF').exists()
 
     def apply_buy(self, db, wallet, key, event, fill, timing):
         if self.stopped():

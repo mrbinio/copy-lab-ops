@@ -32,6 +32,27 @@ ROOT = Path(os.environ.get('BTC_LAB_ROOT', str(Path.home() / 'Library/Applicatio
 CONFIG = ROOT / 'telegram.json'
 STATE = ROOT / 'logs' / 'telegram-state.json'
 PAUSE = ROOT / 'data' / 'PAUSE'
+QUALIFIER_OFF = ROOT / 'data' / 'QUALIFIER_OFF'
+MITCH_OFF = ROOT / 'data' / 'MITCH_OFF'
+COMMANDS = [
+    ('status', 'Czy wszystko działa'),
+    ('mitch', 'Portfele Mitcha: wynik i pauzy'),
+    ('kopie', 'Ostatnie decyzje kopiowania Mitcha z czasem'),
+    ('portfele', 'Twoje portfele (kwalifikator): wynik, najlepsze i najgorsze'),
+    ('pauzy', 'Kto jest na pauzie i dlaczego'),
+    ('odkrywanie', 'Wyniki szukania portfeli metodą Mitcha (90 dni)'),
+    ('rezerwa', 'Rezerwa zysku'),
+    ('rynek', 'Cena BTC, ruch 24 h, najbliższe wydarzenia'),
+    ('wydarzenia', 'Kalendarz makro'),
+    ('system', 'Usługi na Macu, dysk, rejestrator'),
+    ('kwalifikator_stop', 'Wstrzymaj kupno w Twoich portfelach'),
+    ('kwalifikator_start', 'Włącz kupno w Twoich portfelach'),
+    ('mitch_stop', 'Wstrzymaj kupno Mitcha'),
+    ('mitch_start', 'Włącz kupno Mitcha'),
+    ('stop', 'STOP: wszystkie nowe kupna'),
+    ('wznow', 'Usuń STOP'),
+    ('pomoc', 'Lista komend'),
+]
 DASH = os.environ.get('BTC_LAB_DASH', 'http://127.0.0.1:8769')
 CHECK_EVERY = 15
 DOWN_AFTER = 120
@@ -54,7 +75,7 @@ LABELS = {
     '0xa82365c8e854728c472812fba6202ca125386215': 'mihaXd',
 }
 HELP = (
-    'BTC Lab (PAPER)\n'
+    'BTC Lab (PAPER). Komendy są też w menu „/” obok pola wiadomości.\n'
     '/status – worker, zegar, szybka ścieżka\n'
     '/mitch – 5 portfeli Mitcha, pauzy, wynik\n'
     '/portfele – kwalifikator dziś i łącznie\n'
@@ -62,6 +83,13 @@ HELP = (
     '/stop – STOP wszystkich nowych kupna (sprzedaż i rozliczenia działają)\n'
     '/wznow – usuń STOP\n'
     '/rynek – cena BTC, ruch 24 h i najbliższe wydarzenia makro\n'
+    '/kopie – ostatnie decyzje kopiowania Mitcha\n'
+    '/pauzy – kto stoi i dlaczego\n'
+    '/odkrywanie – portfele metodą Mitcha (90 dni)\n'
+    '/wydarzenia – kalendarz makro\n'
+    '/system – usługi, dysk, rejestrator\n'
+    '/kwalifikator_stop, /kwalifikator_start – Twoje portfele\n'
+    '/mitch_stop, /mitch_start – portfele Mitcha\n'
     'LIVE jest wyłączone w kodzie. Bot nie składa zleceń.'
 )
 
@@ -185,6 +213,110 @@ def bank_text(state):
     return 'Rezerwa zysku (40%% z nowych zamkniętych plusów, PAPER)\nRazem: %s USD\nMitch: %s · kwalifikator: %s' % (
         usd(bank.get('reserved_micro')).lstrip('+'), usd(bank.get('mitch_reserved_micro')).lstrip('+'),
         usd(bank.get('copy_reserved_micro')).lstrip('+'))
+
+
+REASONS_PL = {
+    'MITCH_BUY': 'kupiono', 'MITCH_ADD': 'dokupiono', 'MITCH_SELL': 'sprzedano',
+    'LATE_BUY_NOT_COPIED': 'za późno (>1 s)', 'PRICE_WORSE_THAN_10C': 'cena gorsza o >10¢',
+    'MITCH_PAUSED': 'portfel na pauzie', 'GLOBAL_STOP': 'STOP', 'WINDOW_LIMIT': 'limit okna',
+    'NO_LIQUIDITY': 'brak płynności', 'NO_ASK': 'brak ofert', 'BOOK_WAIT_TOO_LONG': 'arkusz za wolno',
+    'MITCH_NEED_CHAIN': 'brak jego ceny', 'SOURCE_TIME_UNKNOWN': 'nieznany czas', 'LATE_SELL_RECONCILED': 'spóźniona sprzedaż',
+}
+
+
+def copies_text(state):
+    m = state.get('mitch_copy') or {}
+    events = m.get('period_events') or []
+    if not events:
+        return 'Mitch: brak decyzji w okresie testu.'
+    labels = {w.get('wallet'): w.get('label') for w in m.get('wallets') or []}
+    reasons = m.get('period_reasons') or {}
+    bought = reasons.get('MITCH_BUY', 0) + reasons.get('MITCH_ADD', 0)
+    lines = ['Mitch, okres testu: %d kopii · za późno %d · pauza %d' % (
+        bought, reasons.get('LATE_BUY_NOT_COPIED', 0), reasons.get('MITCH_PAUSED', 0)), 'Ostatnie:']
+    for e in events[:10]:
+        when = datetime.fromtimestamp(float(e['at']), STOCKHOLM).strftime('%d.%m %H:%M') if STOCKHOLM else ''
+        ms = '' if e.get('total_ms') is None else ' · %d ms' % e['total_ms']
+        lines.append('  %s %s %s: %s%s' % (when, labels.get(e.get('wallet')) or str(e.get('wallet'))[-6:],
+                                          'kupno' if e.get('side') == 'BUY' else 'sprzedaż' if e.get('side') == 'SELL' else '',
+                                          REASONS_PL.get(e.get('reason'), e.get('reason')), ms))
+    return '\n'.join(lines)
+
+
+def pauses_text(state):
+    m = state.get('mitch_copy') or {}
+    lines = ['Pauzy']
+    if MITCH_OFF.exists():
+        lines.append('Mitch: kupno wyłączone komendą (/mitch_start włącza).')
+    for w in m.get('wallets') or []:
+        if w.get('paused'):
+            lines.append('  %s: %s' % (w.get('label'), w.get('pause_reason') or 'pauza'))
+    if len(lines) == 1 or (len(lines) == 2 and MITCH_OFF.exists()):
+        lines.append('  Mitch: żaden portfel nie stoi.')
+    roster = ((state.get('wallet_roster') or {}).get('wallets') or {})
+    counts = {}
+    for row in roster.values():
+        counts[row.get('state')] = counts.get(row.get('state'), 0) + 1
+    lines.append('Twoje portfele: kupno %s · test %d · aktywne %d · pauza %d · obserwowane %d' % (
+        'wyłączone' if QUALIFIER_OFF.exists() else 'włączone', counts.get('paper_test', 0),
+        counts.get('paper_active', 0), counts.get('paused', 0), counts.get('observed', 0)))
+    if PAUSE.exists():
+        lines.append('STOP globalny jest aktywny (/wznow).')
+    return '\n'.join(lines)
+
+
+def wallets_detail_text(state):
+    text = wallets_text(state)
+    accounts = [a for a in state.get('accounts') or [] if str(a.get('id', '')).startswith('copy-') and a.get('trades')]
+    if not accounts:
+        return text
+    accounts.sort(key=lambda a: float(a.get('pnl') or 0))
+    fmt = lambda a: '  %s: %+.2f USD (%d transakcji)' % (str(a['id'])[-8:], float(a.get('pnl') or 0), int(a.get('trades') or 0))
+    best = [fmt(a) for a in reversed(accounts[-5:])]
+    worst = [fmt(a) for a in accounts[:5]]
+    plus = sum(1 for a in accounts if float(a.get('pnl') or 0) > 0)
+    return '\n'.join([text, 'Kupno: %s' % ('wyłączone' if QUALIFIER_OFF.exists() else 'włączone'),
+                      'Na plusie %d z %d portfeli z transakcjami.' % (plus, len(accounts)),
+                      'Najlepsze:'] + best + ['Najgorsze:'] + worst)
+
+
+def events_text(now):
+    upcoming = sorted((e for e in calendar_events() if float(e['at']) >= now - 3600), key=lambda e: e['at'])
+    if not upcoming:
+        return 'Kalendarz makro jest pusty.'
+    lines = ['Kalendarz makro (czas sztokholmski)']
+    for e in upcoming[:10]:
+        lines.append('  %s  %s' % (datetime.fromtimestamp(float(e['at']), STOCKHOLM).strftime('%a %d.%m %H:%M'), e['name']))
+    return '\n'.join(lines)
+
+
+def system_text(state, code):
+    import shutil
+    rec = state.get('recorder_status') or {}
+    free = shutil.disk_usage(str(ROOT)).free / 1e9
+    tun = state.get('tunnel_status') or {}
+    ch = state.get('chain_status') or {}
+    return '\n'.join([
+        status_text(state, code),
+        'Łańcuch Polygon: %s' % ('połączony' if ch.get('connected') else 'brak'),
+        'Tunel zdalny: %s' % ('połączony' if tun.get('edge_connected') else 'brak'),
+        'Rejestrator: %s · %.2f GB' % ('zapisuje' if rec.get('ok') else 'problem: %s' % (rec.get('stale') or rec.get('paused')),
+                                       (rec.get('bytes') or 0) / 1e9),
+        'Wolne miejsce na dysku: %.0f GB' % free,
+        'Kupno: Mitch %s · Twoje portfele %s%s' % (
+            'wył.' if MITCH_OFF.exists() else 'wł.', 'wył.' if QUALIFIER_OFF.exists() else 'wł.',
+            ' · STOP AKTYWNY' if PAUSE.exists() else ''),
+    ])
+
+
+def switch(path, on, chat, what):
+    if on:
+        if path.exists():
+            path.unlink()
+        return '%s: kupno WŁĄCZONE. Pauzy portfeli zostają, sprzedaż i rozliczenia działają zawsze.' % what
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text('telegram %s %s\n' % (chat, now_local().isoformat()))
+    return '%s: kupno WYŁĄCZONE. Otwarte pozycje dalej się sprzedają i rozliczają.' % what
 
 
 def trade_text(event):
@@ -356,6 +488,21 @@ def handle(command, chat, tg, allowed, opener=urllib.request.urlopen):
         PAUSE.write_text('telegram %s %s\n' % (chat, now_local().isoformat()))
         tg.send(chat, 'STOP: nowe kupna wstrzymane (Mitch, portfele, strategie). Sprzedaż i rozliczenia działają.')
         return
+    if command == '/kwalifikator_stop':
+        tg.send(chat, switch(QUALIFIER_OFF, False, chat, 'Twoje portfele'))
+        return
+    if command == '/kwalifikator_start':
+        tg.send(chat, switch(QUALIFIER_OFF, True, chat, 'Twoje portfele'))
+        return
+    if command == '/mitch_stop':
+        tg.send(chat, switch(MITCH_OFF, False, chat, 'Mitch'))
+        return
+    if command == '/mitch_start':
+        tg.send(chat, switch(MITCH_OFF, True, chat, 'Mitch'))
+        return
+    if command == '/wydarzenia':
+        tg.send(chat, events_text(time.time()))
+        return
     if command in ('/wznow', '/wznów', '/resume'):
         if PAUSE.exists():
             PAUSE.unlink()
@@ -371,7 +518,22 @@ def handle(command, chat, tg, allowed, opener=urllib.request.urlopen):
     elif command == '/mitch':
         tg.send(chat, mitch_text(state))
     elif command == '/portfele':
-        tg.send(chat, wallets_text(state))
+        tg.send(chat, wallets_detail_text(state))
+    elif command == '/kopie':
+        tg.send(chat, copies_text(state))
+    elif command == '/pauzy':
+        tg.send(chat, pauses_text(state))
+    elif command == '/odkrywanie':
+        found = state.get('mitch_discovery') or {}
+        tg.send(chat, discovery_text(found) if found.get('finished_at') else 'Odkrywanie metodą Mitcha jeszcze się liczy.')
+    elif command == '/system':
+        tg.send(chat, system_text(state, health(opener)))
+    elif command == '/raport':
+        try:
+            day = get_json(BINANCE_DAY, opener)
+        except Exception:
+            day = None
+        tg.send(chat, morning_text(state, day, time.time()))
     elif command == '/rezerwa':
         tg.send(chat, bank_text(state))
     elif command == '/rynek':
@@ -397,6 +559,11 @@ def main():
         if config['token'] != token:
             token = config['token']
             tg = Telegram(token)
+            try:
+                tg.call('setMyCommands', {'commands': json.dumps(
+                    [{'command': c, 'description': d} for c, d in COMMANDS], ensure_ascii=False)}, timeout=15)
+            except Exception as error:
+                print('setMyCommands:', str(error)[:120], file=sys.stderr, flush=True)
         allowed = {int(c) for c in config.get('chat_ids') or []}
         try:
             updates = tg.call('getUpdates', {'offset': memory.get('offset', 0), 'timeout': 10}, timeout=20)
