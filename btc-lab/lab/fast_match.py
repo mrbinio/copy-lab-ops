@@ -12,9 +12,12 @@ straight to its copier, without waiting for the chain or the database poll.
 Nothing here places an order.
 """
 import asyncio
+import http.client
 import json
 import logging
+import threading
 import time
+from urllib.parse import urlsplit
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal
@@ -26,10 +29,10 @@ PUBLIC_RPC = ('https://rpc-polygon.blockmachine.io', 'https://polygon.drpc.org')
 RESOLVE_DEADLINE = 0.6
 RETRY_EVERY = 0.04
 MAX_INFLIGHT = 48
-RPC_POOL = ThreadPoolExecutor(max_workers=6, thread_name_prefix='lab-fast')
+RPC_POOL = ThreadPoolExecutor(max_workers=12, thread_name_prefix='lab-fast')
 # Mitch trades only BTC 15m. Since 10 Oct the lane also reads ETH and 5m
 # prints for the qualifier; those must not queue in front of his.
-PRIORITY_POOL = ThreadPoolExecutor(max_workers=6, thread_name_prefix='lab-fast-btc15')
+PRIORITY_POOL = ThreadPoolExecutor(max_workers=16, thread_name_prefix='lab-fast-btc15')
 
 
 def _priority(item):
@@ -63,11 +66,31 @@ def rpc_urls(environ=None):
     return tuple(urls)
 
 
+_LOCAL = threading.local()
+
+
 def _lookup(url, tx):
-    from .source_chain import _post
-    reply = _post(url, {
-        'jsonrpc': '2.0', 'id': 1, 'method': 'eth_getTransactionByHash', 'params': [tx],
-    }, timeout=0.5)
+    """eth_getTransactionByHash on a kept-alive connection of this pool thread.
+    A fresh TLS connection per try cost ~90 ms on every 40 ms retry."""
+    conns = getattr(_LOCAL, 'conns', None)
+    if conns is None:
+        conns = _LOCAL.conns = {}
+    parts = urlsplit(url)
+    conn = conns.get(url)
+    if conn is None:
+        conn = conns[url] = http.client.HTTPSConnection(parts.hostname, parts.port, timeout=0.5)
+    body = json.dumps({'jsonrpc': '2.0', 'id': 1, 'method': 'eth_getTransactionByHash', 'params': [tx]})
+    path = parts.path or '/'
+    if parts.query:
+        path += '?' + parts.query
+    try:
+        conn.request('POST', path, body, {'User-Agent': 'BTC-Lab-Paper/0.1', 'Content-Type': 'application/json',
+                                           'Accept': 'application/json'})
+        reply = json.loads(conn.getresponse().read(2_000_001))
+    except Exception:
+        conns.pop(url, None)
+        conn.close()
+        raise RuntimeError('%s: no response' % (parts.hostname or 'rpc')) from None
     return reply.get('result') if isinstance(reply, dict) else reply
 
 
@@ -144,29 +167,37 @@ class FastMatch:
         task.add_done_callback(self._inflight.discard)
         return task
 
-    async def _try_all(self, tx, pool=RPC_POOL):
+    async def _poll(self, url, tx, deadline, pool):
         loop = asyncio.get_running_loop()
-        calls = [loop.run_in_executor(pool, self.lookup, url, tx) for url in self.urls]
-        for call in calls:
-            # The first answer wins. A slower endpoint's error is not news.
-            call.add_done_callback(lambda f: f.cancelled() or f.exception())
-        for done in asyncio.as_completed(calls):
+        while True:
             try:
-                found = await done
+                found = await loop.run_in_executor(pool, self.lookup, url, tx)
             except Exception:
-                continue
+                found = None
             if isinstance(found, dict) and found.get('input'):
                 return found
-        return None
+            if self.clock() >= deadline:
+                return None
+            await self.sleep(RETRY_EVERY)
+
+    async def _race(self, tx, deadline, pool=RPC_POOL):
+        """Each endpoint retries on its own; the first one that has it wins.
+        10 Oct 2026: one round waited for the slower endpoint (up to 0.5 s)
+        before the next try, while blockmachine had the tx in 0.12 s p50."""
+        tasks = [asyncio.ensure_future(self._poll(url, tx, deadline, pool)) for url in self.urls]
+        try:
+            for done in asyncio.as_completed(tasks):
+                found = await done
+                if found:
+                    return found
+            return None
+        finally:
+            for task in tasks:
+                task.cancel()
 
     async def resolve(self, tx, match_ts, arrived, pool=RPC_POOL):
         deadline = arrived + RESOLVE_DEADLINE
-        found = None
-        while True:
-            found = await self._try_all(tx, pool)
-            if found or self.clock() >= deadline:
-                break
-            await self.sleep(RETRY_EVERY)
+        found = await self._race(tx, deadline, pool)
         if not found:
             self.counts['missed'] += 1
             return []
