@@ -190,6 +190,9 @@ def merge_activity_body(existing_body, row):
     return body, True
 
 
+MERGE_WINDOW_S = 600
+
+
 class WalletObserver:
     def __init__(self, store, fetch):
         self.store, self.fetch = store, fetch
@@ -224,13 +227,17 @@ class WalletObserver:
             return 0
         keys = list(prepared)
         known = {}
+        # A fill older than ten minutes no longer changes: only its presence is
+        # read. Reading and parsing every stored body was most of the CPU.
+        recent = {k for k, items in prepared.items() if max(ts for ts, _ in items) >= now - MERGE_WINDOW_S}
         with self.store.connect() as db:
             for i in range(0, len(keys), 500):
                 part = keys[i:i + 500]
                 marks = ','.join('?' * len(part))
                 for key, body in db.execute(
-                        f'SELECT event_key, body FROM wallet_activity WHERE wallet=? AND event_key IN ({marks})',
-                        (wallet, *part)):
+                        f'SELECT event_key, CASE WHEN event_key IN ({marks}) THEN body END FROM wallet_activity '
+                        f'WHERE wallet=? AND event_key IN ({marks})',
+                        (*[k if k in recent else '' for k in part], wallet, *part)):
                     known[key] = body
         fresh = []
         changed = []
@@ -239,6 +246,8 @@ class WalletObserver:
                 fresh.append(key)
                 continue
             body = known[key]
+            if body is None:
+                continue
             dirty = False
             for ts, row in items:
                 if row.get('_source') == 'chain_fast':
@@ -334,6 +343,19 @@ class WalletObserver:
             self.store.set(key,{**previous,'wallet':wallet,'status':'ERROR','checked_at':time.time(),
                 'error':str(error)[:300],'history_complete':False})
 
+    def poll_every(self,wallet):
+        """Seconds between polls. 11 Oct 2026: ~120 wallets every second kept the
+        qualifier process at 200-350% CPU. Copied wallets and Mitch's keep 1 s
+        (the fast lane already has their fills in ~0.4 s); paused ones, whose
+        results decide a return, 5 s; observed ones 15 s."""
+        from .mitch_copy import WALLETS as MITCH
+        if wallet in MITCH:
+            return 1
+        state=((self.store.get('wallet_roster') or {}).get('wallets') or {}).get(wallet,{}).get('state')
+        if state in ('paper_test','paper_active'):
+            return 1
+        return 5 if state=='paused' else 15
+
     async def run_wallet(self,wallet):
         failures=0
         while True:
@@ -341,7 +363,8 @@ class WalletObserver:
             await self.poll(wallet)
             status=await asyncio.to_thread(self.store.get, 'wallet_observer:'+wallet, {})
             failures=failures+1 if status.get('status')=='ERROR' else 0
-            interval=min(60,2**min(failures,6)) if failures else 1
+            every=await asyncio.to_thread(self.poll_every, wallet)
+            interval=min(60,2**min(failures,6)) if failures else every
             await asyncio.sleep(max(.1,interval-(time.monotonic()-started)))
 
     async def run(self):

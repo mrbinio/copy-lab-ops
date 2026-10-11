@@ -964,6 +964,8 @@ def main():
     if asset=='ETH':data=data/'eth'
     data.mkdir(parents=True,exist_ok=True)
     role=os.environ.get('LAB_ROLE','main')
+    from . import profiler
+    profiler.start(data, data.parent/'logs' if data.name=='data' else data/'logs', role+('-'+asset.lower() if asset!='BTC' else ''))
     with (data/('qualifier.lock' if role=='qualifier' else 'worker.lock')).open('w') as lock:
         fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
         store=Store(data/'lab.sqlite',asset=asset)

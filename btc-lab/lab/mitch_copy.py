@@ -53,6 +53,10 @@ MANUAL_PAUSES_FILE = 'mitch_manual_pauses.json'
 # too few of his buys inside one second, the copies are a chance subset of
 # his trades, so new buys stop until the lane is healthy again.
 BRAKE_SAMPLE = 30
+# The database queue is a backup: his fills come on the fast lane
+# (submit_fast) and chain rows wake the loop. 20 polls a second kept the
+# main process near 100% CPU (11 Oct).
+IDLE_POLL_S = 0.25
 BRAKE_ON_BELOW = 0.60
 BRAKE_OFF_AT = 0.75
 BRAKE_LOOKBACK_S = 2 * 3600
@@ -1341,13 +1345,13 @@ class MitchCopy:
             ready = getattr(self.store, 'wallet_activity_ready', None)
             if ready is not None:
                 try:
-                    await asyncio.wait_for(ready.wait(), timeout=0.05)
+                    await asyncio.wait_for(ready.wait(), timeout=IDLE_POLL_S)
                 except asyncio.TimeoutError:
                     pass
                 else:
                     ready.clear()
             else:
-                await asyncio.sleep(0.05)
+                await asyncio.sleep(IDLE_POLL_S)
 
     def _load_pending(self):
         with self.store.connect() as db:
