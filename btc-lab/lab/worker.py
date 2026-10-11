@@ -963,19 +963,28 @@ async def run_qualifier(store):
         await asyncio.sleep(5)
 
 
-WAL_CHECKPOINT_EVERY_S=1800
+WAL_CHECKPOINT_EVERY_S=300
+WAL_TRUNCATE_ABOVE=256*1024**2
 
 
-def wal_checkpoint(path, wait_ms=2000):
-    """Fold the write-ahead log back into the database and truncate it.
+def wal_checkpoint(path, wait_ms=500):
+    """Fold the write-ahead log back into the database.
 
     11 Oct 2026: overlapping reads in three processes kept SQLite from ever
     finishing its own checkpoint; the log reached 378 MB and every read
-    searched it (walFindFrame). Waits at most wait_ms for readers, then gives up."""
+    searched it (walFindFrame). A PASSIVE checkpoint every few minutes never
+    blocks a writer. TRUNCATE holds writers while it waits for readers (a
+    2 s stall every 30 min), so it runs only when the log is over 256 MB."""
+    import os as _os
     db=sqlite3.connect(path, timeout=wait_ms/1000, isolation_level=None)
     try:
         db.execute('PRAGMA busy_timeout=%d' % int(wait_ms))
-        return tuple(db.execute('PRAGMA wal_checkpoint(TRUNCATE)').fetchone())
+        try:
+            big=_os.path.getsize(str(path)+'-wal')>WAL_TRUNCATE_ABOVE
+        except OSError:
+            big=False
+        mode='TRUNCATE' if big else 'PASSIVE'
+        return (mode,)+tuple(db.execute('PRAGMA wal_checkpoint(%s)' % mode).fetchone())
     finally:
         db.close()
 
