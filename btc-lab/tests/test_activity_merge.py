@@ -68,3 +68,31 @@ class ActivityMergeTests(unittest.TestCase):
         self.assertEqual(source_dollars(body), Decimal('4.2'))
         self.assertEqual(source_price(body), Decimal('0.42'))
         self.assertNotEqual(body.get('_source'), 'chain_fast')
+
+
+class IngestLockTests(unittest.TestCase):
+    def test_a_page_of_known_rows_takes_no_write_lock(self):
+        # 11 Oct 2026: known rows held the shared write lock on every poll.
+        from contextlib import contextmanager
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        store = Store(Path(temp.name) / 'lab.db')
+        observer = WalletObserver(store, None)
+        rows = [dict(trade(5, 2.5, 0.5, fill_id='f%d' % i), transactionHash='0x%d' % i) for i in range(30)]
+        self.assertEqual(observer.ingest(WALLET, rows, 200), 30)
+        # The first merge writes the summed form of each row once.
+        observer.ingest(WALLET, rows, 200.5)
+        writes = []
+        plain = store.connect
+
+        @contextmanager
+        def watched():
+            with plain() as db:
+                yield db
+                writes.append(db.in_transaction)
+        store.connect = watched
+        self.assertEqual(observer.ingest(WALLET, rows, 201), 0)
+        self.assertNotIn(True, writes)
+        # One new fill writes once, in one short transaction.
+        self.assertEqual(observer.ingest(WALLET, rows + [dict(rows[0], transactionHash='0xnew')], 202), 1)
+        self.assertEqual(writes.count(True), 1)

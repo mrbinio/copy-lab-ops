@@ -200,44 +200,93 @@ class WalletObserver:
         ensure_active_wallets_table(store)
 
     def ingest(self, wallet, rows, now):
+        """Store new fills and merge changed ones.
+
+        11 Oct 2026: a page of up to 500 mostly known rows went through
+        INSERT OR IGNORE one by one, so the write lock was held for the whole
+        page on every poll of ~120 wallets (hold p90 2 s, up to 15 s), and
+        Mitch's writes waited. Known rows are now compared without the lock;
+        only new or changed rows are written, in one short transaction.
+        """
         if not isinstance(rows, list): raise ValueError('activity response must be a list')
+        from .wallet_chain_monitor import _row_key
+        prepared = {}
+        for row in rows:
+            if not isinstance(row, dict): raise ValueError('invalid activity row')
+            if str(row.get('proxyWallet','')).lower() != wallet: raise ValueError('wallet mismatch')
+            ts = float(row['timestamp'])
+            if not math.isfinite(ts) or not 0 < ts <= now+5: raise ValueError('invalid source timestamp')
+            # API v1 has no log index. This fingerprint is NOT an execution ID.
+            if not row.get('transactionHash'): raise ValueError('missing transaction hash')
+            key = _row_key(row)
+            prepared.setdefault(key, []).append((ts, row))
+        if not prepared:
+            return 0
+        keys = list(prepared)
+        known = {}
+        with self.store.connect() as db:
+            for i in range(0, len(keys), 500):
+                part = keys[i:i + 500]
+                marks = ','.join('?' * len(part))
+                for key, body in db.execute(
+                        f'SELECT event_key, body FROM wallet_activity WHERE wallet=? AND event_key IN ({marks})',
+                        (wallet, *part)):
+                    known[key] = body
+        fresh = []
+        changed = []
+        for key, items in prepared.items():
+            if key not in known:
+                fresh.append(key)
+                continue
+            body = known[key]
+            dirty = False
+            for ts, row in items:
+                if row.get('_source') == 'chain_fast':
+                    continue
+                merged, did_change = merge_activity_body(body, row)
+                if did_change:
+                    body, dirty = merged, True
+            if dirty:
+                changed.append(key)
+        if not fresh and not changed:
+            return 0
         inserted = 0
         updated = 0
         with self.store.connect() as db:
-            for row in rows:
-                if not isinstance(row, dict): raise ValueError('invalid activity row')
-                if str(row.get('proxyWallet','')).lower() != wallet: raise ValueError('wallet mismatch')
-                ts = float(row['timestamp'])
-                if not math.isfinite(ts) or not 0 < ts <= now+5: raise ValueError('invalid source timestamp')
-                # API v1 has no log index. This fingerprint is NOT an execution ID.
-                fields = {k:row.get(k) for k in ('transactionHash','type','asset','side')}
-                if not fields['transactionHash']: raise ValueError('missing transaction hash')
-                from .wallet_chain_monitor import _row_key
-                key = _row_key(row)
-                stored = dict(row)
-                if row.get('_source') != 'chain_fast':
-                    stored['_fills'] = [_as_fill(row, 'anon:0')]
-                body = json.dumps(stored, allow_nan=False)
-                cur = db.execute('INSERT OR IGNORE INTO wallet_activity VALUES (?,?,?,?,?)',
-                                 (wallet, key, now, ts, body))
-                if cur.rowcount:
-                    inserted += 1
-                elif row.get('_source') != 'chain_fast':
+            for key in fresh:
+                for ts, row in prepared[key]:
+                    stored = dict(row)
+                    if row.get('_source') != 'chain_fast':
+                        stored['_fills'] = [_as_fill(row, 'anon:0')]
+                    cur = db.execute('INSERT OR IGNORE INTO wallet_activity VALUES (?,?,?,?,?)',
+                                     (wallet, key, now, ts, json.dumps(stored, allow_nan=False)))
+                    if cur.rowcount:
+                        inserted += 1
+                        continue
+                    if row.get('_source') == 'chain_fast':
+                        continue
                     # Same hash can carry several fills. Sum them once.
-                    # A later fetch of a fill already stored does not add it again.
-                    # A chain-fast quote is replaced, not mixed into his price.
-                    existing = db.execute(
-                        'SELECT body FROM wallet_activity WHERE wallet=? AND event_key=?',
-                        (wallet, key),
-                    ).fetchone()
-                    if existing:
-                        merged, did_change = merge_activity_body(existing[0], row)
-                        if did_change:
-                            db.execute(
-                                'UPDATE wallet_activity SET source_ts=?, body=? WHERE wallet=? AND event_key=?',
-                                (ts, merged, wallet, key),
-                            )
-                            updated += 1
+                    changed.append(key)
+                    break
+            for key in dict.fromkeys(changed):
+                # Re-read under the lock: the chain or the fast lane may have
+                # written this row since the read above.
+                existing = db.execute(
+                    'SELECT body FROM wallet_activity WHERE wallet=? AND event_key=?', (wallet, key),
+                ).fetchone()
+                if not existing:
+                    continue
+                body, dirty, ts_new = existing[0], False, None
+                for ts, row in prepared[key]:
+                    if row.get('_source') == 'chain_fast':
+                        continue
+                    merged, did_change = merge_activity_body(body, row)
+                    if did_change:
+                        body, dirty, ts_new = merged, True, ts
+                if dirty:
+                    db.execute('UPDATE wallet_activity SET source_ts=?, body=? WHERE wallet=? AND event_key=?',
+                               (ts_new, body, wallet, key))
+                    updated += 1
         if inserted or updated:
             self.store.wallet_activity_ready.set()
         return inserted
