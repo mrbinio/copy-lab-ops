@@ -42,7 +42,7 @@ SELL_READ_LIMIT_S=4
 # 60 USD that day while those under 10 s made money. Wallet selection (30
 # days, pause while losing) stays this strategy's own.
 MAX_BUY_AGE_S=1.0
-PUBLISH_EVERY_S=5
+PUBLISH_EVERY_S=10
 DEPTH_EVERY_S=10
 LATE_SELL_EVERY_S=15
 
@@ -542,7 +542,7 @@ class WalletCopy:
                 accounts.append(dict(id='copy-'+wallet,wallet=wallet,name='Copy '+wallet_label(wallet)+' · PAPER',initial=500,cash=cash/1e6,reserved=reserved/1e6,tradable=tradable_cash(cash,reserved)/1e6,pnl=pnl/1e6,
                     roster_state=roster_row.get('state'),watch=self.watch.get(wallet),
                     fees=sum(t['fee']+t.get('exit_fee',0) for t in rows)/1e6,open_cost=exposure/1e6,pending=0,
-                    trades=len(rows),settled=len(closed),wins=sum(t['pnl_micro']>0 for t in closed),curve=curve[-300:],
+                    trades=len(rows),settled=len(closed),wins=sum(t['pnl_micro']>0 for t in closed),curve=curve[-100:],
                     max_drawdown_usd=dd/1e6,independent_windows=len({t['market'] for t in closed}),
                     current_block=self.risk_reason(db,wallet,now,trades=trades),last_reason=cached[1] if cached else 'NO_NEW_SOURCE_TRADE',last_decision_at=cached[0] if cached else None))
             if now-self._scan_at>=30 or not self._scan:

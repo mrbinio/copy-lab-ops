@@ -132,6 +132,12 @@ def _pause_reason(wallet, roster_wallets, pauses):
     return 'poza obecną listą'
 
 
+# The journal is the list the board shows; the period totals above are
+# computed from every trade. All 1,925 rows (0.5 MB) were rewritten into
+# state every few seconds (11 Oct 2026), which drove the qualifier's CPU.
+JOURNAL_ROWS = 500
+
+
 def paper_board(trades, roster, pauses, now):
     """Closed PAPER copy book for today, 7 days and lifetime.
 
@@ -194,7 +200,7 @@ def paper_board(trades, roster, pauses, now):
         'exit_fee': trade.get('exit_fee') or 0,
         'pnl_micro': trade.get('pnl_micro'),
         'status': trade.get('status'),
-    } for trade in sorted(closed, key=lambda trade: trade.get('closed_at') or 0, reverse=True)]
+    } for trade in sorted(closed, key=lambda trade: trade.get('closed_at') or 0, reverse=True)[:JOURNAL_ROWS]]
     return {
         'spec': BOARD,
         'book': 'wallet_copy_positions',

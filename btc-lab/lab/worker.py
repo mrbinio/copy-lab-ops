@@ -1,5 +1,6 @@
 """Read-only public collectors and paper execution. Contains no signed API calls."""
 import asyncio
+import sqlite3
 import hashlib
 import json
 import logging
@@ -634,6 +635,13 @@ class Worker:
             if due and (task is None or task.done()):
                 # Train off the supervisor loop. A blocking train froze /api/state.
                 self._research_task=asyncio.create_task(self._research_once())
+        if time.time()-getattr(self,'_wal_at',0)>=WAL_CHECKPOINT_EVERY_S:
+            self._wal_at=time.time()
+            try:
+                result=await self._db(wal_checkpoint, self.store.path)
+                self._wal_last=result
+            except Exception as e:
+                failure('wal',e)
         if time.time()-self.last_prune>=600:
             try:
                 dropped=await self._db(self.store.prune_ephemeral)
@@ -953,6 +961,23 @@ async def run_qualifier(store):
                 jobs[name]=asyncio.create_task(makers[name]())
         await loop.run_in_executor(watch,store.set,'qualifier_process',{'at':time.time(),'pid':os.getpid(),'restarts':births})
         await asyncio.sleep(5)
+
+
+WAL_CHECKPOINT_EVERY_S=1800
+
+
+def wal_checkpoint(path, wait_ms=2000):
+    """Fold the write-ahead log back into the database and truncate it.
+
+    11 Oct 2026: overlapping reads in three processes kept SQLite from ever
+    finishing its own checkpoint; the log reached 378 MB and every read
+    searched it (walFindFrame). Waits at most wait_ms for readers, then gives up."""
+    db=sqlite3.connect(path, timeout=wait_ms/1000, isolation_level=None)
+    try:
+        db.execute('PRAGMA busy_timeout=%d' % int(wait_ms))
+        return tuple(db.execute('PRAGMA wal_checkpoint(TRUNCATE)').fetchone())
+    finally:
+        db.close()
 
 
 def main():
