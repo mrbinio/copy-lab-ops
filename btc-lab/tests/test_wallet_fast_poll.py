@@ -28,5 +28,5 @@ class PollEveryTests(unittest.TestCase):
     def test_copied_wallets_keep_one_second_others_poll_slower(self):
         obj=object.__new__(WalletObserver);obj.store=Memory()
         obj.store.data['wallet_roster']={'wallets':{'a':{'state':'paper_test'},'b':{'state':'paused'},'c':{'state':'observed'}}}
-        self.assertEqual([obj.poll_every(w) for w in 'abc'],[1,5,15])
+        self.assertEqual([obj.poll_every(w) for w in 'abc'],[1,15,60])
         self.assertEqual(obj.poll_every('0x943cea746e701823b6902a6f4eaeed58207e77c2'),1)

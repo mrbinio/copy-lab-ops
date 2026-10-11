@@ -362,7 +362,9 @@ class WalletObserver:
         state=((self.store.get('wallet_roster') or {}).get('wallets') or {}).get(wallet,{}).get('state')
         if state in ('paper_test','paper_active'):
             return 1
-        return 5 if state=='paused' else 15
+        # 11 Oct 2026 night: the fan kept Damian awake; 5/15 s still cost
+        # 3 cores. Paused 15 s, observed 60 s (no copies come from either).
+        return 15 if state=='paused' else 60
 
     async def run_wallet(self,wallet):
         failures=0

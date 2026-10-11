@@ -43,6 +43,8 @@ SELL_READ_LIMIT_S=4
 # days, pause while losing) stays this strategy's own.
 MAX_BUY_AGE_S=1.0
 FAST_PATH_GRACE_S=5
+SLOW_LANE_PAUSE_S=3
+UPKEEP_EVERY_S=90
 # Fast-lane rows get their own threads. 11 Oct 2026: they reached the
 # qualifier 0.13 s after the trade but waited 9 s (median) behind ~3 paused
 # or observed rows a second in the shared database thread.
@@ -903,6 +905,13 @@ class WalletCopy:
         self.last_sell_read_s=elapsed
         return result,elapsed
 
+    async def _slow_batch(self,rows):
+        """Paused and observed wallets: a batch, then a pause. They never copy;
+        their rows only feed the hypothetical results. Unthrottled they were
+        most of the qualifier's 3 cores (11 Oct 2026)."""
+        await self._apply_batch(rows)
+        await self.sleep(SLOW_LANE_PAUSE_S)
+
     async def _apply_batch(self,rows):
         """Start every sell read first. Each wallet keeps its own order.
 
@@ -1352,7 +1361,7 @@ class WalletCopy:
                     self.store.set(key, {})
                 except Exception as error:
                     self.store.set(key, {'at': self.clock(), 'error': str(error)[:width]})
-            await self.sleep(30)
+            await self.sleep(UPKEEP_EVERY_S)
 
     def _ensure_copy_accounts(self):
         with self.store.connect() as db:
@@ -1447,7 +1456,7 @@ class WalletCopy:
             rows,slow=await asyncio.get_running_loop().run_in_executor(
                 READ, self._load_lanes, active, slow_task is None)
             if slow:
-                self._slow_task=asyncio.create_task(self._apply_batch(slow))
+                self._slow_task=asyncio.create_task(self._slow_batch(slow))
             await self._apply_batch(rows)
             # A hypothetical ticket stays on the direct process() path.
             # The full decision-table scan is cached inside publish.
