@@ -850,9 +850,14 @@ class Worker:
                     child.stdin.write(line)
                 except Exception:
                     pass
-        # Fast-lane qualifier fills go straight to the child (judged at arrival).
-        fast_match.QUALIFIER_FORWARD=lambda row: loop.call_soon_threadsafe(
-            write, (json.dumps(row, default=str)+'\n').encode())
+        # Fast-lane qualifier fills are decided here, in the main process, on a
+        # loop thread of their own. 11 Oct 2026: in the qualifier process they
+        # took ~10 s even on a dedicated thread (GIL and database starved by
+        # its observer); this process decides Mitch's in ~0.3 s.
+        qfast=getattr(self,'_qfast',None) or fast_copier_loop(self.store)
+        self._qfast=qfast
+        fast_match.QUALIFIER_FORWARD=lambda row: asyncio.run_coroutine_threadsafe(
+            qfast['copier'].fast(row), qfast['loop'])
         delay=1
         while True:
             started=time.time()
