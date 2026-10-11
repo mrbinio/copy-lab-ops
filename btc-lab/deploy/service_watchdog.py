@@ -287,13 +287,15 @@ def main():
     except Exception:
         http_ok = False
     db = ROOT / 'data' / 'lab.sqlite'
-    try:
-        state = read_state(db)
-    except Exception as error:
-        state = {}
-        read_error = str(error)[:200]
-    else:
-        read_error = None
+    state, read_error = {}, None
+    for attempt in range(3):
+        try:
+            state = read_state(db)
+            read_error = None
+            break
+        except Exception as error:
+            read_error = str(error)[:200]
+            time.sleep(2)
     launch_wait = load(ROOT / 'logs' / 'service-stopped.json', None)
     previous = load(STATUS, {})
     http_failures = int(previous.get('http_failures') or 0)
@@ -305,6 +307,12 @@ def main():
         previous=previous, wake_age=wake_age,
     )
     ages['wake_age_s'] = wake_age
+    if read_error and http_ok:
+        # 11 Oct 2026: a state read that failed (database busy) looked like a
+        # dead worker and restarted the service twice while it was healthy.
+        # The dashboard answers, so this is a note, not a restart.
+        noted.append('state_read_error')
+        restart_problems = []
     action = 'ok'
     proof = load(ROOT / 'logs' / 'watchdog-restart.json', None)
     if proof and not proof.get('verified') and age is not None and age >= 180 and not restart_problems:

@@ -173,3 +173,44 @@ class IsolatedWatchdogTests(unittest.TestCase):
             self.assertTrue((root / 'watchdog-attempts.json').exists())
             proof = json.loads((root / 'logs' / 'watchdog-restart.json').read_text())
             self.assertFalse(proof['verified'])
+
+
+class StateReadErrorTests(unittest.TestCase):
+    def test_a_failed_state_read_with_a_live_dashboard_is_not_a_restart(self):
+        # 11 Oct 2026: two restarts of a healthy service at 16:50 and 17:12.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'data').mkdir()
+            (root / 'logs').mkdir()
+            watchdog.ROOT = root
+            watchdog.ATTEMPTS = root / 'watchdog-attempts.json'
+            watchdog.STATUS = root / 'logs' / 'watchdog-status.json'
+            watchdog.PORT = 8775
+            watchdog.process_age = lambda _now: 1000
+            calls = []
+            saved = (watchdog.read_state, watchdog.restart, watchdog.time.sleep)
+
+            def broken(_path):
+                raise RuntimeError('database is locked')
+            watchdog.read_state = broken
+            watchdog.restart = lambda now, reason: calls.append(reason) or 'restarted'
+            watchdog.time.sleep = lambda _s: None
+
+            class Handler(BaseHTTPRequestHandler):
+                def do_GET(self):
+                    self.send_response(200)
+                    self.end_headers()
+
+                def log_message(self, *_args):
+                    return
+
+            server = ThreadingHTTPServer(('127.0.0.1', 8775), Handler)
+            threading.Thread(target=server.serve_forever, daemon=True).start()
+            try:
+                watchdog.main()
+            finally:
+                server.shutdown()
+                watchdog.read_state, watchdog.restart, watchdog.time.sleep = saved
+            status = json.loads((root / 'logs' / 'watchdog-status.json').read_text())
+            self.assertEqual(calls, [])
+            self.assertIn('state_read_error', status['noted'])
