@@ -42,6 +42,7 @@ SELL_READ_LIMIT_S=4
 # 60 USD that day while those under 10 s made money. Wallet selection (30
 # days, pause while losing) stays this strategy's own.
 MAX_BUY_AGE_S=1.0
+FAST_PATH_GRACE_S=5
 # Fast-lane rows get their own threads. 11 Oct 2026: they reached the
 # qualifier 0.13 s after the trade but waited 9 s (median) behind ~3 paused
 # or observed rows a second in the shared database thread.
@@ -760,7 +761,11 @@ class WalletCopy:
             if state=='observed':lo.append(wallet)
             elif state in ('paper_test','paper_active'):copying.append(wallet)
             else:paused.append(wallet)
-        fast=self._pending_query(db,copying,now,20)
+        # A fast-lane fill of a copying wallet belongs to the fast path (main
+        # process, books read on arrival). Polling it here first judged it
+        # late and its marker then blocked the fast decision (11 Oct 2026).
+        fast=[r for r in self._pending_query(db,copying,now,20)
+              if not (now-float(r['first_seen'])<FAST_PATH_GRACE_S and '"clob_match"' in str(r.get('body') or ''))]
         seen={(r['wallet'],r['event_key']) for r in fast}
         for row in self._late_sell_query(db,copying,now,2 if fast else 5) if self._late_due(now) else []:
             if (row['wallet'],row['event_key']) not in seen:
