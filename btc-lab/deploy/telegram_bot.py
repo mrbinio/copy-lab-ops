@@ -48,6 +48,7 @@ COMMANDS = [
     ('rynek', 'Cena BTC, ruch 24 h, najbliższe wydarzenia'),
     ('wydarzenia', 'Kalendarz makro'),
     ('system', 'Usługi na Macu, dysk, rejestrator'),
+    ('audyt', 'Ostatni audyt dzienny i gotowość do LIVE'),
     ('kwalifikator_stop', 'Wstrzymaj kupno w Twoich portfelach'),
     ('kwalifikator_start', 'Włącz kupno w Twoich portfelach'),
     ('przeglad', 'Tygodniowy przegląd portfeli Mitcha'),
@@ -97,6 +98,7 @@ HELP = (
     '/odkrywanie – portfele metodą Mitcha (90 dni)\n'
     '/wydarzenia – kalendarz makro\n'
     '/system – usługi, dysk, rejestrator\n'
+    '/audyt – ostatni audyt dzienny (codziennie 07:30) i gotowość do LIVE\n'
     '/kwalifikator_stop, /kwalifikator_start – Twoje portfele\n'
     '/mitch_stop, /mitch_start – wszystkie portfele Mitcha\n'
     '/przeglad – tydzień każdego portfela Mitcha i co sprawdzić\n'
@@ -610,6 +612,10 @@ def handle(command, chat, tg, allowed, opener=urllib.request.urlopen):
             tg.send(chat, 'Podaj portfel, np. %s dc27. Portfele: %s' % (command, ', '.join(LABELS.values())))
         else:
             tg.send(chat, manual_pause(words[1], ' '.join(words[2:]), chat, command == '/mitch_pauza'))
+        return
+    if command == '/audyt':
+        report = load(ROOT / 'logs' / 'daily-audit.json', {})
+        tg.send(chat, report.get('text') or 'Audytu jeszcze nie było. Pierwszy jutro o 07:30.')
         return
     if command == '/wydarzenia':
         tg.send(chat, events_text(time.time()))

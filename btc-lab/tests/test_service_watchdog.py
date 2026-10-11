@@ -36,7 +36,12 @@ class WatchdogSplitTests(unittest.TestCase):
             'mitch_progress': {'at': now - 5, 'queue': 0},
         }
         restart, noted, _ages = watchdog.assess(now, state, False, process_age=1000)
-        self.assertIn('copy_publish', restart)
+        # The qualifier heals itself in its own process; Mitch is not restarted for it.
+        self.assertNotIn('copy_publish', restart)
+        self.assertIn('copy_publish', noted)
+        state['mitch_copy'] = {'updated_at': now - 400}
+        restart, noted, _ages = watchdog.assess(now, state, False, process_age=1000)
+        self.assertIn('mitch_publish', restart)
         self.assertNotIn('heartbeat', restart)
         self.assertIn('connection', noted)
         self.assertNotIn('connection', restart)
@@ -128,8 +133,8 @@ class IsolatedWatchdogTests(unittest.TestCase):
             now = 2_000_000
             rows = {
                 'worker': {'heartbeat': now - 5, 'status': 'RECORDING'},
-                'wallet_copy_execution': {'updated_at': now - 400},
-                'mitch_copy': {'updated_at': now - 5},
+                'wallet_copy_execution': {'updated_at': now - 5},
+                'mitch_copy': {'updated_at': now - 400},
                 'wallet_copy_health': {'status': 'ok'},
             }
             for key, body in rows.items():
@@ -163,7 +168,7 @@ class IsolatedWatchdogTests(unittest.TestCase):
                 server.shutdown()
             status = json.loads((root / 'logs' / 'watchdog-status.json').read_text())
             self.assertEqual(status['action'], 'restart_requested')
-            self.assertIn('copy_publish', status['problems'])
+            self.assertIn('mitch_publish', status['problems'])
             self.assertIn('connection', status['noted'])
             self.assertTrue((root / 'watchdog-attempts.json').exists())
             proof = json.loads((root / 'logs' / 'watchdog-restart.json').read_text())

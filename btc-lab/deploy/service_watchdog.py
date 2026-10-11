@@ -23,6 +23,7 @@ MAX_RESTARTS = 3
 WINDOW = 1800
 HEARTBEAT_LIMIT = 90
 PUBLISH_LIMIT = 180
+QUALIFIER_SELF_HEALS = True
 
 
 def load(path, default):
@@ -124,18 +125,22 @@ def assess(now, state, http_ok, launch_wait=None, process_age=None, http_failure
     # Missing progress restarts only after ten minutes, so the first pass over
     # the live database is not killed and started again.
     settled = process_age is not None and process_age >= 600
+    # 11 Oct 2026: the qualifier copier runs in its own child process and
+    # restarts itself when it stalls. Its problems are noted here; restarting
+    # the service for them also stopped Mitch (04:10, mid-trading).
+    copy_problems = noted if QUALIFIER_SELF_HEALS else restart_problems
     if copy_at and now - copy_at > PUBLISH_LIMIT:
-        restart_problems.append('copy_publish')
+        copy_problems.append('copy_publish')
     elif settled and not copy_at:
-        restart_problems.append('copy_publish_never')
+        copy_problems.append('copy_publish_never')
     if mitch_at and now - mitch_at > PUBLISH_LIMIT:
         restart_problems.append('mitch_publish')
     elif settled and not mitch_at:
         restart_problems.append('mitch_publish_never')
     if copy_step and now - copy_step > PUBLISH_LIMIT:
-        restart_problems.append('copy_stalled')
+        copy_problems.append('copy_stalled')
     elif settled and not copy_step:
-        restart_problems.append('copy_never_progressed')
+        copy_problems.append('copy_never_progressed')
     if mitch_step and now - mitch_step > PUBLISH_LIMIT:
         restart_problems.append('mitch_stalled')
     elif settled and not mitch_step:

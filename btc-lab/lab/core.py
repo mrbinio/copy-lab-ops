@@ -1,5 +1,6 @@
 """Deterministic execution and transactional paper ledger, amounts in microdollars."""
 import json
+import os
 import sqlite3
 import time
 from datetime import datetime
@@ -139,14 +140,35 @@ class Store:
             for strategy in self.strategies:
                 db.execute("INSERT OR IGNORE INTO accounts VALUES (?,?,?)", (strategy, units(initial), units(initial)))
 
+    HOLD_LOG_S = 0.5
+
+    def _note_hold(self, seconds):
+        """A write transaction held the shared lock this long. 11 Oct 2026:
+        writers waited up to 7 s; this names who holds it."""
+        try:
+            import traceback
+            frames = [f for f in traceback.extract_stack(limit=8)[:-3] if not f.filename.endswith('contextlib.py')]
+            caller = frames[-1] if frames else None
+            row = {'at': time.time(), 's': round(seconds, 3), 'pid': os.getpid(),
+                   'where': '%s:%s %s' % (Path(caller.filename).name, caller.lineno, caller.name) if caller else '?'}
+            path = Path(self.path).resolve().parent.parent / 'logs' / 'db-holds.jsonl'
+            with open(path, 'a') as handle:
+                handle.write(json.dumps(row) + '\n')
+        except Exception:
+            pass
+
     @contextmanager
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10)
         db.row_factory = sqlite3.Row
         db.execute("PRAGMA busy_timeout=10000")
+        started = time.perf_counter()
         try:
             yield db
+            held = db.in_transaction
             db.commit()
+            if held and time.perf_counter() - started > self.HOLD_LOG_S:
+                self._note_hold(time.perf_counter() - started)
         except Exception:
             db.rollback()
             raise

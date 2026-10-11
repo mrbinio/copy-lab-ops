@@ -37,6 +37,7 @@ QUALIFIER_BUYS=True
 # The qualifier runs in its own process (run_qualifier). False puts it back
 # in this process.
 QUALIFIER_PROCESS=True
+QUALIFIER_STALL_S=180
 # Free public Polygon log stream. Replaces paid Alchemy when no URL is set.
 # blockmachine held 90s with live TransferSingle logs; drpc drops ~30s; llamarpc fails DNS here.
 DEFAULT_CHAIN_WSS=('wss://rpc-polygon.blockmachine.io','wss://polygon.drpc.org')
@@ -870,7 +871,17 @@ async def run_qualifier(store):
     makers=build()
     jobs={name: asyncio.create_task(make()) for name, make in makers.items()}
     births={}
+    born=time.time()
     while True:
+        # A stalled copier exits this process; the main worker starts a new
+        # one. The watchdog no longer restarts the service (and Mitch) for it.
+        if time.time()-born>=600:
+            copy=await asyncio.to_thread(store.get,'wallet_copy_execution')
+            step=await asyncio.to_thread(store.get,'wallet_copy_progress')
+            ages=[time.time()-float((x or {}).get(k) or 0) for x,k in ((copy,'updated_at'),(step,'at'))]
+            if max(ages)>QUALIFIER_STALL_S:
+                LOG.error('qualifier stalled (publish %.0f s, step %.0f s); exiting for a clean restart', *ages)
+                os._exit(3)
         for name, task in list(jobs.items()):
             if task.done():
                 error=None if task.cancelled() or task.exception() is None else str(task.exception())[:200]
