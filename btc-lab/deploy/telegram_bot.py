@@ -49,6 +49,7 @@ COMMANDS = [
     ('wydarzenia', 'Kalendarz makro'),
     ('system', 'Usługi na Macu, dysk, rejestrator'),
     ('audyt', 'Ostatni audyt dzienny i gotowość do LIVE'),
+    ('proby', 'Próbna księga nowych portfeli (jak u Mitcha, 5 USD)'),
     ('kwalifikator_stop', 'Wstrzymaj kupno w Twoich portfelach'),
     ('kwalifikator_start', 'Włącz kupno w Twoich portfelach'),
     ('przeglad', 'Tygodniowy przegląd portfeli Mitcha'),
@@ -99,6 +100,7 @@ HELP = (
     '/wydarzenia – kalendarz makro\n'
     '/system – usługi, dysk, rejestrator\n'
     '/audyt – ostatni audyt dzienny (codziennie 07:30) i gotowość do LIVE\n'
+    '/proby – nowe portfele na próbie (5 USD na okno, osobna księga)\n'
     '/kwalifikator_stop, /kwalifikator_start – Twoje portfele\n'
     '/mitch_stop, /mitch_start – wszystkie portfele Mitcha\n'
     '/przeglad – tydzień każdego portfela Mitcha i co sprawdzić\n'
@@ -382,6 +384,20 @@ def review_text(state):
     return '\n'.join(lines)
 
 
+def trials_text(state):
+    t = state.get('mitch_trials') or {}
+    rows = t.get('wallets') or []
+    if not rows:
+        return 'Próby nowych portfeli: jeszcze brak (lista przychodzi z odkrywania o 12:15).'
+    lines = ['Próby nowych portfeli (PAPER, 5 USD na okno, kopia w 1 s, osobna księga)']
+    for r in rows:
+        lines.append('%s%s: %s USD na %d rozliczonych (%d okien), 7 dni %s, w grze %.2f' % (
+            r.get('label'), '' if r.get('active') else ' (poza listą)', '%+.2f' % r.get('pnl', 0),
+            r.get('settled', 0), r.get('windows', 0), '%+.2f' % r.get('pnl_7d', 0), r.get('in_play', 0)))
+    lines.append('Dodanie do Mitcha tylko Twoją decyzją.')
+    return '\n'.join(lines)
+
+
 def switch(path, on, chat, what):
     if on:
         if path.exists():
@@ -645,6 +661,8 @@ def handle(command, chat, tg, allowed, opener=urllib.request.urlopen):
         tg.send(chat, wallets_detail_text(state))
     elif command == '/kopie':
         tg.send(chat, copies_text(state))
+    elif command in ('/proby', '/próby'):
+        tg.send(chat, trials_text(state))
     elif command in ('/przeglad', '/przegląd'):
         tg.send(chat, review_text(state))
     elif command == '/pauzy':

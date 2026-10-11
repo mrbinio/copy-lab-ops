@@ -280,19 +280,42 @@ def insert_row(store, wallet, body, detected_at):
             'source_ts': float(body['timestamp']), 'body': text}
 
 
-def route(mitch_sink, qualifier_sink, mitch_wallets):
-    """Mitch wallets go to his copier; every other watched wallet to the qualifier."""
+def route(mitch_sink, qualifier_sink, mitch_wallets, trial_sink=None):
+    """Mitch wallets go to his copier, trial wallets to the trial book, every
+    other watched wallet to the qualifier."""
     mitch = {str(w).lower() for w in mitch_wallets}
 
     async def sink(wallet, row, arrived):
-        if str(wallet).lower() in mitch:
+        from . import mitch_trials
+        wallet = str(wallet).lower()
+        if wallet in mitch:
             await mitch_sink(wallet, row, arrived)
-        else:
-            await qualifier_sink(wallet, row, arrived)
+            return
+        if trial_sink is not None and wallet in mitch_trials.WALLETS:
+            await trial_sink(wallet, row, arrived)
+        await qualifier_sink(wallet, row, arrived)
     return sink
 
 
 QUALIFIER_POOL = ThreadPoolExecutor(max_workers=1, thread_name_prefix='lab-fast-q')
+TRIAL_POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix='lab-fast-trial')
+
+
+def trial_sink(store, fetch):
+    """Copy a trial wallet's fill into the trial book (PAPER)."""
+    from urllib.parse import quote
+    from . import mitch_trials
+
+    def book(token):
+        return fetch('https://clob.polymarket.com/book?token_id=' + quote(token, safe=''))
+
+    async def sink(wallet, row, arrived):
+        loop = asyncio.get_running_loop()
+        try:
+            await loop.run_in_executor(TRIAL_POOL, mitch_trials.decide, store, book, wallet, row, arrived)
+        except Exception as error:
+            LOG.warning('trial: %s', str(error)[:200])
+    return sink
 
 
 def qualifier_sink(store):
@@ -306,4 +329,5 @@ def qualifier_sink(store):
 def copying_wallets(store, mitch_wallets):
     roster = ((store.get('wallet_roster') or {}).get('wallets') or {})
     copying = {w for w, row in roster.items() if (row or {}).get('state') in ('paper_test', 'paper_active')}
-    return set(mitch_wallets) | copying
+    from . import mitch_trials
+    return set(mitch_wallets) | copying | set(mitch_trials.WALLETS)

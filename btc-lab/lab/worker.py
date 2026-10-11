@@ -733,7 +733,8 @@ class Worker:
             # busy; 495 of ~520 Mitch buys came out later than one second.
             fast=fast_match.FastMatch(
                 fast_match.copying_wallets(self.store, MITCH_WALLETS),
-                fast_match.route(submit_fast, fast_match.qualifier_sink(self.store), MITCH_WALLETS),
+                fast_match.route(submit_fast, fast_match.qualifier_sink(self.store), MITCH_WALLETS,
+                                 fast_match.trial_sink(self.store, get_json)),
             )
             fast_match.CURRENT=fast
             LOG.info('fast lane: match print -> pending tx -> Mitch (%d rpc, own thread)', len(fast.urls))
@@ -746,6 +747,7 @@ class Worker:
         }
         births={}
         last_wallet_refresh=time.time()
+        last_trials=0
         try:
             while True:
                 await self.iteration()
@@ -790,6 +792,11 @@ class Worker:
                             jobs[name]=asyncio.create_task(self.loop_lag_probe())
                 if dead or births:
                     self.store.set('task_health', {'at': time.time(), 'dead': dead, 'restarts': births})
+                if self.asset=='BTC' and time.time()-last_trials>=60:
+                    last_trials=time.time()
+                    trials_task=getattr(self,'_trials_task',None)
+                    if trials_task is None or trials_task.done():
+                        self._trials_task=asyncio.create_task(asyncio.to_thread(self.trials_cycle))
                 # Refresh chain monitor wallet set every 60s
                 if fast is not None and time.time()-last_wallet_refresh>=60:
                     from .mitch_copy import WALLETS as MITCH_WALLETS
@@ -808,6 +815,19 @@ class Worker:
                 if task is not None and not task.done():
                     task.cancel()
             await asyncio.gather(*[task for task in jobs.values() if task is not None], return_exceptions=True)
+
+    def trials_cycle(self):
+        """Trial book for new wallets (mitch_trials): pick hourly, settle, publish."""
+        from . import mitch_trials
+        from .mitch_copy import WALLETS as MITCH_WALLETS
+        try:
+            if time.time()-getattr(self,'_trials_picked',0)>=3600 or not mitch_trials.WALLETS:
+                mitch_trials.refresh(self.data.parent if self.data.name=='data' else self.data, MITCH_WALLETS)
+                self._trials_picked=time.time()
+            mitch_trials.settle(self.store, get_json)
+            self.store.set('mitch_trials', mitch_trials.summary(self.store))
+        except Exception as error:
+            LOG.warning('trials: %s', str(error)[:200])
 
     async def qualifier_process(self):
         """Run the qualifier as a child process and restart it when it exits."""
