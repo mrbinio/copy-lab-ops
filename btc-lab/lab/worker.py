@@ -895,12 +895,38 @@ class Worker:
             await self._db(self.store.set,'clock_status', sample)
             await asyncio.sleep(15 if jumped else 60)
 
+def fast_copier_loop(store):
+    """A thread with its own event loop and copier for fast-lane fills.
+
+    11 Oct 2026: the qualifier's main loop stalls for seconds on synchronous
+    database calls (observer, upkeep, board). Fast rows decided there missed
+    the 1 s rule and fresh books looked 'stale' because the loop resumed late.
+    Here nothing else runs. PAPER only: no CLOB client."""
+    import threading
+    from .hot_path import fetch_copy
+    ready=threading.Event()
+    box={}
+    def run():
+        loop=asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        box['loop']=loop
+        box['copier']=WalletCopy(store,fetch_copy,lambda:(Path(store.path).parent/'PAUSE').exists(),
+                                 clob_client=None,buys_enabled=QUALIFIER_BUYS)
+        ready.set()
+        loop.run_forever()
+    threading.Thread(target=run,name='lab-q-fast-loop',daemon=True).start()
+    ready.wait(30)
+    return box
+
+
 async def qualifier_inbox(current):
     """Fast-lane fills from the main process, one JSON row per line on stdin."""
     import sys
     loop=asyncio.get_running_loop()
     reader=asyncio.StreamReader(limit=2**22)
     await loop.connect_read_pipe(lambda: asyncio.StreamReaderProtocol(reader), sys.stdin)
+    fast=current.get('fast') or fast_copier_loop(current['store'])
+    current['fast']=fast
     while True:
         line=await reader.readline()
         if not line:
@@ -910,9 +936,8 @@ async def qualifier_inbox(current):
             row=json.loads(line)
         except ValueError:
             continue
-        copier=current.get('copier')
-        if copier is not None:
-            asyncio.create_task(copier.fast(row))
+        if fast.get('loop') is not None:
+            asyncio.run_coroutine_threadsafe(fast['copier'].fast(row), fast['loop'])
 
 
 async def run_qualifier(store):
@@ -922,7 +947,7 @@ async def run_qualifier(store):
     data=Path(store.path).parent
     def paused():
         return (data/'PAUSE').exists()
-    current={}
+    current={'store':store}
     def new_copier():
         current['copier']=WalletCopy(store,fetch_copy,paused,clob_client=None,buys_enabled=QUALIFIER_BUYS)
         return current['copier'].run()
