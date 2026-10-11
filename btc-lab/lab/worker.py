@@ -930,12 +930,17 @@ async def run_qualifier(store):
     jobs={name: asyncio.create_task(make()) for name, make in makers.items()}
     births={}
     born=time.time()
+    # Its own thread: the default pool is busy with chain reads and the
+    # heartbeat came 40-90 s late (11 Oct), close to the audit's 120 s.
+    from concurrent.futures import ThreadPoolExecutor
+    watch=ThreadPoolExecutor(max_workers=1, thread_name_prefix='lab-qualifier-watch')
+    loop=asyncio.get_running_loop()
     while True:
         # A stalled copier exits this process; the main worker starts a new
         # one. The watchdog no longer restarts the service (and Mitch) for it.
         if time.time()-born>=600:
-            copy=await asyncio.to_thread(store.get,'wallet_copy_execution')
-            step=await asyncio.to_thread(store.get,'wallet_copy_progress')
+            copy=await loop.run_in_executor(watch,store.get,'wallet_copy_execution')
+            step=await loop.run_in_executor(watch,store.get,'wallet_copy_progress')
             ages=[time.time()-float((x or {}).get(k) or 0) for x,k in ((copy,'updated_at'),(step,'at'))]
             if max(ages)>QUALIFIER_STALL_S:
                 LOG.error('qualifier stalled (publish %.0f s, step %.0f s); exiting for a clean restart', *ages)
@@ -946,7 +951,7 @@ async def run_qualifier(store):
                 births[name]=births.get(name,0)+1
                 LOG.warning('qualifier: restarting %s (%s)', name, error)
                 jobs[name]=asyncio.create_task(makers[name]())
-        await asyncio.to_thread(store.set,'qualifier_process',{'at':time.time(),'pid':os.getpid(),'restarts':births})
+        await loop.run_in_executor(watch,store.set,'qualifier_process',{'at':time.time(),'pid':os.getpid(),'restarts':births})
         await asyncio.sleep(5)
 
 
