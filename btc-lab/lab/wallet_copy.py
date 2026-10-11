@@ -609,6 +609,22 @@ class WalletCopy:
                 db.execute('INSERT OR IGNORE INTO wallet_copy_skip_reviews(wallet,event_key,end,body) VALUES (?,?,?,?)',
                     (row['wallet'],row['event_key'],end,json.dumps(review,allow_nan=False)))
 
+    async def _review_market(self,condition):
+        """One market read serves every skipped trade in it. A closed result is
+        final and kept; an open one is re-read after 30 s. 11 Oct 2026: one
+        HTTPS read per skipped trade (~240 a minute) was much of the CPU."""
+        cache=self.__dict__.setdefault('_market_results',{})
+        hit=cache.get(condition)
+        now=self.clock()
+        if hit and (hit[1].get('closed') is True or now-hit[0]<30):
+            return hit[1]
+        raw=await asyncio.to_thread(self.fetch,'https://clob.polymarket.com/markets/'+quote(condition,safe=''))
+        if len(cache)>5000:
+            for key in list(cache)[:1000]:
+                cache.pop(key,None)
+        cache[condition]=(now,raw)
+        return raw
+
     async def review_skips(self):
         now=self.clock()
         # The select is off the event loop. Prefer ended hypothetical fills so a
@@ -620,7 +636,7 @@ class WalletCopy:
             if review['status']=='RESOLVED':continue
             try:
                 event=review['source_event']
-                raw=await asyncio.to_thread(self.fetch,'https://clob.polymarket.com/markets/'+quote(str(event['conditionId']),safe=''))
+                raw=await self._review_market(str(event['conditionId']))
                 if raw.get('condition_id')!=event['conditionId']:raise ValueError('REVIEW_CONDITION_MISMATCH')
                 tokens=raw.get('tokens',[]);winners=[t for t in tokens if t.get('winner') is True]
                 if raw.get('closed') is True and len(winners)==1:
