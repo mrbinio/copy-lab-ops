@@ -42,6 +42,12 @@ SELL_READ_LIMIT_S=4
 # 60 USD that day while those under 10 s made money. Wallet selection (30
 # days, pause while losing) stays this strategy's own.
 MAX_BUY_AGE_S=1.0
+# Fast-lane rows get their own threads. 11 Oct 2026: they reached the
+# qualifier 0.13 s after the trade but waited 9 s (median) behind ~3 paused
+# or observed rows a second in the shared database thread.
+from concurrent.futures import ThreadPoolExecutor as _Pool
+FAST_GATE=_Pool(max_workers=2, thread_name_prefix='lab-q-fast-gate')
+FAST_BOOK=_Pool(max_workers=4, thread_name_prefix='lab-q-fast-book')
 PUBLISH_EVERY_S=10
 DEPTH_EVERY_S=10
 LATE_SELL_EVERY_S=15
@@ -678,7 +684,7 @@ class WalletCopy:
     def paper_pnl_micro(self,db,wallet):
         return sum(t['pnl_micro'] for t in self.positions(db) if t['wallet']==wallet and t['status'] in ('CLOSED','SETTLED'))
 
-    async def book(self,token):
+    async def book(self,token,pool=None):
         # Two reads, a quarter-second apart. A cached book would make the arrival
         # snapshot the same as the decision snapshot. The pool wait is recorded
         # separately from the HTTP time.
@@ -686,7 +692,7 @@ class WalletCopy:
         from .hot_path import COPY, measured_call
         submitted=time.perf_counter()
         raw, stage=await asyncio.get_running_loop().run_in_executor(
-            COPY, measured_call, self.fetch,
+            pool or COPY, measured_call, self.fetch,
             'https://clob.polymarket.com/book?token_id='+quote(token,safe=''), submitted)
         self._book_stage=stage
         return normalize_book(raw,token,self.clock(),max_age=15,venue_clock=self.book_clock)
@@ -966,7 +972,8 @@ class WalletCopy:
 
     async def _process(self,row,sell_proportion=None):
         from .hot_path import DB
-        gate=await asyncio.get_running_loop().run_in_executor(DB, self._gate, row, sell_proportion)
+        fast=row.get('_as_of') is not None
+        gate=await asyncio.get_running_loop().run_in_executor(FAST_GATE if fast else DB, self._gate, row, sell_proportion)
         if gate['stop']:
             return
         queued_at=gate['queued_at'];event=gate['event'];kind=gate['kind']
@@ -1007,13 +1014,13 @@ class WalletCopy:
                 if why:self.reason(row,why);return
                 why=band_reason(source_price)
                 if why:self.reason(row,why);return
-            t_book=self.clock();decision=await self.book(m['token']);at=self.clock()
+            t_book=self.clock();decision=await self.book(m['token'],FAST_BOOK if fast else None);at=self.clock()
             decision_stage=dict(getattr(self, '_book_stage', {}) or {})
             if kind=='BUY' and roster_state in ('paper_test','paper_active') and at-float(row['source_ts'])>MAX_BUY_AGE_S:
                 self.reason(row,'SOURCE_TOO_OLD',{'buy_age_s':round(at-float(row['source_ts']),3),'limit_s':MAX_BUY_AGE_S,
                                                   'late_at':'decision_book'});return
             await self.sleep(.25)
-            arrival=await self.book(m['token'])
+            arrival=await self.book(m['token'],FAST_BOOK if fast else None)
             arrival_stage=dict(getattr(self, '_book_stage', {}) or {})
             arrival=dict(arrival);arrival['token']=m['token'];arrival['fee_rate']=m['fee_rate']
             if kind=='BUY':
