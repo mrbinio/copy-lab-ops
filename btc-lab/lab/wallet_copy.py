@@ -47,8 +47,8 @@ FAST_PATH_GRACE_S=5
 # qualifier 0.13 s after the trade but waited 9 s (median) behind ~3 paused
 # or observed rows a second in the shared database thread.
 from concurrent.futures import ThreadPoolExecutor as _Pool
-FAST_GATE=_Pool(max_workers=2, thread_name_prefix='lab-q-fast-gate')
-FAST_BOOK=_Pool(max_workers=4, thread_name_prefix='lab-q-fast-book')
+FAST_GATE=_Pool(max_workers=4, thread_name_prefix='lab-q-fast-gate')
+FAST_BOOK=_Pool(max_workers=16, thread_name_prefix='lab-q-fast-book')
 PUBLISH_EVERY_S=10
 DEPTH_EVERY_S=10
 LATE_SELL_EVERY_S=15
