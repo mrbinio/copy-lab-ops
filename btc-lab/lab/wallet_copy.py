@@ -797,8 +797,24 @@ class WalletCopy:
             (oldest, now-90, *wallets, limit))]
 
     async def fast(self,row):
-        """A fill handed over by the fast lane (main process), judged at its arrival."""
+        """A fill handed over by the fast lane, judged at its arrival.
+
+        11 Oct 2026: the database writes before the book read waited seconds
+        on the shared lock, so every buy failed the 1 s rule. As for Mitch, the
+        decision book and the arrival book (0.25 s later) are read first; the
+        writes after them are bookkeeping."""
         try:
+            event=json.loads(row['body']) if isinstance(row.get('body'),str) else {}
+            token=str(event.get('asset') or '')
+            if token and event.get('type')=='TRADE' and event.get('side') in ('BUY','SELL'):
+                try:
+                    t_book=self.clock();decision=await self.book(token,FAST_BOOK);at=self.clock()
+                    stage=dict(getattr(self,'_book_stage',{}) or {})
+                    await self.sleep(.25)
+                    arrival=await self.book(token,FAST_BOOK)
+                    row=dict(row,_pre=(t_book,decision,at,stage,arrival,dict(getattr(self,'_book_stage',{}) or {})))
+                except Exception:
+                    pass  # the normal path reads the books and records why
             await self.process(row,shadow=False)
         except Exception as error:
             log.warning('qualifier fast: %s',str(error)[:200])
@@ -1014,14 +1030,22 @@ class WalletCopy:
                 if why:self.reason(row,why);return
                 why=band_reason(source_price)
                 if why:self.reason(row,why);return
-            t_book=self.clock();decision=await self.book(m['token'],FAST_BOOK if fast else None);at=self.clock()
-            decision_stage=dict(getattr(self, '_book_stage', {}) or {})
+            pre=row.get('_pre')
+            if pre and isinstance(pre[1],dict) and str(m['token'])==str(json.loads(row['body']).get('asset')):
+                t_book,decision,at,decision_stage,pre_arrival,pre_arrival_stage=pre
+            else:
+                pre=None
+                t_book=self.clock();decision=await self.book(m['token'],FAST_BOOK if fast else None);at=self.clock()
+                decision_stage=dict(getattr(self, '_book_stage', {}) or {})
             if kind=='BUY' and roster_state in ('paper_test','paper_active') and at-float(row['source_ts'])>MAX_BUY_AGE_S:
                 self.reason(row,'SOURCE_TOO_OLD',{'buy_age_s':round(at-float(row['source_ts']),3),'limit_s':MAX_BUY_AGE_S,
                                                   'late_at':'decision_book'});return
-            await self.sleep(.25)
-            arrival=await self.book(m['token'],FAST_BOOK if fast else None)
-            arrival_stage=dict(getattr(self, '_book_stage', {}) or {})
+            if pre:
+                arrival,arrival_stage=pre_arrival,pre_arrival_stage
+            else:
+                await self.sleep(.25)
+                arrival=await self.book(m['token'],FAST_BOOK if fast else None)
+                arrival_stage=dict(getattr(self, '_book_stage', {}) or {})
             arrival=dict(arrival);arrival['token']=m['token'];arrival['fee_rate']=m['fee_rate']
             if kind=='BUY':
                 why,fill=decide_buy(source_price,arrival,self._consumed,BUDGET)
