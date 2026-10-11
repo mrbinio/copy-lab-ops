@@ -472,6 +472,9 @@ class WalletCopy:
         with store.connect() as db:
             db.executescript('''
               CREATE TABLE IF NOT EXISTS wallet_copy_skip_reviews(wallet TEXT,event_key TEXT,end REAL,checked REAL DEFAULT 0,body TEXT,PRIMARY KEY(wallet,event_key));
+              -- 11 Oct 2026: without these the due-review select parsed ~300,000 bodies (1.85 s) each pass.
+              CREATE INDEX IF NOT EXISTS skip_review_due ON wallet_copy_skip_reviews(checked, end);
+              CREATE INDEX IF NOT EXISTS skip_review_shadow ON wallet_copy_skip_reviews(json_extract(body,'$.shadow.status'), checked, end);
               CREATE TABLE IF NOT EXISTS wallet_copy_accounts(wallet TEXT PRIMARY KEY,cash INTEGER NOT NULL);
               CREATE TABLE IF NOT EXISTS wallet_copy_events(wallet TEXT,event_key TEXT,ts REAL,reason TEXT,body TEXT,PRIMARY KEY(wallet,event_key));
               CREATE TABLE IF NOT EXISTS wallet_copy_positions(id TEXT PRIMARY KEY,wallet TEXT,body TEXT);
