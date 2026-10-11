@@ -312,6 +312,7 @@ class WalletObserver:
         added = 0
         complete = False
         newest = previous.get('last_event_at')
+        oldest = None
         from .data_api import fetch_rows
         cursor = None
         # v2 pages by cursor and has no 10,000-row offset wall. Twenty pages
@@ -323,14 +324,21 @@ class WalletObserver:
                 ts = row.get('timestamp') if isinstance(row, dict) else None
                 if isinstance(ts, (int, float)) and (newest is None or ts > newest):
                     newest = ts
+                if isinstance(ts, (int, float)) and (oldest is None or ts < oldest):
+                    oldest = ts
             added += self.ingest(wallet,rows,time.time())
             if not cursor:
                 complete=True
                 break
         count = int(previous.get('unique_fingerprints') or 0) + added
+        # 11 Oct 2026: 38 busy wallets never finished twenty pages, kept their
+        # cursor 265 hours back and fetched 10,000 rows on every poll (most of
+        # the qualifier's 200-350% CPU). The pages run newest first, so after
+        # one pass the cursor moves to now; the older gap is recorded.
+        gap = None if complete else {'before': oldest, 'since': start}
         self.store.set(key,dict(wallet=wallet,status='POLL_OK' if complete else 'INCOMPLETE_PAGE_LIMIT',
             checked_at=time.time(),last_event_at=newest,unique_fingerprints=count,new_rows=added,
-            cursor=end if complete else previous.get('cursor',start+120),
+            cursor=end, history_gap=gap or previous.get('history_gap'),
             source='DATA_API_V2_INDEXED_ONCHAIN',poll_seconds=1,history_complete=False,
             identity_limitation='No log index; identical fills may collapse. Not a PnL ledger.',error=None))
 

@@ -57,6 +57,7 @@ BRAKE_SAMPLE = 30
 # (submit_fast) and chain rows wake the loop. 20 polls a second kept the
 # main process near 100% CPU (11 Oct).
 IDLE_POLL_S = 0.25
+QUEUE_LOOKBACK_S = 86400
 BRAKE_ON_BELOW = 0.60
 BRAKE_OFF_AT = 0.75
 BRAKE_LOOKBACK_S = 2 * 3600
@@ -923,7 +924,9 @@ class MitchCopy:
             "SELECT 1 FROM sqlite_master WHERE type='index' AND name='wallet_activity_seen'"
         ).fetchone():
             db.execute('CREATE INDEX IF NOT EXISTS wallet_activity_seen ON wallet_activity(first_seen)')
-        start = self.started()
+        # The queue reads the last day only. Scanning every row since the
+        # copier started (9 Oct) was most of the main process's CPU (11 Oct).
+        start = max(self.started(), now - QUEUE_LOOKBACK_S)
         marks = ','.join('?' * len(WALLETS))
         base = self._unseen_sql(marks)
         fresh_cut = now - 90
@@ -944,7 +947,9 @@ class MitchCopy:
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='wallet_activity'"
         ).fetchone():
             return {'backlog': 0}
-        start = self.started()
+        # The queue reads the last day only. Scanning every row since the
+        # copier started (9 Oct) was most of the main process's CPU (11 Oct).
+        start = max(self.started(), now - QUEUE_LOOKBACK_S)
         marks = ','.join('?' * len(WALLETS))
         fresh_cut = now - 90
         row = db.execute(
