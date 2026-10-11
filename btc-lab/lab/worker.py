@@ -920,24 +920,43 @@ def fast_copier_loop(store):
 
 
 async def qualifier_inbox(current):
-    """Fast-lane fills from the main process, one JSON row per line on stdin."""
+    """Fast-lane fills from the main process, one JSON row per line on stdin.
+
+    The read is a blocking thread of its own: on the qualifier's main loop it
+    waited out the same multi-second stalls. Transfer delays are published
+    as state 'qualifier_fast'."""
     import sys
-    loop=asyncio.get_running_loop()
-    reader=asyncio.StreamReader(limit=2**22)
-    await loop.connect_read_pipe(lambda: asyncio.StreamReaderProtocol(reader), sys.stdin)
+    import threading
     fast=current.get('fast') or fast_copier_loop(current['store'])
     current['fast']=fast
+    store=current['store']
+    delays=[]
+
+    def reader():
+        last=time.time()
+        for line in sys.stdin.buffer:
+            try:
+                row=json.loads(line)
+            except ValueError:
+                continue
+            got=time.time()
+            if row.get('_as_of'):
+                delays.append(got-float(row['_as_of']))
+                del delays[:-500]
+            if fast.get('loop') is not None:
+                asyncio.run_coroutine_threadsafe(fast['copier'].fast(row), fast['loop'])
+            if got-last>=30 and delays:
+                last=got
+                ordered=sorted(delays)
+                try:
+                    store.set('qualifier_fast',{'at':got,'rows':len(ordered),
+                        'transfer_p50_s':round(ordered[len(ordered)//2],3),
+                        'transfer_p90_s':round(ordered[int(len(ordered)*.9)],3)})
+                except Exception:
+                    pass
+    threading.Thread(target=reader,name='lab-q-inbox',daemon=True).start()
     while True:
-        line=await reader.readline()
-        if not line:
-            await asyncio.sleep(3600)
-            continue
-        try:
-            row=json.loads(line)
-        except ValueError:
-            continue
-        if fast.get('loop') is not None:
-            asyncio.run_coroutine_threadsafe(fast['copier'].fast(row), fast['loop'])
+        await asyncio.sleep(3600)
 
 
 async def run_qualifier(store):
