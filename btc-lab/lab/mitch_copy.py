@@ -378,7 +378,11 @@ class MitchCopy:
             return 'SOURCE_PRICE_UNCONFIRMED', None
         wanted = copy_notional_usd(dollars)
         room = Decimal(remaining_micro) / Decimal(1_000_000)
-        budget = min(wanted, room)
+        # The window cap covers cost and entry fee. 11 Oct 2026: the budget was
+        # the whole room and the fee came on top, so every copy the cap cut
+        # down failed as WINDOW_LIMIT (all of 0xBadB9af's at 5 USD). The fee is
+        # at most rate x cost, so room/(1+rate) of cost always fits.
+        budget = min(wanted, room / (1 + rate))
         if budget <= Decimal('0.01'):
             return 'WINDOW_LIMIT', None
         if not asks:
@@ -1140,6 +1144,7 @@ class MitchCopy:
                 row['review'] = hold.get('review') or []
                 row['week_net_usd'] = hold.get('week_net_usd')
                 row['week_closed'] = hold.get('week_closed')
+                row['last_copy_at'] = hold.get('last_copy_at')
                 inside = [p for p in closed if p.get('wallet') == row['wallet']
                           and stint_at is not None and float(p.get('opened') or 0) >= stint_at]
                 row['period_net_micro'] = sum(int(p['pnl_micro']) for p in inside)

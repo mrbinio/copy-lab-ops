@@ -611,6 +611,17 @@ class MitchBookTests(unittest.TestCase):
         self.engine._born = self.engine.clock() - 999
         self.assertFalse(self._judged(['LATE_BUY_NOT_COPIED'] * 10)['on'])
 
+    def test_a_copy_the_cap_cuts_down_still_fits_inside_it(self):
+        # 15 USD source buy, 5 USD cap: the copy buys about 5 USD with its fee.
+        event = self.event(30, '0.50')
+        why, fill = self.engine.plan_buy(event, asks('0.50'), '0.07', '0.01', '1', 5_000_000)
+        self.assertIsNone(why)
+        self.assertLessEqual(int(fill['cost']) + int(fill['fee']), 5_000_000)
+        self.assertGreater(int(fill['cost']) + int(fill['fee']), 4_700_000)
+        why, fill = self.engine.plan_buy(event, asks('0.50'), '0.07', '0.01', '1', 1_200_000)
+        self.assertIsNone(why)
+        self.assertLessEqual(int(fill['cost']) + int(fill['fee']), 1_200_000)
+
     def test_a_receipt_timed_by_our_own_detection_cannot_buy(self):
         event = dict(self.event(10), _source='order_filled', _ts_basis='local_detect')
         now = self.engine.clock()
