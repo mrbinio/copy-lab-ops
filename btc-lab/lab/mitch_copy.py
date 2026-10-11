@@ -58,6 +58,7 @@ BRAKE_SAMPLE = 30
 # main process near 100% CPU (11 Oct).
 IDLE_POLL_S = 0.25
 QUEUE_LOOKBACK_S = 86400
+HISTORY_EVERY_S = 30
 BRAKE_ON_BELOW = 0.60
 BRAKE_OFF_AT = 0.75
 BRAKE_LOOKBACK_S = 2 * 3600
@@ -930,15 +931,22 @@ class MitchCopy:
         marks = ','.join('?' * len(WALLETS))
         base = self._unseen_sql(marks)
         fresh_cut = now - 90
+        # A fresh row was stored after his trade, so the index range is short.
         fresh = [dict(r) for r in db.execute(
             base + ' AND a.source_ts>=? ORDER BY a.source_ts ASC, a.first_seen ASC LIMIT 8',
-            (start, *WALLETS, fresh_cut),
+            (max(start, fresh_cut - 30), *WALLETS, fresh_cut),
         )]
-        history_limit = 2 if fresh else 12
-        history = [dict(r) for r in db.execute(
-            base + ' AND (a.source_ts IS NULL OR a.source_ts<?) ORDER BY a.first_seen ASC LIMIT ?',
-            (start, *WALLETS, fresh_cut, history_limit),
-        )]
+        # History scans the day; it is read every HISTORY_EVERY_S, or at
+        # once again while it still has rows to drain.
+        history = []
+        if getattr(self, '_history_more', True) or now - getattr(self, '_history_at', 0) >= HISTORY_EVERY_S:
+            self._history_at = now
+            history_limit = 2 if fresh else 12
+            history = [dict(r) for r in db.execute(
+                base + ' AND (a.source_ts IS NULL OR a.source_ts<?) ORDER BY a.first_seen ASC LIMIT ?',
+                (start, *WALLETS, fresh_cut, history_limit),
+            )]
+            self._history_more = len(history) >= history_limit
         return fresh + history
 
     def backlog(self, db, now):

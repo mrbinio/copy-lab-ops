@@ -42,6 +42,9 @@ SELL_READ_LIMIT_S=4
 # 60 USD that day while those under 10 s made money. Wallet selection (30
 # days, pause while losing) stays this strategy's own.
 MAX_BUY_AGE_S=1.0
+PUBLISH_EVERY_S=5
+DEPTH_EVERY_S=10
+LATE_SELL_EVERY_S=15
 
 def _event_size(event):
     raw=(event or {}).get('size')
@@ -712,7 +715,7 @@ class WalletCopy:
             if len(rows)<20:rows.extend(self._pending_query(db,lo,now,20-len(rows)))
         seen={(r['wallet'], r['event_key']) for r in rows}
         late_limit=2 if rows else 5
-        for row in self._late_sell_query(db, copying, now, late_limit):
+        for row in self._late_sell_query(db, copying, now, late_limit) if self._late_due(now) else []:
             if (row['wallet'], row['event_key']) not in seen:
                 rows.append(row)
         return rows
@@ -734,7 +737,7 @@ class WalletCopy:
             else:paused.append(wallet)
         fast=self._pending_query(db,copying,now,20)
         seen={(r['wallet'],r['event_key']) for r in fast}
-        for row in self._late_sell_query(db,copying,now,2 if fast else 5):
+        for row in self._late_sell_query(db,copying,now,2 if fast else 5) if self._late_due(now) else []:
             if (row['wallet'],row['event_key']) not in seen:
                 fast.append(row)
         slow=[]
@@ -742,6 +745,13 @@ class WalletCopy:
             slow=self._pending_query(db,paused,now,20)
             if len(slow)<20:slow.extend(self._pending_query(db,lo,now,20-len(slow)))
         return fast,slow
+
+    def _late_due(self, now):
+        """Missed sells (outage recovery) are looked up every LATE_SELL_EVERY_S, not every pass."""
+        if now-getattr(self,'_late_at',0)<LATE_SELL_EVERY_S:
+            return False
+        self._late_at=now
+        return True
 
     def _late_sell_query(self, db, wallets, now, limit):
         """Sells missed during an outage. They update the source book and are
@@ -1392,13 +1402,15 @@ class WalletCopy:
                 # failed publish is re-raised forever and the dashboard stays frozen.
                 self._publish_task=None
                 task.result()
-            if (rows or slow or self.clock()-self.last_publish>=2) and (task is None or task.done()):
+            # The board rebuilds every position; every 2 s with rows waiting was
+            # a large part of the qualifier's CPU (11 Oct). Decisions do not wait for it.
+            if self.clock()-self.last_publish>=PUBLISH_EVERY_S and (task is None or task.done()):
                 self._publish_task=asyncio.create_task(self._publish_bg())
                 self.last_publish=self.clock()
             from .hot_path import DB, READ, latest_stage, snapshot
             loop=asyncio.get_running_loop()
             await loop.run_in_executor(DB, self.store.set, 'wallet_copy_error', {})
-            if self.clock()-getattr(self, '_depth_at', 0)>=2:
+            if self.clock()-getattr(self, '_depth_at', 0)>=DEPTH_EVERY_S:
                 self._depth=await loop.run_in_executor(READ, self._load_backlog)
                 self._depth_at=self.clock()
             depth=getattr(self, '_depth', None) or {}
