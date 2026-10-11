@@ -185,5 +185,16 @@ class WindowReport(unittest.TestCase):
         self.assertEqual(len([m for m in bot.alerts(state, memory) if 'okno' in m]), 0)
 
 
+class Brake(unittest.TestCase):
+    def test_brake_on_and_off_is_sent_once_each(self):
+        memory = {'primed': True}
+        bot.alerts({'mitch_copy': {'brake': {'on': False}}}, memory)
+        on = bot.alerts({'mitch_copy': {'brake': {'on': True, 'reason': 'tylko 40%'}}}, memory)
+        self.assertTrue(any('HAMULEC' in m for m in on))
+        self.assertFalse(any('HAMULEC' in m for m in bot.alerts({'mitch_copy': {'brake': {'on': True}}}, memory)))
+        off = bot.alerts({'mitch_copy': {'brake': {'on': False, 'share': 0.8}}}, memory)
+        self.assertTrue(any('zdjęty' in m for m in off))
+
+
 if __name__ == '__main__':
     unittest.main()

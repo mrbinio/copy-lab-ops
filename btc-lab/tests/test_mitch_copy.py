@@ -580,6 +580,37 @@ class MitchBookTests(unittest.TestCase):
         row = dict(row, event_key='match-really-late', _as_of=now + 1)
         self.assertTrue(self.engine._prefilter(row, 0)['stop'])
 
+    def _judged(self, reasons):
+        now = self.engine.clock()
+        with self.store.connect() as db:
+            db.execute('CREATE TABLE IF NOT EXISTS wallet_activity (wallet TEXT, event_key TEXT, first_seen REAL, '
+                       'source_ts REAL, body TEXT, PRIMARY KEY(wallet,event_key))')
+            db.execute('DELETE FROM mitch_events')
+            for i, reason in enumerate(reasons):
+                key = 'brake-%d' % i
+                body = json.dumps(dict(self.event(10), _source='clob_match'))
+                db.execute('INSERT OR REPLACE INTO wallet_activity VALUES (?,?,?,?,?)', (FIRST, key, now, now, body))
+                db.execute('INSERT INTO mitch_events VALUES (?,?,?,?,?)', (FIRST, key, reason, '{}', now - i))
+            return self.engine.refresh_brake(db)
+
+    def test_the_technical_brake_stops_buys_when_most_are_late(self):
+        self.engine._born = self.engine.clock() - 999
+        brake = self._judged(['LATE_BUY_NOT_COPIED'] * 15 + ['MITCH_BUY'] * 15)
+        self.assertTrue(brake['on'])
+        event = self.event(10)
+        with self.store.connect() as db:
+            _why, fill = self.engine.plan_buy(event, asks('0.50'), '0', '0.01', '1', 20_000_000)
+            self.assertEqual(self.engine.apply_buy(db, FIRST, 'braked', event, fill, {}), 'TECH_BRAKE')
+        # 70% is not enough to release it; 80% is.
+        self.assertTrue(self._judged(['LATE_BUY_NOT_COPIED'] * 9 + ['TECH_BRAKE'] * 21)['on'])
+        self.assertFalse(self._judged(['LATE_BUY_NOT_COPIED'] * 6 + ['TECH_BRAKE'] * 24)['on'])
+
+    def test_the_brake_waits_out_a_fresh_start_and_needs_a_full_sample(self):
+        self.engine._born = self.engine.clock()
+        self.assertTrue(self._judged([])['on'])
+        self.engine._born = self.engine.clock() - 999
+        self.assertFalse(self._judged(['LATE_BUY_NOT_COPIED'] * 10)['on'])
+
     def test_a_receipt_timed_by_our_own_detection_cannot_buy(self):
         event = dict(self.event(10), _source='order_filled', _ts_basis='local_detect')
         now = self.engine.clock()

@@ -49,6 +49,17 @@ DESK_STOP_CASH_MICRO = 50_000_000  # desk money (free cash plus money in play)
 REVIEW_DAYS = 7
 SILENT_DAYS = 3
 MANUAL_PAUSES_FILE = 'mitch_manual_pauses.json'
+# Technical brake (Damian, 11 Oct 2026). Not a trading rule: when we catch
+# too few of his buys inside one second, the copies are a chance subset of
+# his trades, so new buys stop until the lane is healthy again.
+BRAKE_SAMPLE = 30
+BRAKE_ON_BELOW = 0.60
+BRAKE_OFF_AT = 0.75
+BRAKE_LOOKBACK_S = 2 * 3600
+BRAKE_WARMUP_S = 120
+BRAKE_EVERY_S = 20
+JUDGED = ('MITCH_BUY', 'MITCH_ADD', 'WINDOW_LIMIT', 'NO_LIQUIDITY', 'PRICE_WORSE_THAN_10C',
+          'DESK_CASH', 'MITCH_PAUSED', 'GLOBAL_STOP', 'PAPER_CASH', 'TECH_BRAKE')
 # Mitch did not name a paper bankroll. This only keeps the window caps
 # from being confused with an empty account. It is not his rule.
 CAPITAL_MICRO = 500_000_000
@@ -271,6 +282,9 @@ class MitchCopy:
         self.fetch = fetch
         self.clock = clock or time.time
         self._task = None
+        self._born = self.clock()
+        self.brake = {'on': False, 'reason': None, 'share': None, 'sample': 0, 'since': None}
+        self._brake_at = 0
 
     def ensure(self):
         with self.store.connect() as db:
@@ -513,6 +527,38 @@ class MitchCopy:
         out.sort(key=lambda x: (x.get('end') or 0, x['market']), reverse=True)
         return out[:limit]
 
+    def refresh_brake(self, db):
+        """On-time share of his last fast-lane BTC 15m buys. Hysteresis: on
+        below 60%, off again at 75%. A fresh process waits two minutes."""
+        now = self.clock()
+        marks = ','.join('?' * len(WALLETS))
+        if not db.execute("SELECT 1 FROM sqlite_master WHERE name='wallet_activity'").fetchone():
+            db.execute('CREATE TABLE IF NOT EXISTS wallet_activity (wallet TEXT, event_key TEXT, first_seen REAL, '
+                       'source_ts REAL, body TEXT, PRIMARY KEY(wallet,event_key))')
+        rows = db.execute(
+            f"""SELECT e.reason FROM mitch_events e JOIN wallet_activity a
+                ON a.wallet=e.wallet AND a.event_key=e.event_key
+                WHERE e.at>=? AND e.wallet IN ({marks})
+                  AND json_extract(a.body,'$._source')='clob_match'
+                  AND json_extract(a.body,'$.side')='BUY'
+                  AND e.reason IN ({','.join('?' * (len(JUDGED) + 1))})
+                ORDER BY e.at DESC LIMIT ?""",
+            (now - BRAKE_LOOKBACK_S, *WALLETS, *JUDGED, 'LATE_BUY_NOT_COPIED', BRAKE_SAMPLE)).fetchall()
+        sample = len(rows)
+        share = sum(1 for (r,) in rows if r in JUDGED) / sample if sample else None
+        was = self.brake.get('on')
+        reason = None
+        if now - self._born < BRAKE_WARMUP_S:
+            reason = 'start systemu, rozgrzewka %d s' % BRAKE_WARMUP_S
+        elif sample >= BRAKE_SAMPLE and share is not None:
+            if share < BRAKE_ON_BELOW or (was and share < BRAKE_OFF_AT):
+                reason = 'tylko %.0f%% z ostatnich %d jego kupna złapane w 1 s' % (share * 100, sample)
+        on = reason is not None
+        self.brake = {'on': on, 'reason': reason, 'share': None if share is None else round(share, 3),
+                      'sample': sample, 'since': (self.brake.get('since') if was else now) if on else None,
+                      'at': now}
+        return self.brake
+
     def manual_pauses(self):
         """Wallets a person paused (Telegram /mitch_pauza). Mitch: every wallet change is a human call."""
         from pathlib import Path
@@ -611,6 +657,11 @@ class MitchCopy:
         if self.stopped():
             self._mark(db, wallet, key, 'GLOBAL_STOP', self._case(None, event, {'timing': timing}))
             return 'GLOBAL_STOP'
+        if self.brake.get('on'):
+            self._mark(db, wallet, key, 'TECH_BRAKE', self._case(None, event, {
+                'timing': timing, 'brake': self.brake.get('reason'),
+            }))
+            return 'TECH_BRAKE'
         if self._is_paused(db, wallet):
             self._mark(db, wallet, key, 'MITCH_PAUSED', self._case(None, event, {
                 'timing': timing, 'reason': PAUSE_REASON,
@@ -1132,6 +1183,7 @@ class MitchCopy:
             'fast': fast_status(),
             'stop_active': self.stopped(),
             'pause_rule': pauses.get('rule'),
+            'brake': self.brake,
             'desk': desk_now,
             'windows': windows_now,
             'desk_cash_usd': pauses.get('desk_cash_usd'),
@@ -1320,6 +1372,15 @@ class MitchCopy:
             await self.settle_open()
         except Exception as error:
             log.warning('mitch settle: %s', error)
+        if self.clock() - self._brake_at >= BRAKE_EVERY_S:
+            self._brake_at = self.clock()
+            def brake():
+                with self.store.connect() as db:
+                    return self.refresh_brake(db)
+            try:
+                await loop.run_in_executor(READ, brake)
+            except Exception as error:
+                log.warning('mitch brake: %s', error)
         if self.clock() - getattr(self, '_depth_at', 0) >= 2:
             self._depth = await loop.run_in_executor(READ, self._load_backlog)
             self._depth_at = self.clock()

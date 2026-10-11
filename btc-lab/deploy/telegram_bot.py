@@ -238,7 +238,7 @@ def bank_text(state):
 REASONS_PL = {
     'MITCH_BUY': 'kupiono', 'MITCH_ADD': 'dokupiono', 'MITCH_SELL': 'sprzedano',
     'LATE_BUY_NOT_COPIED': 'za późno (>1 s)', 'PRICE_WORSE_THAN_10C': 'cena gorsza o >10¢',
-    'MITCH_PAUSED': 'portfel na pauzie', 'GLOBAL_STOP': 'STOP', 'WINDOW_LIMIT': 'limit okna',
+    'MITCH_PAUSED': 'portfel na pauzie', 'GLOBAL_STOP': 'STOP', 'TECH_BRAKE': 'hamulec techniczny', 'WINDOW_LIMIT': 'limit okna',
     'NO_LIQUIDITY': 'brak płynności', 'NO_ASK': 'brak ofert', 'BOOK_WAIT_TOO_LONG': 'arkusz za wolno',
     'MITCH_NEED_CHAIN': 'brak jego ceny', 'SOURCE_TIME_UNKNOWN': 'nieznany czas', 'LATE_SELL_RECONCILED': 'spóźniona sprzedaż',
 }
@@ -572,6 +572,13 @@ def alerts(state, memory):
             out.append('Mitch %s: %s' % (row.get('label') or label(wallet),
                                          ('PAUZA. ' + (row.get('pause_reason') or 'minus w okresie testu')) if now else 'pauza zdjęta, kupno wraca'))
         paused[wallet] = now
+    brake = mitch.get('brake') or {}
+    if 'brake' in memory and bool(brake.get('on')) != memory['brake'] and not first:
+        out.append(('HAMULEC TECHNICZNY: nowe kupna Mitcha wstrzymane — %s. Wracają same, gdy złapiemy co najmniej 75%% jego kupna w 1 s.'
+                    % (brake.get('reason') or '?')) if brake.get('on') else
+                   'Hamulec techniczny zdjęty: kopiowanie Mitcha znowu działa (%.0f%% w 1 s).' % (100 * float(brake.get('share') or 0)))
+    if mitch.get('brake') is not None:
+        memory['brake'] = bool(brake.get('on'))
     if state.get('live_enabled'):
         out.append('UWAGA: pulpit zgłasza live_enabled=true. Sprawdź natychmiast.')
     memory['paused'] = paused
