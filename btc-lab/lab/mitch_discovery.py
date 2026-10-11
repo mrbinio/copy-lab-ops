@@ -42,6 +42,8 @@ LANES = {
 # 30 days, and a positive copy without its single best window (Mitch: one
 # lucky +1,494 window must not carry the day).
 MIN_WINDOWS = 100
+# A lead from the last day of BTC 15m: at least this many of its 96 windows.
+MIN_ACTIVE_WINDOWS = 8
 
 
 def fee(price, shares):
@@ -269,11 +271,49 @@ def verdict_text(entry, complete):
     return 'kopia na plusie 90 i 30 dni, także bez najlepszego okna'
 
 
-def candidate_wallets(fetch, limit=60):
-    """Leads: the CRYPTO leaderboard (all time and month) and wallets on our markets now."""
+def recent_btc15_traders(fetch, now=None, windows=96, pages=2):
+    """Wallets that traded the last `windows` BTC 15m markets, by how many
+    windows they were in. 11 Oct 2026: the leaderboard and a few minutes of
+    the tape missed izzyaussie, 0xBadB9af and 1Speed, which Mitch copies."""
+    from .data_api import fetch_rows
+    now = int(now or time.time())
+    start = now - now % 900
+    seen = defaultdict(set)
+    for i in range(1, windows + 1):
+        slug = 'btc-updown-15m-%d' % (start - i * 900)
+        try:
+            condition = fetch('https://gamma-api.polymarket.com/markets/slug/' + slug).get('conditionId')
+        except Exception:
+            continue
+        cursor = None
+        for _ in range(pages):
+            try:
+                rows, cursor = fetch_rows(fetch, 'trades', condition=condition, limit=500, cursor=cursor)
+            except Exception:
+                break
+            for r in rows:
+                w = str(r.get('proxyWallet') or '').lower()
+                if re.fullmatch(r'0x[0-9a-f]{40}', w):
+                    seen[w].add(slug)
+            if not cursor:
+                break
+    return sorted(((w, len(s)) for w, s in seen.items()), key=lambda x: -x[1])
+
+
+def candidate_wallets(fetch, limit=150):
+    """Leads: wallets active on BTC 15m in the last day (most windows first),
+    the CRYPTO leaderboard (all time, month, week) and the tape now."""
     from .data_api import fetch_rows
     seen = {}
-    for period in ('ALL', 'MONTH'):
+    try:
+        active = recent_btc15_traders(fetch)
+    except Exception as error:
+        LOG.warning('btc15 traders: %s', str(error)[:160])
+        active = []
+    for w, n in active:
+        if n >= MIN_ACTIVE_WINDOWS:
+            seen.setdefault(w, {'source': 'BTC 15m, %d okien w 24 h' % n})
+    for period in ('ALL', 'MONTH', 'WEEK'):
         try:
             rows, _ = fetch_rows(fetch, 'leaderboard', category='CRYPTO', timePeriod=period, orderBy='PNL', limit=50)
         except Exception:
@@ -298,7 +338,7 @@ def candidate_wallets(fetch, limit=60):
     return dict(list(seen.items())[:limit])
 
 
-def run(root, fetch=None, wallets=None, limit=40):
+def run(root, fetch=None, wallets=None, limit=150):
     from .worker import get_json
     from .mitch_copy import WALLETS as MITCH
     fetch = fetch or get_json
