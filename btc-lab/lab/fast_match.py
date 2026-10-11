@@ -318,11 +318,23 @@ def trial_sink(store, fetch):
     return sink
 
 
+# Set by the worker: hands a stored qualifier row to the qualifier process.
+QUALIFIER_FORWARD = None
+
+
 def qualifier_sink(store):
-    """Store the fill for the qualifier's queue. It picks the row up like any source row."""
+    """Store the fill and hand it straight to the qualifier process, which
+    judges it at this arrival time (1 s rule). Its poll picks up the rest."""
     async def sink(wallet, row, arrived):
+        at = time.time()
         loop = asyncio.get_running_loop()
-        await loop.run_in_executor(QUALIFIER_POOL, insert_row, store, wallet, row, arrived)
+        stored = await loop.run_in_executor(QUALIFIER_POOL, insert_row, store, wallet, row, arrived)
+        forward = QUALIFIER_FORWARD
+        if stored and forward is not None:
+            try:
+                forward(dict(stored, _as_of=at))
+            except Exception as error:
+                LOG.warning('qualifier forward: %s', str(error)[:200])
     return sink
 
 

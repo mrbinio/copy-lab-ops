@@ -832,13 +832,26 @@ class Worker:
     async def qualifier_process(self):
         """Run the qualifier as a child process and restart it when it exits."""
         import sys
+        from . import fast_match
         env=dict(os.environ, LAB_ROLE='qualifier')
+        loop=asyncio.get_running_loop()
+        def write(line):
+            child=getattr(self,'_qualifier_child',None)
+            if child is not None and child.returncode is None and child.stdin is not None:
+                try:
+                    child.stdin.write(line)
+                except Exception:
+                    pass
+        # Fast-lane qualifier fills go straight to the child (judged at arrival).
+        fast_match.QUALIFIER_FORWARD=lambda row: loop.call_soon_threadsafe(
+            write, (json.dumps(row, default=str)+'\n').encode())
         delay=1
         while True:
             started=time.time()
             child=await asyncio.create_subprocess_exec(
-                sys.executable, '-m', 'lab.worker', env=env,
+                sys.executable, '-m', 'lab.worker', env=env, stdin=asyncio.subprocess.PIPE,
                 cwd=str(Path(__file__).resolve().parent.parent))
+            self._qualifier_child=child
             LOG.info('qualifier process started (pid %s)', child.pid)
             try:
                 code=await child.wait()
@@ -874,6 +887,26 @@ class Worker:
             await self._db(self.store.set,'clock_status', sample)
             await asyncio.sleep(15 if jumped else 60)
 
+async def qualifier_inbox(current):
+    """Fast-lane fills from the main process, one JSON row per line on stdin."""
+    import sys
+    loop=asyncio.get_running_loop()
+    reader=asyncio.StreamReader(limit=2**22)
+    await loop.connect_read_pipe(lambda: asyncio.StreamReaderProtocol(reader), sys.stdin)
+    while True:
+        line=await reader.readline()
+        if not line:
+            await asyncio.sleep(3600)
+            continue
+        try:
+            row=json.loads(line)
+        except ValueError:
+            continue
+        copier=current.get('copier')
+        if copier is not None:
+            asyncio.create_task(copier.fast(row))
+
+
 async def run_qualifier(store):
     """The qualifier process: observer, discovery and the qualifier copier.
     PAPER only; it never builds a CLOB client."""
@@ -881,12 +914,17 @@ async def run_qualifier(store):
     data=Path(store.path).parent
     def paused():
         return (data/'PAUSE').exists()
+    current={}
+    def new_copier():
+        current['copier']=WalletCopy(store,fetch_copy,paused,clob_client=None,buys_enabled=QUALIFIER_BUYS)
+        return current['copier'].run()
     def build():
         observer=WalletObserver(store,get_json)
         return {
             'wallets': lambda: observer.run(),
             'discovery': lambda: WalletDiscovery(store,get_json).run(),
-            'copier': lambda: WalletCopy(store,fetch_copy,paused,clob_client=None,buys_enabled=QUALIFIER_BUYS).run(),
+            'copier': new_copier,
+            'inbox': lambda: qualifier_inbox(current),
         }
     makers=build()
     jobs={name: asyncio.create_task(make()) for name, make in makers.items()}

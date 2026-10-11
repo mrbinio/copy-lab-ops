@@ -22,7 +22,8 @@ class CopyTests(unittest.TestCase):
         self.engine=WalletCopy(self.store,self.fetch,lambda:self.pause,lambda:self.now,self.sleep)
         self.source_block=None
         self.source_log=1
-    def tearDown(self):self.temp.cleanup()
+    def tearDown(self):
+        from lab import hot_path;hot_path._TERMS.clear();self.temp.cleanup()
     async def sleep(self,seconds):self.now+=self.delay
     def fetch(self,url):
         if 'gamma-api' in url:return copy.deepcopy(self.raw)
@@ -57,6 +58,26 @@ class CopyTests(unittest.TestCase):
         self.source_log=1
     def reason(self):
         with self.store.connect() as db:return db.execute('SELECT reason FROM wallet_copy_events ORDER BY ts DESC,rowid DESC LIMIT 1').fetchone()[0]
+    def test_a_copying_wallet_buy_older_than_one_second_is_not_copied(self):
+        # Damian, 11 Oct 2026: like Mitch, one second or nothing.
+        self.now=1102
+        roster=self.store.get('wallet_roster') or {'wallets':{}}
+        state=(roster.get('wallets') or {}).get(WALLETS[0],{}).get('state')
+        self.assertIn(state,('paper_test','paper_active'))
+        row=self.row('late');row['source_ts']=self.now-1.5
+        body=json.loads(row['body']);body['timestamp']=row['source_ts'];row['body']=json.dumps(body)
+        self.process(row);self.assertEqual(self.reason(),'SOURCE_TOO_OLD')
+
+    def test_a_fast_lane_buy_is_judged_at_its_arrival(self):
+        self.now=1102
+        row=self.row('arrived');row['source_ts']=self.now-1.5;row['_as_of']=self.now-0.9
+        body=json.loads(row['body']);body['timestamp']=row['source_ts'];row['body']=json.dumps(body)
+        # Arrival is in time, but the decision book is read 1.5 s after his trade.
+        self.process(row);self.assertEqual(self.reason(),'SOURCE_TOO_OLD')
+        row=self.row('in-time');row['source_ts']=self.now-0.6;row['_as_of']=self.now-0.3
+        body=json.loads(row['body']);body['timestamp']=row['source_ts'];row['body']=json.dumps(body)
+        self.process(row);self.assertNotEqual(self.reason(),'SOURCE_TOO_OLD')
+
     def test_forward_buy_uses_current_ask_not_source_price_and_sale_both_fees(self):
         self.confirm_source(0, 1000)
         self.buy();t=self.state()['recent_trades'][0]
@@ -121,6 +142,8 @@ class CopyTests(unittest.TestCase):
     def test_token_fee_pause_and_unsupported_rejected(self):
         self.now=1102;self.pause=True;self.process(self.row());self.assertEqual(self.reason(),'PAUSED')
         self.pause=False;row=self.row('wrong');body=json.loads(row['body']);body['asset']='9';row['body']=json.dumps(body);self.process(row);self.assertEqual(self.reason(),'ERROR')
+        # Market terms are cached 30 s in the copier; a changed market is a new read.
+        from lab import hot_path;hot_path._TERMS.clear()
         self.raw['feeSchedule']={};self.process(self.row('fee'));self.assertEqual(self.reason(),'ERROR');self.assertEqual(self.book_calls,0)
     def test_separate_wallets_and_no_additional_position(self):
         from lab.strategy_control import set_paused

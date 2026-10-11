@@ -37,6 +37,11 @@ EXECUTION='copy-exec-v4'
 
 
 SELL_READ_LIMIT_S=4
+# Damian, 11 Oct 2026: a copying wallet's buy is copied like Mitch's, inside
+# one second of the source trade, or not at all. Copies 10-30 s late lost
+# 60 USD that day while those under 10 s made money. Wallet selection (30
+# days, pause while losing) stays this strategy's own.
+MAX_BUY_AGE_S=1.0
 
 def _event_size(event):
     raw=(event or {}).get('size')
@@ -756,6 +761,13 @@ class WalletCopy:
                 ORDER BY a.source_ts ASC LIMIT ?""",
             (oldest, now-90, *wallets, limit))]
 
+    async def fast(self,row):
+        """A fill handed over by the fast lane (main process), judged at its arrival."""
+        try:
+            await self.process(row,shadow=False)
+        except Exception as error:
+            log.warning('qualifier fast: %s',str(error)[:200])
+
     async def process(self,row,shadow=True,sell_proportion=None):
         await self._process(row,sell_proportion=sell_proportion)
         if shadow:
@@ -910,9 +922,15 @@ class WalletCopy:
                 self.reason(row,'COPY_PAUSED');return {'stop':True}
             if not re.fullmatch(r'(btc|eth)-updown-(5m|15m)-\d+',str(event.get('slug',''))):
                 self.reason(row,'UNSUPPORTED_MARKET');return {'stop':True}
+            if kind=='BUY' and roster_state in ('paper_test','paper_active'):
+                # Judged at arrival from the fast lane; a polled row is judged now.
+                age=float(row.get('_as_of') or now)-float(row['source_ts'])
+                if age>MAX_BUY_AGE_S:
+                    self.reason(row,'SOURCE_TOO_OLD',{'buy_age_s':round(age,3),'limit_s':MAX_BUY_AGE_S});return {'stop':True}
             return {'stop':False,'queued_at':queued_at,'event':event,'kind':kind,
                     'source_note':source_note,'wallet':wallet,'key':key,
-                    'late_recovery':late_recovery}
+                    'late_recovery':late_recovery,
+                    'roster_state':roster_state if kind=='BUY' else None}
         except Exception as error:
             self.reason(row,'ERROR',{'error':str(error)[:400]})
             return {'stop':True}
@@ -925,11 +943,16 @@ class WalletCopy:
         queued_at=gate['queued_at'];event=gate['event'];kind=gate['kind']
         source_note=gate['source_note'];wallet=gate['wallet'];key=gate['key']
         late=bool(gate.get('late_recovery'))
+        roster_state=gate.get('roster_state')
         try:
             slug=str(event['slug'])
-            from .hot_path import COPY
-            raw=await asyncio.get_running_loop().run_in_executor(
-                COPY, self.fetch, 'https://gamma-api.polymarket.com/markets/slug/'+quote(slug,safe=''))
+            from .hot_path import COPY, cached_terms, remember_terms
+            # Market terms change rarely; a 30 s cache keeps the 1 s rule reachable.
+            raw=cached_terms(slug,30.0,self.clock())
+            if raw is None:
+                raw=await asyncio.get_running_loop().run_in_executor(
+                    COPY, self.fetch, 'https://gamma-api.polymarket.com/markets/slug/'+quote(slug,safe=''))
+                remember_terms(slug,raw,self.clock())
             m=market_spec(raw,event,self.clock())
             with self.store.connect() as db:
                 held=self.positions(db)
@@ -957,6 +980,9 @@ class WalletCopy:
                 if why:self.reason(row,why);return
             t_book=self.clock();decision=await self.book(m['token']);at=self.clock()
             decision_stage=dict(getattr(self, '_book_stage', {}) or {})
+            if kind=='BUY' and roster_state in ('paper_test','paper_active') and at-float(row['source_ts'])>MAX_BUY_AGE_S:
+                self.reason(row,'SOURCE_TOO_OLD',{'buy_age_s':round(at-float(row['source_ts']),3),'limit_s':MAX_BUY_AGE_S,
+                                                  'late_at':'decision_book'});return
             await self.sleep(.25)
             arrival=await self.book(m['token'])
             arrival_stage=dict(getattr(self, '_book_stage', {}) or {})
