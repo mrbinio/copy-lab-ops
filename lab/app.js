@@ -511,8 +511,18 @@ function fillProfitBank(s){
     card.append(node('div',bank.reserved_micro==null?missing():money(Number(bank.reserved_micro)/1e6),'bank-amount'));
     const L=bank.ledgers||{};
     const grid=node('div',undefined,'bank-grid');
+    const desk=(s.mitch_copy||{}).desk;
+    if(desk){
+      // Mitch's desk: one 500 for all his wallets; above 500 goes to the reserve at the win.
+      const box=node('div',undefined,'bank-ledger');
+      box.append(node('b','Mitch: '+money((Number(bank.mitch_reserved_micro)||0)/1e6)));
+      box.append(node('span','z biurka (wszystko ponad 500) '+money((desk.swept_micro||0)/1e6)+' · sprzed biurka (40%) '+money((desk.reserve_before_micro||0)/1e6)));
+      box.append(node('span','biurko teraz '+money((desk.money_micro||0)/1e6)+' z 500 · wynik od startu biurka '+money((desk.realized_micro||0)/1e6,true)));
+      box.append(node('span',(desk.money_micro||0)<(desk.line_micro||0)?'do rezerwy trafi coś dopiero, gdy biurko wróci ponad 500 (brakuje '+money(((desk.line_micro||0)-(desk.money_micro||0))/1e6)+')':'na linii 500: każdy plus idzie w całości do rezerwy'));
+      grid.append(box);
+    }
     for(const [name,l] of [['Mitch',L.mitch_accounts],['Portfele',L.wallet_copy_accounts]]){
-      if(!l)continue;
+      if(!l||(name==='Mitch'&&desk))continue;
       const box=node('div',undefined,'bank-ledger');
       const gap=(l.peak_micro||0)-(l.realized_micro||0);
       box.append(node('b',name+': '+money((l.reserved_micro||0)/1e6)));
@@ -521,7 +531,7 @@ function fillProfitBank(s){
       grid.append(box);
     }
     card.append(grid);
-    card.append(node('p','Jak to działa: gdy wynik księgi bije swój rekord, 40% tej nadwyżki idzie do rezerwy i już tam zostaje. Wygrana, która tylko odrabia wcześniejszą stratę, nic nie dodaje. Na LIVE rezerwa będzie przenoszona na osobny portfel, z którego się nie handluje.','bank-note'));
+    card.append(node('p','Jak to działa: Mitch (jak u niego) — biurko ma 500 USD; gdy okno wygra i biurko przekroczy 500, cała nadwyżka idzie do rezerwy i tam zostaje, nawet jeśli potem biurko traci. Portfele — 40% z każdego nowego rekordu wyniku. Rezerwa to zysk odłożony, a nie wynik: wynik netto to biurko + rezerwa − 500. Na LIVE rezerwa będzie przenoszona na osobny portfel, z którego się nie handluje.','bank-note'));
     el.append(card);
   }
 }

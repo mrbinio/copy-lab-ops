@@ -567,6 +567,19 @@ class MitchBookTests(unittest.TestCase):
         self.assertFalse(pre['stop'])
         self.assertEqual(pre['basis'], 'source_subsecond')
 
+    def test_a_fast_fill_is_judged_at_arrival_not_after_the_database_wait(self):
+        # 11 Oct 2026: the write lock held fast fills 2-5 s. Arrival decides.
+        self.store.set('mitch_copy_start', {'at': self.engine.clock() - 60, 'spec': 'mitch-copy-wallets-v1'})
+        event = dict(self.event(10), _source='clob_match', _ts_basis='match')
+        now = self.engine.clock()
+        row = {'wallet': FIRST, 'event_key': 'match-slow-db', 'body': json.dumps(event),
+               'source_ts': now - 0.4, 'first_seen': now + 3, '_as_of': now}
+        self.engine.clock = lambda: now + 3
+        pre = self.engine._prefilter(row, 0)
+        self.assertFalse(pre['stop'])
+        row = dict(row, event_key='match-really-late', _as_of=now + 1)
+        self.assertTrue(self.engine._prefilter(row, 0)['stop'])
+
     def test_a_receipt_timed_by_our_own_detection_cannot_buy(self):
         event = dict(self.event(10), _source='order_filled', _ts_basis='local_detect')
         now = self.engine.clock()

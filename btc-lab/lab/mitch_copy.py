@@ -1228,15 +1228,33 @@ class MitchCopy:
                 self.anchor_source(db, wallet, token, size, as_of=now)
 
     async def submit_fast(self, wallet, body, detected_at):
-        """A fill read from the pending exchange transaction. Decide now."""
+        """A fill read from the pending exchange transaction. Decide now.
+
+        11 Oct 2026: the age check and the book read happen on arrival. The
+        writes behind them waited 2-5 s on the database lock overnight
+        (lock wait p90 2 s, max 7 s), and 1,600 of his buys came out late.
+        """
         from .fast_match import insert_row
         from .hot_path import MITCH
         if wallet not in WALLETS:
             return
+        arrived = self.clock()
+        early = None
+        if body.get('side') == 'BUY' and str(body.get('slug') or '').startswith('btc-updown-15m-') \
+                and arrived - float(body.get('timestamp') or 0) <= MAX_BUY_AGE:
+            early = asyncio.ensure_future(self._early_book(body))
         loop = asyncio.get_running_loop()
         row = await loop.run_in_executor(MITCH, insert_row, self.store, wallet, body, detected_at)
         if row:
-            await self.handle(row, pool=MITCH)
+            row['_as_of'] = arrived
+            await self.handle(row, pool=MITCH, early=early)
+        elif early is not None:
+            early.cancel()
+
+    async def _early_book(self, event):
+        started = time.monotonic()
+        checked, terms = await asyncio.gather(self._book(str(event.get('asset') or '')), self._terms(event))
+        return checked, terms, started, time.monotonic(), self.clock()
 
     async def run(self):
         from .hot_path import DB
@@ -1384,7 +1402,9 @@ class MitchCopy:
         else:
             basis = 'source_second'
         clock = self.store.get('clock_status') or {}
-        age = self.clock() - float(row['source_ts'])
+        # A fast-lane fill is judged at its arrival; the database write after
+        # it can wait seconds on the shared lock and is only bookkeeping.
+        age = float(row.get('_as_of') or self.clock()) - float(row['source_ts'])
         if event['side'] == 'BUY' and event.get('_ts_basis') == 'local_detect':
             with self.store.connect() as db:
                 db.execute('BEGIN IMMEDIATE')
@@ -1567,26 +1587,35 @@ class MitchCopy:
                 fee_rate=terms['fee_rate'], fee_verified=True,
             )
 
-    async def handle(self, row, pool=None):
+    async def handle(self, row, pool=None, early=None):
         from .hot_path import DB
         pool = pool or DB
         queued = time.monotonic()
         pre = await asyncio.get_running_loop().run_in_executor(pool, self._prefilter, row, queued)
         if not pre or pre.get('stop'):
+            if early is not None:
+                early.cancel()
             if pre and pre.get('prefetch'):
                 await self._book(str(pre['event'].get('asset') or ''))
             return
-        book_started = time.monotonic()
-        checked, terms = await asyncio.gather(
-            self._book(str(pre['event'].get('asset') or '')),
-            self._terms(pre['event']),
-        )
+        decided = None
+        if early is not None:
+            # The book read on arrival is the decision; it stays honest even
+            # when the bookkeeping write waits on the database lock.
+            checked, terms, book_started, book_done, decided = await early
+        else:
+            book_started = time.monotonic()
+            checked, terms = await asyncio.gather(
+                self._book(str(pre['event'].get('asset') or '')),
+                self._terms(pre['event']),
+            )
+            book_done = time.monotonic()
         self._note_book(pre, checked)
-        book_done = time.monotonic()
         stage = {}
         if isinstance(checked, dict):
             stage = checked.pop('_stage', None) or {}
-        pre['decided_at'] = self.clock()
+        pre['decided_at'] = decided or self.clock()
+        pre['recorded_queue_s'] = round(self.clock() - float(row.get('_as_of') or self.clock()), 3)
         db_submitted = time.perf_counter()
         await asyncio.get_running_loop().run_in_executor(
             pool, self._finish, pre, checked, terms, book_started, book_done, stage, db_submitted,
