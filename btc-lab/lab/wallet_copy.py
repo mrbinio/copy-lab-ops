@@ -45,6 +45,7 @@ MAX_BUY_AGE_S=1.0
 FAST_PATH_GRACE_S=5
 SLOW_LANE_PAUSE_S=3
 UPKEEP_EVERY_S=90
+REASON_SCAN_EVERY_S=300
 # Fast-lane rows get their own threads. 11 Oct 2026: they reached the
 # qualifier 0.13 s after the trade but waited 9 s (median) behind ~3 paused
 # or observed rows a second in the shared database thread.
@@ -486,6 +487,10 @@ class WalletCopy:
               CREATE INDEX IF NOT EXISTS skip_review_shadow ON wallet_copy_skip_reviews(json_extract(body,'$.shadow.status'), checked, end);
               CREATE TABLE IF NOT EXISTS wallet_copy_accounts(wallet TEXT PRIMARY KEY,cash INTEGER NOT NULL);
               CREATE TABLE IF NOT EXISTS wallet_copy_events(wallet TEXT,event_key TEXT,ts REAL,reason TEXT,body TEXT,PRIMARY KEY(wallet,event_key));
+              -- 12 Oct 2026: latest decision per wallet, errors and recent rows scanned ~500,000 events.
+              CREATE INDEX IF NOT EXISTS copy_events_wallet_ts ON wallet_copy_events(wallet, ts);
+              CREATE INDEX IF NOT EXISTS copy_events_reason_ts ON wallet_copy_events(reason, ts);
+              CREATE INDEX IF NOT EXISTS copy_events_ts ON wallet_copy_events(ts);
               CREATE TABLE IF NOT EXISTS wallet_copy_positions(id TEXT PRIMARY KEY,wallet TEXT,body TEXT);
               CREATE TABLE IF NOT EXISTS wallet_copy_ledger(id TEXT PRIMARY KEY,wallet TEXT,amount INTEGER NOT NULL);
             ''')
@@ -554,7 +559,9 @@ class WalletCopy:
                     trades=len(rows),settled=len(closed),wins=sum(t['pnl_micro']>0 for t in closed),curve=curve[-100:],
                     max_drawdown_usd=dd/1e6,independent_windows=len({t['market'] for t in closed}),
                     current_block=self.risk_reason(db,wallet,now,trades=trades),last_reason=cached[1] if cached else 'NO_NEW_SOURCE_TRADE',last_decision_at=cached[0] if cached else None))
-            if now-self._scan_at>=30 or not self._scan:
+            # The reason counts group every decision ever made (2.3 s); the
+            # board shows them, nothing decides on them.
+            if now-self._scan_at>=REASON_SCAN_EVERY_S or not self._scan:
                 reasons=[dict(r) for r in db.execute('SELECT wallet,reason,COUNT(*) AS count FROM wallet_copy_events GROUP BY wallet,reason')]
                 recent=[]
                 for r in db.execute('SELECT wallet,event_key,ts,reason,body FROM wallet_copy_events ORDER BY ts DESC,rowid DESC LIMIT 30'):
