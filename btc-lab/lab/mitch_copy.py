@@ -391,12 +391,15 @@ class MitchCopy:
         if not price_allows(best, paid):
             return 'PRICE_WORSE_THAN_10C', None
         limit = min(Decimal('0.999999'), paid + PRICE_WORSE)
+        # When the cap cut the budget, a fill that cannot be made is the
+        # window's remainder under the market minimum, not missing liquidity.
+        empty = 'WINDOW_LIMIT' if budget < wanted else 'NO_LIQUIDITY'
         try:
             fill = simulate_fill(asks, str(budget), str(limit), str(rate), str(min_shares), str(tick))
         except ValueError:
-            return 'NO_LIQUIDITY', None
+            return empty, None
         if not fill:
-            return 'NO_LIQUIDITY', None
+            return empty, None
         if not price_allows(fill['vwap'], paid):
             return 'PRICE_WORSE_THAN_10C', None
         debit = int(fill['cost']) + int(fill['fee'])

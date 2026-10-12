@@ -622,6 +622,11 @@ class MitchBookTests(unittest.TestCase):
         self.assertIsNone(why)
         self.assertLessEqual(int(fill['cost']) + int(fill['fee']), 1_200_000)
 
+    def test_a_remainder_under_the_market_minimum_is_a_window_limit(self):
+        event = self.event(30, '0.50')
+        why, _fill = self.engine.plan_buy(event, asks('0.50'), '0.07', '0.01', '5', 100_000)
+        self.assertEqual(why, 'WINDOW_LIMIT')
+
     def test_a_receipt_timed_by_our_own_detection_cannot_buy(self):
         event = dict(self.event(10), _source='order_filled', _ts_basis='local_detect')
         now = self.engine.clock()
