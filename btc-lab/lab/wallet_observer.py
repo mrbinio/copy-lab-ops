@@ -191,6 +191,7 @@ def merge_activity_body(existing_body, row):
 
 
 MERGE_WINDOW_S = 600
+STATUS_EVERY_S = 30
 
 
 class WalletObserver:
@@ -336,7 +337,15 @@ class WalletObserver:
         # the qualifier's 200-350% CPU). The pages run newest first, so after
         # one pass the cursor moves to now; the older gap is recorded.
         gap = None if complete else {'before': oldest, 'since': start}
-        self.store.set(key,dict(wallet=wallet,status='POLL_OK' if complete else 'INCOMPLETE_PAGE_LIMIT',
+        status = 'POLL_OK' if complete else 'INCOMPLETE_PAGE_LIMIT'
+        # A status write per poll of every wallet was most of the qualifier's
+        # writes. It is written when something changed, or every 30 s so the
+        # freshness checks (120 s) still see it.
+        last = self.__dict__.setdefault('_status_written', {}).get(wallet)
+        if not added and last and last[1]==status and time.time()-last[0]<STATUS_EVERY_S:
+            return
+        self._status_written[wallet] = (time.time(), status)
+        self.store.set(key,dict(wallet=wallet,status=status,
             checked_at=time.time(),last_event_at=newest,unique_fingerprints=count,new_rows=added,
             cursor=end, history_gap=gap or previous.get('history_gap'),
             source='DATA_API_V2_INDEXED_ONCHAIN',poll_seconds=1,history_complete=False,

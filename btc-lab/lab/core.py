@@ -162,6 +162,10 @@ class Store:
         db = sqlite3.connect(self.path, timeout=10)
         db.row_factory = sqlite3.Row
         db.execute("PRAGMA busy_timeout=10000")
+        # WAL with synchronous=NORMAL stays consistent; only the last commits
+        # can be lost on a power cut. FULL fsynced every commit, which drove
+        # the disk, kernel_task and fseventsd (12 Oct 2026).
+        db.execute("PRAGMA synchronous=NORMAL")
         started = time.perf_counter()
         try:
             yield db
