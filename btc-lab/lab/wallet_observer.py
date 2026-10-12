@@ -192,6 +192,8 @@ def merge_activity_body(existing_body, row):
 
 MERGE_WINDOW_S = 600
 STATUS_EVERY_S = 30
+POLL_OVERLAP_S = 60
+COPY_POLL_S = 2
 
 
 class WalletObserver:
@@ -309,7 +311,9 @@ class WalletObserver:
         """
         key = 'wallet_observer:'+wallet
         end = int(time.time())
-        start = max(0,int(previous.get('cursor',end-86400))-120)
+        # 60 s of overlap covers the public list's indexing delay; 120 s made
+        # every 1 s poll re-read two minutes of fills (12 Oct 2026).
+        start = max(0,int(previous.get('cursor',end-86400))-POLL_OVERLAP_S)
         added = 0
         complete = False
         newest = previous.get('last_event_at')
@@ -366,11 +370,13 @@ class WalletObserver:
         (the fast lane already has their fills in ~0.4 s); paused ones, whose
         results decide a return, 5 s; observed ones 15 s."""
         from .mitch_copy import WALLETS as MITCH
+        # Their buys come on the fast lane (~0.3 s); this poll is the backup
+        # for public-list rows and sells.
         if wallet in MITCH:
-            return 1
+            return COPY_POLL_S
         state=((self.store.get('wallet_roster') or {}).get('wallets') or {}).get(wallet,{}).get('state')
         if state in ('paper_test','paper_active'):
-            return 1
+            return COPY_POLL_S
         # 11 Oct 2026 night: the fan kept Damian awake; 5/15 s still cost
         # 3 cores. Paused 15 s, observed 60 s (no copies come from either).
         return 15 if state=='paused' else 60

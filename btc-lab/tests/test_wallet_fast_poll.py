@@ -21,12 +21,12 @@ class FastPollTests(unittest.IsolatedAsyncioTestCase):
         obj.poll=poll
         with patch('lab.wallet_observer.time.monotonic',return_value=0),patch('lab.wallet_observer.asyncio.sleep',sleep):
             with self.assertRaises(asyncio.CancelledError):await obj.run_wallet('wallet')
-        self.assertEqual(delays,[2,4,1])
+        self.assertEqual(delays,[2,4,2])
 
 
 class PollEveryTests(unittest.TestCase):
     def test_copied_wallets_keep_one_second_others_poll_slower(self):
         obj=object.__new__(WalletObserver);obj.store=Memory()
         obj.store.data['wallet_roster']={'wallets':{'a':{'state':'paper_test'},'b':{'state':'paused'},'c':{'state':'observed'}}}
-        self.assertEqual([obj.poll_every(w) for w in 'abc'],[1,15,60])
-        self.assertEqual(obj.poll_every('0x943cea746e701823b6902a6f4eaeed58207e77c2'),1)
+        self.assertEqual([obj.poll_every(w) for w in 'abc'],[2,15,60])
+        self.assertEqual(obj.poll_every('0x943cea746e701823b6902a6f4eaeed58207e77c2'),2)
