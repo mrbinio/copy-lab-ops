@@ -116,6 +116,12 @@ def _policy_view(db, wallet, now, meta):
     }
 
 
+# Last buy per wallet, kept across refreshes; each refresh reads only the
+# recent window (the first one reads a week).
+LAST_BUY = {}
+LAST_BUY_WINDOW_S = 900
+
+
 def summarize_wallet(db, wallet, roster_row, observer, now, meta=None):
     """One wallet. Counts are None until the matching table was read."""
     roster_row = roster_row or {}
@@ -173,17 +179,21 @@ def summarize_wallet(db, wallet, roster_row, observer, now, meta=None):
             ]
     activity_count = last_source_at = last_buy_at = None
     if _table(db, 'wallet_activity'):
-        activity = db.execute(
-            'SELECT COUNT(*), MAX(source_ts) FROM wallet_activity WHERE wallet=?',
-            (wallet,),
-        ).fetchone()
-        activity_count = int(activity[0] or 0)
-        last_source_at = activity[1]
-        last_buy_at = db.execute(
-            """SELECT MAX(source_ts) FROM wallet_activity
-               WHERE wallet=? AND json_extract(body,'$.side')='BUY'""",
-            (wallet,),
-        ).fetchone()[0]
+        # 12 Oct 2026: COUNT and MAX over each wallet's whole history, and a
+        # JSON parse of every row for the last buy, read millions of rows
+        # every refresh. The observer already keeps the count and the last
+        # event; the last buy comes from one recent-window scan (LAST_BUY).
+        if observer and observer.get('unique_fingerprints') is not None:
+            activity_count = int(observer.get('unique_fingerprints') or 0)
+            last_source_at = observer.get('last_event_at')
+        else:
+            activity = db.execute(
+                'SELECT COUNT(*), MAX(source_ts) FROM wallet_activity WHERE wallet=?',
+                (wallet,),
+            ).fetchone()
+            activity_count = int(activity[0] or 0)
+            last_source_at = activity[1]
+        last_buy_at = LAST_BUY.get(wallet)
     last_reason = last_decision_at = None
     if _table(db, 'wallet_copy_events'):
         last = db.execute(
@@ -299,6 +309,15 @@ def build_watch(store, now):
             marks = ','.join('?' * len(keys))
             for row in db.execute(f'SELECT key, body FROM state WHERE key IN ({marks})', keys):
                 observers[row['key']] = json.loads(row['body'])
+        if _table(db, 'wallet_activity'):
+            since = now - LAST_BUY_WINDOW_S if LAST_BUY else now - 7 * 86400
+            hint = ' INDEXED BY wallet_activity_seen' if db.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='index' AND name='wallet_activity_seen'").fetchone() else ''
+            for wallet, at in db.execute(
+                    f"""SELECT wallet, MAX(source_ts) FROM wallet_activity{hint}
+                       WHERE first_seen>=? AND json_extract(body,'$.side')='BUY' GROUP BY wallet""", (since,)):
+                if at and (LAST_BUY.get(wallet) or 0) < at:
+                    LAST_BUY[wallet] = at
         for wallet in names:
             out[wallet] = summarize_wallet(
                 db, wallet, roster.get(wallet), observers.get('wallet_observer:' + wallet), now, meta

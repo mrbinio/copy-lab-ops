@@ -56,14 +56,16 @@ def due_rows(store, meta, now, limit=4):
     marks = ','.join('?' * len(wallets))
     with store.connect() as db:
         ensure_schema(db)
+        # The time index reads the last 90 s. The wallet key walked the whole
+        # history of ~117 wallets: 10.5 s of disk reads per call (12 Oct 2026).
         return [dict(row) for row in db.execute(
-            f'''SELECT a.* FROM wallet_activity a
+            f'''SELECT a.* FROM wallet_activity a INDEXED BY wallet_activity_seen
                 LEFT JOIN wallet_observation_events e
                   ON a.wallet=e.wallet AND a.event_key=e.event_key
                 WHERE e.event_key IS NULL AND a.wallet IN ({marks})
                   AND a.source_ts>=? AND a.first_seen>=?
                 ORDER BY a.first_seen DESC LIMIT ?''',
-            (*wallets, fresh, started, limit),
+            (*wallets, fresh, max(started, fresh), limit),
         )]
 
 
