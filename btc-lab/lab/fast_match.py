@@ -27,6 +27,7 @@ from .match_decoder import decode_match, wallet_fills
 LOG = logging.getLogger('btc-lab.fast')
 PUBLIC_RPC = ('https://rpc-polygon.blockmachine.io', 'https://polygon.drpc.org')
 RESOLVE_DEADLINE = 0.6
+PRIORITY_DEADLINE = 0.9
 RETRY_EVERY = 0.04
 MAX_INFLIGHT = 48
 RPC_POOL = ThreadPoolExecutor(max_workers=12, thread_name_prefix='lab-fast')
@@ -196,7 +197,10 @@ class FastMatch:
                 task.cancel()
 
     async def resolve(self, tx, match_ts, arrived, pool=RPC_POOL):
-        deadline = arrived + RESOLVE_DEADLINE
+        # Mitch's BTC 15m prints get longer: a tx found at 0.8 s still lands
+        # inside his 1 s rule. 12 Oct 2026: 16 of his 37 late night buys were
+        # prints given up at 0.6 s.
+        deadline = arrived + (PRIORITY_DEADLINE if pool is PRIORITY_POOL else RESOLVE_DEADLINE)
         found = await self._race(tx, deadline, pool)
         if not found:
             self.counts['missed'] += 1
