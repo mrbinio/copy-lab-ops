@@ -59,6 +59,7 @@ BRAKE_SAMPLE = 30
 IDLE_POLL_S = 0.25
 QUEUE_LOOKBACK_S = 86400
 HISTORY_EVERY_S = 30
+FAST_PATH_GRACE_S = 3
 BRAKE_ON_BELOW = 0.60
 BRAKE_OFF_AT = 0.75
 BRAKE_LOOKBACK_S = 2 * 3600
@@ -939,10 +940,13 @@ class MitchCopy:
         base = self._unseen_sql(marks)
         fresh_cut = now - 90
         # A fresh row was stored after his trade, so the index range is short.
+        # A fresh fast-lane fill belongs to submit_fast (judged on arrival).
+        # Polling it first judged it late and its mark then blocked the fast
+        # decision (13 Oct 2026: most of his late buys, stored in 0.2-0.5 s).
         fresh = [dict(r) for r in db.execute(
             base + ' AND a.source_ts>=? ORDER BY a.source_ts ASC, a.first_seen ASC LIMIT 8',
             (max(start, fresh_cut - 30), *WALLETS, fresh_cut),
-        )]
+        ) if not (now - float(r['first_seen']) < FAST_PATH_GRACE_S and '"clob_match"' in str(r['body'] or ''))]
         # History scans the day; it is read every HISTORY_EVERY_S, or at
         # once again while it still has rows to drain.
         history = []

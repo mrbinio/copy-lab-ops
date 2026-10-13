@@ -627,6 +627,18 @@ class MitchBookTests(unittest.TestCase):
         why, _fill = self.engine.plan_buy(event, asks('0.50'), '0.07', '0.01', '5', 100_000)
         self.assertEqual(why, 'WINDOW_LIMIT')
 
+    def test_the_poll_leaves_a_fresh_fast_lane_fill_to_the_fast_path(self):
+        now = self.engine.clock()
+        self.store.set('mitch_copy_start', {'at': now - 60, 'spec': 'mitch-copy-wallets-v1'})
+        body = json.dumps(dict(self.event(10), _source='clob_match', timestamp=now - 0.3))
+        with self.store.connect() as db:
+            db.execute('CREATE TABLE IF NOT EXISTS wallet_activity (wallet TEXT, event_key TEXT, first_seen REAL, '
+                       'source_ts REAL, body TEXT, PRIMARY KEY(wallet,event_key))')
+            db.execute('CREATE INDEX IF NOT EXISTS wallet_activity_seen ON wallet_activity(first_seen)')
+            db.execute('INSERT INTO wallet_activity VALUES (?,?,?,?,?)', (FIRST, 'fresh-fast', now - 0.1, now - 0.3, body))
+            self.assertEqual([r['event_key'] for r in self.engine.pending(db, now)], [])
+            self.assertEqual([r['event_key'] for r in self.engine.pending(db, now + 4)], ['fresh-fast'])
+
     def test_a_receipt_timed_by_our_own_detection_cannot_buy(self):
         event = dict(self.event(10), _source='order_filled', _ts_basis='local_detect')
         now = self.engine.clock()
