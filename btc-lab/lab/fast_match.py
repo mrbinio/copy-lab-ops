@@ -29,8 +29,8 @@ PUBLIC_RPC = ('https://rpc-polygon.blockmachine.io', 'https://polygon.drpc.org')
 RESOLVE_DEADLINE = 0.6
 PRIORITY_DEADLINE = 0.9
 RETRY_EVERY = 0.04
-MAX_INFLIGHT = 48
-RPC_POOL = ThreadPoolExecutor(max_workers=12, thread_name_prefix='lab-fast')
+MAX_INFLIGHT = 96  # 13 Oct 2026: 48 dropped ~2% of prints at peaks (not BTC 15m)
+RPC_POOL = ThreadPoolExecutor(max_workers=16, thread_name_prefix='lab-fast')
 # Mitch trades only BTC 15m. Since 10 Oct the lane also reads ETH and 5m
 # prints for the qualifier; those must not queue in front of his.
 PRIORITY_POOL = ThreadPoolExecutor(max_workers=16, thread_name_prefix='lab-fast-btc15')
