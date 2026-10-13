@@ -31,19 +31,23 @@
   },
   "dead_pl": [
     "lucidarderi · SPORTS · jeden event / veto",
-    "S55 · ECONOMICS · jeden event / veto"
+    "bbb17367162806 · SPORTS · jeden event / veto",
+    "S55 · ECONOMICS · jeden event / veto",
+    "askilika · SPORTS · jeden event / veto"
   ],
   "dead_en": [
     "lucidarderi · SPORTS · jeden event / veto",
-    "S55 · ECONOMICS · jeden event / veto"
+    "bbb17367162806 · SPORTS · jeden event / veto",
+    "S55 · ECONOMICS · jeden event / veto",
+    "askilika · SPORTS · jeden event / veto"
   ],
-  "error": "http 401 claude-sonnet-5 {\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"invalid x-api-key\"},\"request_id\":\"req_011Cfz6RPKXAMKqVXusfTPpj\"}",
-  "updated_at": "2026-10-13T10:40:22.331184+00:00",
-  "hunt_updated_at": "2026-10-13T10:40:22.173418+00:00",
+  "error": "http 401 claude-sonnet-5 {\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"invalid x-api-key\"},\"request_id\":\"req_011CfznLty1ApGPKwHNArUFZ\"}",
+  "updated_at": "2026-10-13T19:23:54.310823+00:00",
+  "hunt_updated_at": "2026-10-13T19:23:54.134964+00:00",
   "x_source": "error",
   "x_model": null,
   "x_error": "http 403 grok-4.6 {\"code\":\"permission-denied\",\"error\":\"Your newly created team doesn't have any credits or licenses yet. You can purchase those on https://conso",
   "x_pl": "Filtr X: błąd API. Zostają sity. Copy off.",
   "x_en": "X filter: API error. Gates stand. Copy off.",
-  "x_updated_at": "2026-10-13T10:40:22.490410+00:00"
+  "x_updated_at": "2026-10-13T19:23:54.467257+00:00"
 }
