@@ -832,6 +832,14 @@ class WalletCopy:
         try:
             event=json.loads(row['body']) if isinstance(row.get('body'),str) else {}
             token=str(event.get('asset') or '')
+            # A buy already past the 1 s rule on arrival is refused by the gate
+            # anyway; reading two books for it was 80% of this path's work
+            # (660 of 822 fills an hour on 13 Oct) and slowed Mitch's lane.
+            stale=event.get('side')=='BUY' and float(row.get('_as_of') or self.clock())-float(row['source_ts'])>MAX_BUY_AGE_S
+            if stale:
+                # Left to the qualifier's own poll after FAST_PATH_GRACE_S; it
+                # records SOURCE_TOO_OLD and the source book there.
+                return
             if token and event.get('type')=='TRADE' and event.get('side') in ('BUY','SELL'):
                 try:
                     t_book=self.clock();decision=await self.book(token,FAST_BOOK);at=self.clock()
