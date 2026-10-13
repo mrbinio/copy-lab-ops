@@ -46,6 +46,8 @@ FAST_PATH_GRACE_S=5
 SLOW_LANE_PAUSE_S=3
 UPKEEP_EVERY_S=90
 REASON_SCAN_EVERY_S=300
+COMPACT_REASONS=('COPY_PAUSED','PAUSED','NOT_IN_COPY_ROSTER','UNSUPPORTED_MARKET','NOT_BUY_OR_SELL',
+                 'PRE_ACTIVATION','QUALIFIER_BUYS_OFF','SOURCE_IDENTITY_MISMATCH')
 # Fast-lane rows get their own threads. 11 Oct 2026: they reached the
 # qualifier 0.13 s after the trade but waited 9 s (median) behind ~3 paused
 # or observed rows a second in the shared database thread.
@@ -612,9 +614,18 @@ class WalletCopy:
             decision_at=now,detection_delay=row['first_seen']-row['source_ts'],decision_delay=now-row['source_ts'],
             policy=POLICY,reason=reason,decision_book=None)
         evidence.update(extra or {})
+        stored=evidence
+        if reason in COMPACT_REASONS:
+            # 13 Oct 2026: ~290,000 decisions a day at ~1.2 KB grew the database
+            # ~1.5-2 GB a day. These reasons never copy; the full evidence of a
+            # BTC/ETH buy stays in its skip review below.
+            source={k:event.get(k) for k in ('slug','side','type','price','size','asset','transactionHash','timestamp')}
+            stored={'reason':reason,'policy':POLICY,'decision_at':now,'source_timestamp':row['source_ts'],
+                    'first_seen':row['first_seen'],'source_event':source}
+            stored.update({k:v for k,v in (extra or {}).items() if k in ('error','buy_age_s','limit_s')})
         with self.store.connect() as db:
             db.execute('UPDATE wallet_copy_events SET reason=?,body=? WHERE wallet=? AND event_key=?',
-                (reason,json.dumps(evidence,allow_nan=False),row['wallet'],row['event_key']))
+                (reason,json.dumps(stored,allow_nan=False),row['wallet'],row['event_key']))
             self._last_decision[row['wallet']]=(now, reason)
             match=re.fullmatch(r'(btc|eth)-updown-(5m|15m)-(\d+)',str(event.get('slug','')))
             if (match and event.get('type')=='TRADE' and event.get('side')=='BUY'
