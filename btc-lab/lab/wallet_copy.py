@@ -487,6 +487,7 @@ class WalletCopy:
               -- 11 Oct 2026: without these the due-review select parsed ~300,000 bodies (1.85 s) each pass.
               CREATE INDEX IF NOT EXISTS skip_review_due ON wallet_copy_skip_reviews(checked, end);
               CREATE INDEX IF NOT EXISTS skip_review_shadow ON wallet_copy_skip_reviews(json_extract(body,'$.shadow.status'), checked, end);
+              CREATE INDEX IF NOT EXISTS skip_review_end ON wallet_copy_skip_reviews(end);
               CREATE TABLE IF NOT EXISTS wallet_copy_accounts(wallet TEXT PRIMARY KEY,cash INTEGER NOT NULL);
               CREATE TABLE IF NOT EXISTS wallet_copy_events(wallet TEXT,event_key TEXT,ts REAL,reason TEXT,body TEXT,PRIMARY KEY(wallet,event_key));
               -- 12 Oct 2026: latest decision per wallet, errors and recent rows scanned ~500,000 events.
@@ -814,12 +815,12 @@ class WalletCopy:
                 LEFT JOIN wallet_copy_events e
                 ON a.wallet=e.wallet AND a.event_key=e.event_key
                 WHERE e.event_key IS NULL
+                  AND a.wallet IN ({marks}) AND a.first_seen>=?
+                  AND a.source_ts>=? AND a.source_ts<?
                   AND json_extract(a.body,'$.side')='SELL'
                   AND json_extract(a.body,'$.type')='TRADE'
-                  AND a.source_ts>=? AND a.source_ts<?
-                  AND a.wallet IN ({marks})
                 ORDER BY a.source_ts ASC LIMIT ?""",
-            (oldest, now-90, *wallets, limit))]
+            (*wallets, oldest, oldest, now-90, limit))]
 
     async def fast(self,row):
         """A fill handed over by the fast lane, judged at its arrival.

@@ -203,6 +203,8 @@ class WalletObserver:
         with store.connect() as db:
             db.execute('CREATE TABLE IF NOT EXISTS wallet_activity (wallet TEXT, event_key TEXT, first_seen REAL, source_ts REAL, body TEXT, PRIMARY KEY(wallet,event_key))')
             db.execute('CREATE INDEX IF NOT EXISTS wallet_activity_seen ON wallet_activity(first_seen)')
+            # Per-wallet time range (missed-sell lookup). Built live on 13 Oct 2026.
+            db.execute('CREATE INDEX IF NOT EXISTS wallet_activity_wallet_seen ON wallet_activity(wallet, first_seen)')
         ensure_active_wallets_table(store)
 
     def ingest(self, wallet, rows, now):
