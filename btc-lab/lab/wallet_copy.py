@@ -495,6 +495,7 @@ class WalletCopy:
               CREATE INDEX IF NOT EXISTS copy_events_reason_ts ON wallet_copy_events(reason, ts);
               CREATE INDEX IF NOT EXISTS copy_events_ts ON wallet_copy_events(ts);
               CREATE TABLE IF NOT EXISTS wallet_copy_positions(id TEXT PRIMARY KEY,wallet TEXT,body TEXT);
+              CREATE INDEX IF NOT EXISTS copy_positions_wallet ON wallet_copy_positions(wallet);
               CREATE TABLE IF NOT EXISTS wallet_copy_ledger(id TEXT PRIMARY KEY,wallet TEXT,amount INTEGER NOT NULL);
             ''')
             db.execute("UPDATE wallet_copy_events SET reason='ABORTED_ON_RESTART' WHERE reason='PROCESSING'")
@@ -519,7 +520,13 @@ class WalletCopy:
         if not hasattr(store,"wallet_activity_ready"):store.wallet_activity_ready=asyncio.Event()
         self.publish('STARTED')
 
-    def positions(self,db):return [json.loads(r[0]) for r in db.execute('SELECT body FROM wallet_copy_positions')]
+    def positions(self,db,wallet=None):
+        # One wallet's rows when the caller needs one wallet. Every decision
+        # parsed all ~2,000 positions (13 Oct 2026: most of the main
+        # process's CPU and its garbage collection).
+        if wallet is not None:
+            return [json.loads(r[0]) for r in db.execute('SELECT body FROM wallet_copy_positions WHERE wallet=?',(wallet,))]
+        return [json.loads(r[0]) for r in db.execute('SELECT body FROM wallet_copy_positions')]
 
     def publish(self,status,error=None):
         now=self.clock()
@@ -685,7 +692,7 @@ class WalletCopy:
     def risk_reason(self,db,wallet,now,extra_position=True,trades=None):
         # Caller passes the positions it already loaded. Reading them again
         # once per wallet held the publish, and the screen, for minutes.
-        rows=[t for t in (self.positions(db) if trades is None else trades) if t['wallet']==wallet]
+        rows=[t for t in (self.positions(db,wallet) if trades is None else trades) if t['wallet']==wallet]
         live=sum(1 for t in rows if t['status'] in ('OPEN','RESOLVED'))
         if extra_position and live>=MAX_OPEN_POSITIONS:return 'COPY_POSITION_ALREADY_OPEN'
         roster=((self.store.get('wallet_roster') or {}).get('wallets') or {}).get(wallet) or {}
@@ -704,7 +711,7 @@ class WalletCopy:
     def risk(self,db,wallet,now,extra_position=True):return self.risk_reason(db,wallet,now,extra_position) is None
 
     def paper_pnl_micro(self,db,wallet):
-        return sum(t['pnl_micro'] for t in self.positions(db) if t['wallet']==wallet and t['status'] in ('CLOSED','SETTLED'))
+        return sum(t['pnl_micro'] for t in self.positions(db,wallet) if t['wallet']==wallet and t['status'] in ('CLOSED','SETTLED'))
 
     async def book(self,token,pool=None):
         # Two reads, a quarter-second apart. A cached book would make the arrival
@@ -1048,10 +1055,10 @@ class WalletCopy:
                 remember_terms(slug,raw,self.clock())
             m=market_spec(raw,event,self.clock())
             with self.store.connect() as db:
-                held=self.positions(db)
+                held=self.positions(db,wallet)
                 open_trade=next((t for t in held if t['wallet']==wallet and t['token']==m['token'] and t['status']=='OPEN'),None)
                 adding=kind=='BUY' and open_trade is not None
-                blocked=self.risk_reason(db,wallet,self.clock(),extra_position=not adding) if kind=='BUY' else None
+                blocked=self.risk_reason(db,wallet,self.clock(),extra_position=not adding,trades=held) if kind=='BUY' else None
                 if blocked:self.reason(row,blocked);return
                 same_market=any(t for t in held if t['wallet']==wallet and t['market']==m['slug'] and t['status'] in ('OPEN','RESOLVED'))
                 if kind=='BUY' and not adding and same_market:self.reason(row,'COPY_POSITION_ALREADY_OPEN');return
@@ -1221,7 +1228,7 @@ class WalletCopy:
             if blocked_pause:
                 self._set_copy_reason(db,wallet,key,blocked_pause,evidence)
                 return False
-            held=[t for t in self.positions(db) if t['wallet']==wallet]
+            held=[t for t in self.positions(db,wallet) if t['wallet']==wallet]
             cash=db.execute('SELECT cash FROM wallet_copy_accounts WHERE wallet=?',(wallet,)).fetchone()[0]
             reserved=reserved_of(db,'wallet_copy_accounts',wallet)
             roster=((self.store.get('wallet_roster') or {}).get('wallets') or {}).get(wallet) or {}
@@ -1251,7 +1258,7 @@ class WalletCopy:
             if current['status']!='OPEN':
                 self._set_copy_reason(db,wallet,key,'COPY_EXPOSURE_LIMIT',evidence)
                 return False
-            held=[t for t in self.positions(db) if t['wallet']==wallet and t['id']!=trade['id']]
+            held=[t for t in self.positions(db,wallet) if t['wallet']==wallet and t['id']!=trade['id']]
             held.append(current)
             cash=db.execute('SELECT cash FROM wallet_copy_accounts WHERE wallet=?',(wallet,)).fetchone()[0]
             reserved=reserved_of(db,'wallet_copy_accounts',wallet)
