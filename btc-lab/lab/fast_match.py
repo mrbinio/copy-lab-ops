@@ -29,7 +29,7 @@ PUBLIC_RPC = ('https://rpc-polygon.blockmachine.io', 'https://polygon.drpc.org')
 RESOLVE_DEADLINE = 0.6
 PRIORITY_DEADLINE = 0.9
 RETRY_EVERY = 0.04
-RETRY_EVERY_OTHER = 0.1
+RETRY_EVERY_OTHER = 0.06  # 0.1 missed ~5% of prints at 0.6 s; 0.04 queued them
 MAX_INFLIGHT = 96  # 13 Oct 2026: 48 dropped ~2% of prints at peaks (not BTC 15m)
 RPC_POOL = ThreadPoolExecutor(max_workers=16, thread_name_prefix='lab-fast')
 # Mitch trades only BTC 15m. Since 10 Oct the lane also reads ETH and 5m
@@ -182,7 +182,7 @@ class FastMatch:
                 return None
             # 13 Oct 2026: 96 prints x 2 endpoints every 40 ms queued on 16
             # threads (resolve median 90 -> 250 ms). Only Mitch's BTC 15m
-            # prints retry every 40 ms; the rest every 100 ms.
+            # prints retry every 40 ms; the rest every 60 ms.
             await self.sleep(RETRY_EVERY if pool is PRIORITY_POOL else RETRY_EVERY_OTHER)
 
     async def _race(self, tx, deadline, pool=RPC_POOL):
