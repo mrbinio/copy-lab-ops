@@ -194,6 +194,8 @@ MERGE_WINDOW_S = 600
 STATUS_EVERY_S = 30
 POLL_OVERLAP_S = 60
 COPY_POLL_S = 2
+PAUSED_POLL_S = 60
+OBSERVED_POLL_S = 180
 
 
 class WalletObserver:
@@ -379,9 +381,10 @@ class WalletObserver:
         state=((self.store.get('wallet_roster') or {}).get('wallets') or {}).get(wallet,{}).get('state')
         if state in ('paper_test','paper_active'):
             return COPY_POLL_S
-        # 11 Oct 2026 night: the fan kept Damian awake; 5/15 s still cost
-        # 3 cores. Paused 15 s, observed 60 s (no copies come from either).
-        return 15 if state=='paused' else 60
+        # 15 Oct 2026: the Mac's fan was unbearable for two days. Paused
+        # 60 s, observed 180 s (no copies come from either; a paused
+        # wallet's return is judged on minutes of results, not seconds).
+        return PAUSED_POLL_S if state=='paused' else OBSERVED_POLL_S
 
     async def run_wallet(self,wallet):
         failures=0
