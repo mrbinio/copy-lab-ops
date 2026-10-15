@@ -196,6 +196,7 @@ POLL_OVERLAP_S = 60
 COPY_POLL_S = 2
 PAUSED_POLL_S = 60
 OBSERVED_POLL_S = 180
+ROSTER_CACHE_S = 30
 
 
 class WalletObserver:
@@ -378,7 +379,14 @@ class WalletObserver:
         # for public-list rows and sells.
         if wallet in MITCH:
             return COPY_POLL_S
-        state=((self.store.get('wallet_roster') or {}).get('wallets') or {}).get(wallet,{}).get('state')
+        # The roster (~100 KB of JSON) was read and parsed before every poll of
+        # every wallet; it changes rarely, so it is kept for 30 s.
+        now=time.time()
+        cached=self.__dict__.get('_roster_cache')
+        if not cached or now-cached[0]>=ROSTER_CACHE_S:
+            states={w:(r or {}).get('state') for w,r in ((self.store.get('wallet_roster') or {}).get('wallets') or {}).items()}
+            cached=self._roster_cache=(now,states)
+        state=cached[1].get(wallet)
         if state in ('paper_test','paper_active'):
             return COPY_POLL_S
         # 15 Oct 2026: the Mac's fan was unbearable for two days. Paused
