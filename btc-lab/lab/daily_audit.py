@@ -11,7 +11,7 @@ Checks, over the last 24 hours:
   db_lock          wait for the SQLite write lock, p90 of a short sample
   restarts         watchdog restarts of the worker
   ledger           desk result equals the closed copies since the desk start
-  heartbeat        worker, qualifier process, recorder, Telegram alive
+  heartbeat        worker, qualifier process, Telegram alive (recorder when enabled)
   live_gate        real orders still disabled in code and config (PAPER)
   disk             free disk
   qualifier_speed  qualifier decisions for copying wallets (UWAGA only)
@@ -37,6 +37,7 @@ FAST_P90_MAX_S = 0.8
 LOCK_P90_MAX_MS = 500
 DISK_MIN_BYTES = 15 * 1024 ** 3
 QUALIFIER_DECIDE_MAX_S = 5
+RECORDER_EXPECTED = False
 HANDLED = ('MITCH_BUY', 'MITCH_ADD', 'WINDOW_LIMIT', 'NO_LIQUIDITY', 'PRICE_WORSE_THAN_10C',
            'DESK_CASH', 'MITCH_PAUSED', 'GLOBAL_STOP', 'PAPER_CASH', 'TECH_BRAKE')
 LATE = ('LATE_BUY_NOT_COPIED',)
@@ -157,7 +158,9 @@ def heartbeat(state, db, now):
     q = json.loads(row[0]) if row else {}
     if now - float(q.get('at') or 0) > 120:
         problems.append('proces kwalifikatora stoi')
-    if not (state.get('recorder_status') or {}).get('ok'):
+    # The research recorder was switched off on 15 Oct 2026 (study done, no
+    # edge; it kept the disk and the fan busy). Only checked when enabled.
+    if RECORDER_EXPECTED and not (state.get('recorder_status') or {}).get('ok'):
         problems.append('rejestrator')
     tg = state.get('telegram_status') or {}
     if tg and tg.get('ok') is False:
