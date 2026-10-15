@@ -1160,6 +1160,8 @@ class MitchCopy:
                     "SELECT COUNT(*) FROM mitch_events WHERE wallet=? AND reason IN ('MITCH_BUY','MITCH_ADD') AND at>=?",
                     (row['wallet'], stint_at or now),
                 ).fetchone()[0]
+            last_copy_at = db.execute(
+                "SELECT MAX(at) FROM mitch_events WHERE reason IN ('MITCH_BUY','MITCH_ADD')").fetchone()[0]
             period_events = []
             period_reasons = {}
             if stint_at is not None:
@@ -1219,6 +1221,7 @@ class MitchCopy:
             'desk_stop': pauses.get('desk_stop'),
             'period_reasons': period_reasons,
             'period_events': period_events,
+            'last_copy_at': last_copy_at,
             'journal': [{
                 'at': p.get('closed_at'), 'wallet': p.get('wallet'),
                 'slug': p.get('slug'), 'status': p.get('status'),

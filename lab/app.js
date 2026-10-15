@@ -839,7 +839,15 @@ function renderMitchFast(m){
   const net=rows.reduce((n,r)=>n+(r.period_net_micro||0),0);
   box.append(mitchMetric('Okres testu: wynik',rows.length?money(net/1e6,true):missing(),
     copies+' kopii · '+rows.reduce((n,r)=>n+(r.period_closed||0),0)+' zamkniętych',net>0?'positive':net<0?'negative':''));
-  box.append(mitchMetric('Okres testu od',st&&st.at?formatTime(st.at):missing(),
+  // 15 Oct 2026: Damian saw the same numbers for days and could not tell that
+  // Mitch's wallets simply had no BTC 15m buys to copy. Show when the last
+  // copy happened and why nothing moves.
+  const lastCopy=(m&&m.last_copy_at)||(m&&m.period_events||[]).filter(e=>e.reason==='MITCH_BUY'||e.reason==='MITCH_ADD').reduce((a,e)=>Math.max(a,e.at||0),0);
+  const day=t=>new Date(t*1000).toLocaleString('pl-PL',{timeZone:'Europe/Stockholm',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+  const stopped=m&&m.stop_active;
+  box.append(mitchMetric('Ostatnia kopia',lastCopy?day(lastCopy):'brak w okresie',
+    stopped?'Kupno wstrzymane (STOP / Mitch stop).':'Kopia powstaje tylko, gdy jego portfele kupią BTC 15m. Rynków 5m nie kopiujemy.'));
+  box.append(mitchMetric('Okres testu od',st&&st.at?day(st.at):missing(),
     'Pauza liczy tylko ten okres. Wynik od startu zostaje poniżej.'));
   renderMitchDecisions(m);
 }
