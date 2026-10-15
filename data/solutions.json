@@ -6,44 +6,44 @@
   "verb_en": "DO NOT ENABLE",
   "now_pl": "Żaden tor nie przeszedł sitów do włączenia. $39 zostaje. Najbliższa ścieżka to hunt pod książkę $5 / $15, nie dokupowanie i nie All Copy.",
   "now_en": "No lane cleared the gates. Leave the $39. Closest path is hunt for a $5 / $15 book, not more cash and not All Copy.",
-  "path_pl": "Najbliżej: ps5 (ECONOMICS). Brakuje: sity prawie — nadal WAIT, nie enable. Patrz w Symulacji. W Telegramie nic nie klikasz.",
-  "path_en": "Closest: ps5 (ECONOMICS). Missing: sity prawie — nadal WAIT, nie enable. Look in Simulation. Do nothing in Telegram.",
-  "hunt_next_pl": "Następny bieg: głębiej ECONOMICS (offset 250/300), potem SPORTS, POLITICS. Pomijamy Top 8, świece 5 min, esport, conc=1.0 jako pick.",
-  "hunt_next_en": "Next run: deeper ECONOMICS (offset 250/300), then SPORTS, POLITICS. Skip Top 8, 5-min candles, esports, conc=1.0 picks.",
+  "path_pl": "Najbliżej: juice-fruit (SPORTS). Brakuje: sity prawie — nadal WAIT, nie enable. Patrz w Symulacji. W Telegramie nic nie klikasz.",
+  "path_en": "Closest: juice-fruit (SPORTS). Missing: sity prawie — nadal WAIT, nie enable. Look in Simulation. Do nothing in Telegram.",
+  "hunt_next_pl": "Następny bieg: głębiej SPORTS (offset 250/300), potem ECONOMICS, POLITICS. Pomijamy Top 8, świece 5 min, esport, conc=1.0 jako pick.",
+  "hunt_next_en": "Next run: deeper SPORTS (offset 250/300), then ECONOMICS, POLITICS. Skip Top 8, 5-min candles, esports, conc=1.0 picks.",
   "closest": {
-    "name": "ps5",
-    "lane": "ECONOMICS",
+    "name": "juice-fruit",
+    "lane": "SPORTS",
     "missing": "sity prawie — nadal WAIT, nie enable"
   },
   "next_cats": [
-    "ECONOMICS",
     "SPORTS",
+    "ECONOMICS",
     "POLITICS",
     "FINANCE",
     "CULTURE",
     "TECH"
   ],
   "extra_offsets": {
-    "ECONOMICS": [
+    "SPORTS": [
       250,
       300
     ]
   },
   "dead_pl": [
     "EV-Andars · SPORTS · jeden event / veto",
-    "lucidarderi · SPORTS · jeden event / veto"
+    "gopfan2 · ECONOMICS · jeden event / veto"
   ],
   "dead_en": [
     "EV-Andars · SPORTS · jeden event / veto",
-    "lucidarderi · SPORTS · jeden event / veto"
+    "gopfan2 · ECONOMICS · jeden event / veto"
   ],
-  "error": "http 401 claude-sonnet-5 {\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"invalid x-api-key\"},\"request_id\":\"req_011Cg4Q42GGJFzp4imMMzD1L\"}",
-  "updated_at": "2026-10-15T17:13:57.916983+00:00",
-  "hunt_updated_at": "2026-10-15T17:13:57.696696+00:00",
+  "error": "http 401 claude-sonnet-5 {\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"invalid x-api-key\"},\"request_id\":\"req_011Cg4jVWUKc5vhwyHRy25u2\"}",
+  "updated_at": "2026-10-15T21:28:53.264723+00:00",
+  "hunt_updated_at": "2026-10-15T21:28:53.082836+00:00",
   "x_source": "error",
   "x_model": null,
   "x_error": "http 403 grok-4.6 {\"code\":\"permission-denied\",\"error\":\"Your newly created team doesn't have any credits or licenses yet. You can purchase those on https://conso",
   "x_pl": "Filtr X: błąd API. Zostają sity. Copy off.",
   "x_en": "X filter: API error. Gates stand. Copy off.",
-  "x_updated_at": "2026-10-15T17:13:58.074854+00:00"
+  "x_updated_at": "2026-10-15T21:28:53.463650+00:00"
 }
