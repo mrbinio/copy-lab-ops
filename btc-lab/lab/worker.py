@@ -1033,6 +1033,11 @@ def wal_checkpoint(path, wait_ms=500):
     db=sqlite3.connect(path, timeout=wait_ms/1000, isolation_level=None)
     try:
         db.execute('PRAGMA busy_timeout=%d' % int(wait_ms))
+        # 16 Oct 2026: on macOS a plain fsync leaves writes in the drive's
+        # cache; the power cut of 15 Oct broke the ETH state index. This
+        # checkpoint flushes fully. Not on every connection: there it made
+        # each write 42 ms instead of 1.5 ms.
+        db.execute('PRAGMA checkpoint_fullfsync=ON')
         try:
             big=_os.path.getsize(str(path)+'-wal')>WAL_TRUNCATE_ABOVE
         except OSError:
