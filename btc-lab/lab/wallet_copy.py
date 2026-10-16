@@ -71,7 +71,17 @@ def _event_size(event):
     return size
 
 
+_SOURCE_SCHEMA_DONE=set()
+
+
 def ensure_source_schema(db):
+    # 17 Oct 2026: this ran on every source event, and its UPDATE scanned all
+    # source positions each time (a large share of the qualifier's CPU and a
+    # loud fan). The columns and the one-time correction need one pass per
+    # process and database; nothing later writes known=1 without an anchor.
+    path=db.execute('PRAGMA database_list').fetchone()[2]
+    if path and path in _SOURCE_SCHEMA_DONE:
+        return
     # executescript commits. Skip it once the tables exist so a later
     # BEGIN IMMEDIATE still covers the anchor and the events together.
     exists=db.execute(
@@ -102,6 +112,8 @@ def ensure_source_schema(db):
     db.execute(
         """UPDATE wallet_source_positions SET known=0, shares=''
            WHERE known=1 AND (anchor_at IS NULL OR anchor_at='')""")
+    if path:
+        _SOURCE_SCHEMA_DONE.add(path)
 
 
 def _source_result(proportion, known, shares_before, shares_after, duplicate=False):
