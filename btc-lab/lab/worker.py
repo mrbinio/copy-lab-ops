@@ -836,6 +836,11 @@ class Worker:
             self.store.set('mitch_trials', mitch_trials.summary(self.store))
         except Exception as error:
             LOG.warning('trials: %s', str(error)[:200])
+        try:
+            from . import overview
+            self.store.set('overview', overview.build(self.store, self.data.parent if self.data.name=='data' else self.data))
+        except Exception as error:
+            LOG.warning('overview: %s', str(error)[:200])
 
     async def qualifier_process(self):
         """Run the qualifier as a child process and restart it when it exits."""

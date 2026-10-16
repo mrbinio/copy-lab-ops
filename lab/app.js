@@ -535,7 +535,7 @@ function fillProfitBank(s){
     el.append(card);
   }
 }
-function render(){const scrollY=holdScroll();const s=state||blank();try{renderOpsBar(s);renderOverview(s);const sig=viewSig(s);if(sig===lastViewSig){restoreScroll(scrollY);return;}lastViewSig=sig;syncAssetUI(s);renderOpsBar(s);renderWalletPanel(s);const a=ownStrategies(s.accounts).find(x=>x.id===selected)||ownStrategies(s.accounts)[0]||{id:'',name:'',cash:null,pnl:null,trades:0,settled:0,wins:0,curve:[],initial:null};const live=connected&&!preview;const versionElement=$('service-version');if(versionElement)versionElement.textContent=serviceVersionLabel(s.worker,live,preview,Date.now()/1000);const age=Date.now()/1000-(s.worker.heartbeat||0);const healthy=live&&age<30&&s.worker.status==='RECORDING';text('status-text',preview?t('DESIGN PREVIEW','PODGLĄD PROJEKTU'):healthy?t('RECORDING','ZBIERANIE DANYCH'):live?t('SERVICE DEGRADED','SYSTEM WYMAGA UWAGI'):t('NOT CONNECTED','NIEPOŁĄCZONY'));text('status-detail',preview?t('Synthetic examples · excluded from research','Dane przykładowe · poza badaniem'):healthy?t('Collector connected. Strategy checks remain independent.','Kolektor połączony. Strategie osobno sprawdzają dane.'):live?t('Entries wait for valid data and service recovery.','Wejścia czekają na poprawne dane i działający system.'):t('The dashboard is ready. The 24/7 service is not connected.','Dashboard jest gotowy. Usługa 24/7 nie jest podłączona.'));$('status-dot').style.background=healthy?'var(--teal)':'var(--amber)';$('demo-banner').hidden=!preview;text('demo-banner',t('DESIGN PREVIEW — synthetic data, not trading results.','PODGLĄD PROJEKTU — dane sztuczne, to nie są wyniki handlu.'));text('pnl',a.settled?money(a.pnl,true):t('No settlements','Brak rozliczeń'));$('pnl').style.fontSize=a.settled?'':'1.35rem';$('pnl').className='metric-value '+(a.pnl>0?'positive':a.pnl<0?'negative':'');text('balance',money(a.cash));const selectedStatus=$('selected-account-status');if(selectedStatus){const last=(s.decisions||[]).find(d=>d.strategy===a.id);selectedStatus.textContent=(a.name||a.id)+' · '+a.trades+' '+t('trades','transakcji')+' · '+(last?reason(last.reason):t('No recorded decision','Brak zapisanej decyzji'))+(connected?'':' · '+t('Connection unavailable; last received data','Brak połączenia; ostatnio odebrane dane'));}text('capital-note',t('Research account · virtual ','Konto badawcze · wirtualne ')+money(a.initial??500));text('win-rate',a.settled?`${(100*a.wins/a.settled).toFixed(1)}%`:'—');text('trade-count',`${a.settled} ${t('settled trades','rozliczonych transakcji')}`);text('observations',s.observations==null?'—':s.observations.toLocaleString());text('labels',`${t('Official outcomes','Oficjalne wyniki')}: ${s.labels??'—'}`);chart(a.curve||[]);text('curve-period',a.curve?.length?`${formatTime(a.curve[0].ts)} — ${formatTime(a.curve.at(-1).ts)} · Stockholm`:t('No performance history','Brak historii wyników'));const ask=side=>{const book=s.market.books?.[side];return book?.asks?.length?`${(100*Math.min(...book.asks.map(x=>Number(x[0])))).toFixed(1)}¢`:'—';};text('up-ask',ask('Up'));text('down-ask',ask('Down'));text('reference-label',s.market.rule_kind==='TWAP60'?'Chainlink TWAP 60 s':t('Reference price','Cena referencyjna'));text('reference-price',money(s.reference?.price));text('opening-price',money(s.market.opening));const d=s.decisions.find(x=>x.strategy===selected);text('decision-reason',d?reason(d.reason):t('Awaiting verified data','Oczekiwanie na zweryfikowane dane'));
+function render(){const scrollY=holdScroll();const s=state||blank();try{renderOpsBar(s);renderOverview(s);renderHome(s);const sig=viewSig(s);if(sig===lastViewSig){restoreScroll(scrollY);return;}lastViewSig=sig;syncAssetUI(s);renderOpsBar(s);renderWalletPanel(s);const a=ownStrategies(s.accounts).find(x=>x.id===selected)||ownStrategies(s.accounts)[0]||{id:'',name:'',cash:null,pnl:null,trades:0,settled:0,wins:0,curve:[],initial:null};const live=connected&&!preview;const versionElement=$('service-version');if(versionElement)versionElement.textContent=serviceVersionLabel(s.worker,live,preview,Date.now()/1000);const age=Date.now()/1000-(s.worker.heartbeat||0);const healthy=live&&age<30&&s.worker.status==='RECORDING';text('status-text',preview?t('DESIGN PREVIEW','PODGLĄD PROJEKTU'):healthy?t('RECORDING','ZBIERANIE DANYCH'):live?t('SERVICE DEGRADED','SYSTEM WYMAGA UWAGI'):t('NOT CONNECTED','NIEPOŁĄCZONY'));text('status-detail',preview?t('Synthetic examples · excluded from research','Dane przykładowe · poza badaniem'):healthy?t('Collector connected. Strategy checks remain independent.','Kolektor połączony. Strategie osobno sprawdzają dane.'):live?t('Entries wait for valid data and service recovery.','Wejścia czekają na poprawne dane i działający system.'):t('The dashboard is ready. The 24/7 service is not connected.','Dashboard jest gotowy. Usługa 24/7 nie jest podłączona.'));$('status-dot').style.background=healthy?'var(--teal)':'var(--amber)';$('demo-banner').hidden=!preview;text('demo-banner',t('DESIGN PREVIEW — synthetic data, not trading results.','PODGLĄD PROJEKTU — dane sztuczne, to nie są wyniki handlu.'));text('pnl',a.settled?money(a.pnl,true):t('No settlements','Brak rozliczeń'));$('pnl').style.fontSize=a.settled?'':'1.35rem';$('pnl').className='metric-value '+(a.pnl>0?'positive':a.pnl<0?'negative':'');text('balance',money(a.cash));const selectedStatus=$('selected-account-status');if(selectedStatus){const last=(s.decisions||[]).find(d=>d.strategy===a.id);selectedStatus.textContent=(a.name||a.id)+' · '+a.trades+' '+t('trades','transakcji')+' · '+(last?reason(last.reason):t('No recorded decision','Brak zapisanej decyzji'))+(connected?'':' · '+t('Connection unavailable; last received data','Brak połączenia; ostatnio odebrane dane'));}text('capital-note',t('Research account · virtual ','Konto badawcze · wirtualne ')+money(a.initial??500));text('win-rate',a.settled?`${(100*a.wins/a.settled).toFixed(1)}%`:'—');text('trade-count',`${a.settled} ${t('settled trades','rozliczonych transakcji')}`);text('observations',s.observations==null?'—':s.observations.toLocaleString());text('labels',`${t('Official outcomes','Oficjalne wyniki')}: ${s.labels??'—'}`);chart(a.curve||[]);text('curve-period',a.curve?.length?`${formatTime(a.curve[0].ts)} — ${formatTime(a.curve.at(-1).ts)} · Stockholm`:t('No performance history','Brak historii wyników'));const ask=side=>{const book=s.market.books?.[side];return book?.asks?.length?`${(100*Math.min(...book.asks.map(x=>Number(x[0])))).toFixed(1)}¢`:'—';};text('up-ask',ask('Up'));text('down-ask',ask('Down'));text('reference-label',s.market.rule_kind==='TWAP60'?'Chainlink TWAP 60 s':t('Reference price','Cena referencyjna'));text('reference-price',money(s.reference?.price));text('opening-price',money(s.market.opening));const d=s.decisions.find(x=>x.strategy===selected);text('decision-reason',d?reason(d.reason):t('Awaiting verified data','Oczekiwanie na zweryfikowane dane'));
 const cards=$('strategy-cards');if(cards)cards.replaceChildren();if(cards){const visibleAccounts=sortAccounts(ownStrategies(s.accounts));const books=bookParts(s.accounts);const totalPnl=books.strategy;const bar=node('div',undefined,'card-layout-bar');const autoBtn=node('button',t('Green on top','Zielone u góry'),'small-button'+(cardLayout==='auto'?' on':''));const manBtn=node('button',t('My order · drag','Mój układ · przeciągnij'),'small-button'+(cardLayout==='manual'?' on':''));autoBtn.type=manBtn.type='button';autoBtn.onclick=()=>{cardLayout='auto';localStorage.setItem('btc-lab-card-layout','auto');render();};manBtn.onclick=()=>{cardLayout='manual';if(!cardOrder.length)cardOrder=visibleAccounts.map(a=>a.id);localStorage.setItem('btc-lab-card-layout','manual');localStorage.setItem('btc-lab-card-order',JSON.stringify(cardOrder));render();};bar.append(autoBtn,manBtn);const totalBox=node('div',undefined,'total-pnl');totalBox.append(node('span',t('5–15 min strategies','Strategie 5–15 min')),node('strong',money(totalPnl,true),totalPnl>=0?'positive':'negative'),node('small',t('From the start of each strategy account. Copied wallets stay on Portfele.','Od początku każdego konta strategii. Kopiowane portfele zostają w Portfelach.')),node('small',`${t('Updated','Odświeżono')}: ${formatTime(s.generated_at)}`));cards.append(bar,totalBox);visibleAccounts.forEach((account,i)=>{const pnlClass=cardToneClass(account);const card=node('article',undefined,'strategy-card'+pnlClass+(account.id===selected?' selected':''));card.dataset.strategy=account.id;card.draggable=cardLayout==='manual';if(cardLayout==='manual'){card.addEventListener('dragstart',ev=>{ev.dataTransfer.setData('text/plain',account.id);card.classList.add('dragging');});card.addEventListener('dragend',()=>card.classList.remove('dragging'));card.addEventListener('dragover',ev=>ev.preventDefault());card.addEventListener('drop',ev=>{ev.preventDefault();const from=ev.dataTransfer.getData('text/plain');if(!from||from===account.id)return;const ids=visibleAccounts.map(a=>a.id);const a=ids.indexOf(from),b=ids.indexOf(account.id);if(a<0||b<0)return;ids.splice(a,1);ids.splice(b,0,from);cardOrder=ids;localStorage.setItem('btc-lab-card-order',JSON.stringify(cardOrder));render();});}const top=node('div',undefined,'strategy-top');top.append(node('span',`0${i+1} / ${asset} 15M`,'strategy-number'),node('span',cardKind(account),'chip'));card.append(top,node('h3',cardTitle(account)),node('p',cardBlurb(account)));const stats=node('div',undefined,'strategy-stats');const pairs=account.id.startsWith('copy-')?copyStatPairs(account):[[money(account.pnl,true),'P&L'],[String(account.trades),t('Paper trades','Transakcje testowe')]];for(const [v,label]of pairs){const box=node('div');box.append(node('strong',v),node('small',label));stats.append(box);}card.append(stats);if(account.id.startsWith('copy-')){for(const line of copyWatchLines(account))card.append(node('p',line,'watch-line'));}const pauses=s.strategy_pauses||{};if(Object.prototype.hasOwnProperty.call(pauses,account.id)){const paused=!!pauses[account.id];const btn=node('button',paused?t('Turn entries on','Włącz nowe zakłady'):t('Turn entries off','Wyłącz nowe zakłady'),'small-button strategy-toggle');btn.type='button';btn.onclick=async ev=>{ev.stopPropagation();try{const res=await fetch('./api/strategy-pause',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:account.id,paused:!paused,asset})});if(!res.ok)throw Error('pause');}catch(e){btn.textContent=t('Could not save','Nie zapisano');return;}refresh();};card.append(btn);if(paused)card.append(node('p',t('New entries are off. Open tickets still settle.','Nowe zakłady są wyłączone. Otwarte bilety nadal się rozliczają.')));}if(account.current_block)card.append(node('p',reason(account.current_block)));if(account.entry_capacity_usd!=null)card.append(node('p',`${t('Available next-entry budget including fees','Dostępna kwota kolejnego wejścia z opłatami')}: ${money(account.entry_capacity_usd)} · ${t('Market minimum still applies','Obowiązuje minimum rynku')}`));if(account.losses_7d!=null)card.append(node('p',`${t('Today net','Dzisiaj netto')}: ${money(account.today_pnl,true)} · ${t('7-day gross losses','Straty brutto 7 dni')}: ${money(account.losses_7d)} / ${money(account.week_limit)} · ${t('Next entry loss is also reserved','Limit uwzględnia też możliwą stratę nowego wejścia')}`));cards.append(card);});}
 text('journal-filter-label',t('Journal strategy','Strategia w dzienniku'));text('journal-all',t('All strategies','Wszystkie strategie'));const bookSelect=$('journal-book');if(bookSelect){const bookLabel=$('journal-book-label');if(bookLabel)bookLabel.textContent=t('Journal book','Księga dziennika');if(bookSelect.dataset.ready!==lang){bookSelect.replaceChildren();for(const [value,label] of [['paper',t('PAPER accounts','Konta PAPER')],['policy',t('Policy observation','Obserwacja polityki')],['independent',t('Independent tickets','Niezależne bilety')]]){const o=node('option',label);o.value=value;bookSelect.append(o);}bookSelect.dataset.ready=lang;}bookSelect.value=journalBook;}const journalTrades=renderHistory(s);if($('journal-empty'))$('journal-empty').hidden=!!journalTrades.length;text('journal-scope',journalBook==='policy'?t('Policy observation only. Not the PAPER account.','Tylko obserwacja polityki. To nie konto PAPER.'):journalBook==='independent'?t('Independent hold-to-settlement tickets only. Not a PAPER profit and not a promotion.','Tylko niezależne bilety trzymane do rozstrzygnięcia. To nie zysk konta PAPER i nie awans.'):journalFilter==='all'?t('PAPER account fills only. Observation and independent tickets are separate views.','Tylko wypełnienia kont PAPER. Obserwacja i niezależne bilety są osobnymi widokami.'):`${journalFilter} · ${t('filtered from latest 100 service records; full day in Export report','filtr ostatnich 100 wpisów serwera; pełny dzień w Pobierz raport')}`);text('journal-count',`${journalTrades.length} ${t('recent trades','ostatnich transakcji')}`);text('collector-health',preview?'PREVIEW':healthy?'CONNECTED':live?'DEGRADED':'OFFLINE');text('model-health',isEth()?t('NOT USED','NIE JEST UŻYWANY'):s.model.status);text('training-count',isEth()?t('Separate ETH experiment','Osobny eksperyment ETH'):`${s.model.samples||0} / 200`);$('training-progress').hidden=isEth();$('training-progress').value=Math.min(200,s.model.samples||0);const events=$('events');if(events)events.replaceChildren();if(events){for(const error of (s.worker.errors||[])){const row=node('div',undefined,'event');row.append(node('span',error.stage),node('b',error.detail||error.error));events.append(row);}if(s.worker.reference_error){events.append(node('p',s.worker.reference_error,'muted'));}s.decisions.slice(0,6).forEach(d=>{const row=node('div',undefined,'event');row.append(node('time',formatTime(d.ts)),node('span',d.strategy),node('b',reason(d.reason)));events.append(row);});if(!s.decisions.length)events.append(node('p',t('No decisions recorded. Waiting for the worker.','Brak zapisanych decyzji. Oczekiwanie na silnik.'),'muted'));}text('updated',preview?t('Preview · not connected to a market','Podgląd · bez połączenia z rynkiem'):connected?`${t('Last response','Ostatnia odpowiedź')}: ${formatTime(s.generated_at)} · Stockholm`:t('No service connected','Usługa nie jest podłączona'));tick();installHelp();renderPaperBoard(s);fillProfitBank(s);renderMitch(s);}catch(error){fetchError=String(error&&error.message||error||'render').slice(0,80);}finally{restoreScroll(scrollY);}}
 function tick(){text('clock',new Date().toLocaleTimeString('en-GB',{timeZone:'Europe/Stockholm'})+' · Stockholm');const now=Date.now()/1000;const remaining=state?.market?.end?Math.max(0,Math.floor(state.market.end-now)):null;text('countdown',remaining==null?'—:—':`${String(Math.floor(remaining/60)).padStart(2,'0')}:${String(remaining%60).padStart(2,'0')}`);const age=state?.reference?.source_ts?Math.max(0,now-state.reference.source_ts):null;text('reference-age',age==null?'—':`${age.toFixed(1)}s`);text('reference-health',preview?'PREVIEW':connected&&age!=null&&age<=5?'FRESH':'WAITING');}
@@ -769,7 +769,15 @@ function renderOpsBar(s){
     'restarty '+(watch.restarts_in_window==null?'brak danych':String(watch.restarts_in_window)),
     'zegar '+(clock.status||'brak pomiaru')+' · '+moneyMs(clock.offset_ms)+' · '+(clock.source||'brak źródła')+' · '+(clock.checked_at?formatTime(clock.checked_at):'brak sprawdzenia')+' · niepewność '+moneyMs(clock.uncertainty_ms)
   ];
-  el.textContent=parts.join(' · ');
+  // 16 Oct 2026: one plain sentence by default; the technical line on click.
+  const restarts=watch.restarts_in_window||0;
+  const plain=ledgerBad?'Problem: księga się nie zgadza, kupno wstrzymane':pageLate?'Brak świeżych danych z laboratorium'+(fetchError?' ('+fetchError+')':''):collectorLate?'Laboratorium odpowiada z opóźnieniem':
+    (mitch.stop_active?'Działa, ale STOP z Telegrama wstrzymuje kupna':'Wszystko działa')+' · dane sprzed '+(genAge==null?'?':Math.round(genAge))+' s'+(restarts?' · restarty w ostatniej godzinie: '+restarts:'')+' · tryb PAPER (bez prawdziwych pieniędzy)';
+  const open=el.dataset.open==='1';
+  el.replaceChildren(document.createTextNode((stale||collectorLate?'⚠ ':'● ')+plain));
+  el.append(node('span',open?'ukryj szczegóły':'szczegóły techniczne','ops-more'));
+  if(open)el.append(node('div',parts.join(' · '),'metric-note'));
+  if(!el.dataset.bound){el.dataset.bound='1';el.addEventListener('click',()=>{el.dataset.open=el.dataset.open==='1'?'0':'1';renderOpsBar(state||blank());});}
   el.className='ops-status '+(stale?'bad':'ok');
   document.body.classList.toggle('data-stale',stale);
 }
@@ -913,8 +921,106 @@ function ovRow(label,value,ok){
   row.append(left,node('b',value));
   return row;
 }
+// 16 Oct 2026: Damian wants the dashboard to show the truth and be easy to
+// read. Each strategy answers: is it working now, what is the result (always
+// with the date it is counted from), how much money, and why nothing moves.
+// The numbers come from the server's overview (lab/overview.py).
+const HOME_WHY={WINDOW_LIMIT:'limit na okno był już pełny',LATE_BUY_NOT_COPIED:'jego kupno dotarło za późno (ponad 1 s)',NO_LIQUIDITY:'brak ofert na arkuszu',PRICE_WORSE_THAN_10C:'cena uciekła o ponad 10 centów',TECH_BRAKE:'hamulec techniczny',MITCH_MANUAL_PAUSE:'pauza ręczna',MITCH_DESK_STOP:'biurko na stopie'};
+function homeWhen(t){return new Date(t*1000).toLocaleString('pl-PL',{timeZone:'Europe/Stockholm',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});}
+function homeAgo(t){const m=Math.max(0,Math.round((Date.now()/1000-t)/60));return m<60?m+' min temu':m<1440?Math.floor(m/60)+' h '+(m%60)+' min temu':Math.floor(m/1440)+' dni temu';}
+function homeBars(days){
+  const ns='http://www.w3.org/2000/svg';const svg=document.createElementNS(ns,'svg');
+  const W=280,H=74,mid=H/2,n=days.length||1,bw=W/n;
+  svg.setAttribute('viewBox','0 0 '+W+' '+H);svg.setAttribute('preserveAspectRatio','none');svg.setAttribute('class','bars');
+  svg.setAttribute('role','img');svg.setAttribute('aria-label','Wynik dzienny z '+days.length+' dni');
+  const max=Math.max(1,...days.map(d=>Math.abs(d.net_micro||0)));
+  const axis=document.createElementNS(ns,'line');axis.setAttribute('x1',0);axis.setAttribute('x2',W);axis.setAttribute('y1',mid);axis.setAttribute('y2',mid);axis.setAttribute('stroke','#2a3846');axis.setAttribute('stroke-width','1');svg.append(axis);
+  days.forEach((d,i)=>{
+    const v=d.net_micro||0;const h=Math.max(v?2:0,Math.abs(v)/max*(mid-3));
+    const r=document.createElementNS(ns,'rect');r.setAttribute('x',i*bw+bw*.15);r.setAttribute('width',bw*.7);
+    r.setAttribute('y',v>=0?mid-h:mid);r.setAttribute('height',h);r.setAttribute('rx',1.5);
+    r.setAttribute('fill',v>0?'var(--teal)':'var(--red)');
+    const tip=document.createElementNS(ns,'title');tip.textContent=d.day.slice(8,10)+'.'+d.day.slice(5,7)+': '+money(v/1e6,true)+' · '+d.closed+' zamkniętych';r.append(tip);svg.append(r);
+  });
+  return svg;
+}
+function homeNum(label,micro,note){const b=node('div',undefined,'home-num');b.append(node('span',label));const v=node('b',micro==null?'—':money(micro/1e6,true));if(micro)v.className=micro>0?'positive':'negative';b.append(v);if(note)b.append(node('small',note));return b;}
+function homeCard(title,sub,pill,pillCls){
+  const c=node('article',undefined,'home-card');const head=node('div',undefined,'home-head');
+  const h=node('h3',title);if(sub)h.append(node('small',sub));
+  head.append(h,node('span',pill,'pill '+pillCls));c.append(head);return c;
+}
+function homeSeries(c,x){
+  c.append(homeBars(x.days||[]));
+  const lg=node('div',undefined,'bars-legend');const d=x.days||[];
+  const f=s=>s?s.slice(8,10)+'.'+s.slice(5,7):'';
+  lg.append(node('span',f(d[0]&&d[0].day)),node('span','wynik dzienny, 14 dni'),node('span','dziś'));c.append(lg);
+}
+function renderHome(s){
+  const box=$('home');if(!box)return;
+  const o=s.overview||{};const m=s.mitch_copy||{};const now=Date.now()/1000;
+  const sig=JSON.stringify([o.at,m.updated_at&&Math.floor(m.updated_at/30),m.brake&&m.brake.on,m.stop_active,(s.wallet_copy_execution||{}).buys_enabled,Math.floor(now/60)]);
+  if(box.dataset.sig===sig)return;box.dataset.sig=sig;box.replaceChildren();
+  if(!o.mitch){box.append(node('p','Podsumowanie liczy się raz na minutę. Za chwilę się pojawi.','home-why'));return;}
+  // Mitch
+  const mx=o.mitch,desk=m.desk||{},wl=Array.isArray(m.wallets)?m.wallets:[];
+  const paused=wl.filter(w=>w.paused).length,cash=(desk.money_micro||0)/1e6,stop=(desk.stop_micro||0)/1e6;
+  let pill='kopiuje',pc='ok';
+  if(m.stop_active){pill='STOP z Telegrama';pc='bad';}
+  else if(desk.money_micro!=null&&cash<=stop){pill='biurko na stopie';pc='bad';}
+  else if(m.brake&&m.brake.on){pill='hamulec techniczny';pc='warn';}
+  else if(wl.length&&paused===wl.length){pill='pauza';pc='warn';}
+  else if(paused){pill='kopiuje · '+paused+' na pauzie';pc='warn';}
+  const mc=homeCard('Mitch','kopiujemy 8 portfeli Mitcha · BTC 15m · kopia w 1 s',pill,pc);
+  mc.append(node('div','Wynik od '+(mx.since?homeWhen(mx.since):'startu')+' (start biurka)','home-main-label'));
+  const mv=node('div',money((mx.since_micro||0)/1e6,true),'home-main '+((mx.since_micro||0)>0?'positive':(mx.since_micro||0)<0?'negative':''));mc.append(mv);
+  const mn=node('div',undefined,'home-nums');
+  mn.append(homeNum('Dziś',mx.today_micro,mx.today_closed+' zamkniętych'),homeNum('7 dni',mx.week_micro,mx.week_days_up+' dni na plus, '+mx.week_days_down+' na minus'),homeNum('Rezerwa zysku',desk.swept_micro,'odłożone, nie do gry'));
+  mn.children[2].querySelector('b').className='';mn.children[2].querySelector('b').textContent=money((desk.swept_micro||0)/1e6);
+  mc.append(mn);
+  const ml=node('p',undefined,'home-line');ml.append('Gotówka na biurku: ',node('b',money(cash)),' z linii '+money((desk.line_micro||0)/1e6)+' · stop przy '+money(stop));mc.append(ml);
+  homeSeries(mc,mx);
+  const last=m.last_copy_at;let why='';
+  if(last){
+    const after=(m.period_events||[]).filter(e=>(e.at||0)>last);
+    const b15=after.filter(e=>String(e.market||'').startsWith('btc-updown-15m')&&e.side==='BUY'&&e.reason!=='MITCH_BUY'&&e.reason!=='MITCH_ADD');
+    const b5=after.filter(e=>String(e.market||'').startsWith('btc-updown-5m'));
+    if(now-last<1800)why='Kopiowanie działa na bieżąco.';
+    else if(b15.length){const c={};b15.forEach(e=>c[e.reason]=(c[e.reason]||0)+1);const top=Object.entries(c).sort((a,b)=>b[1]-a[1])[0];why='Od tego czasu jego portfele kupiły BTC 15m '+b15.length+(b15.length===1?' raz':' razy')+', ale nie skopiowaliśmy, bo '+(b15.length===1?'':'najczęściej: ')+(HOME_WHY[top[0]]||top[0])+'.';}
+    else if(b5.length)why='Od tego czasu jego portfele grają tylko BTC 5m, a tego rynku nie kopiujemy. To nie jest usterka.';
+    else why='Od tego czasu jego portfele nic nie kupiły.';
+  }
+  const mw=node('p',undefined,'home-why');mw.append('Ostatnia kopia: ',node('b',last?homeWhen(last)+' ('+homeAgo(last)+')':'brak'),'. '+why);mc.append(mw);
+  box.append(mc);
+  // Damian's wallets
+  const wx=o.wallets,ex=s.wallet_copy_execution||{},hl=s.wallet_copy_health||{},r=wx.roster||{};
+  const copying=(r.paper_test||0)+(r.paper_active||0);
+  let wp='kopiuje '+copying+' portfeli',wc='ok';
+  if(m.stop_active){wp='STOP z Telegrama';wc='bad';}
+  else if(ex.buys_enabled===false){wp='kupno wyłączone';wc='warn';}
+  else if(hl.status&&hl.status!=='ok'){wp='problem: '+hl.status;wc='bad';}
+  else if(!copying){wp='żaden portfel nie zarabia';wc='warn';}
+  const wcard=homeCard('Twoje portfele',wx.rule||'',wp,wc);
+  wcard.append(node('div','Wynik od '+homeWhen(wx.since)+' (od zmiany na tylko BTC 15m)','home-main-label'));
+  wcard.append(node('div',money((wx.since_micro||0)/1e6,true),'home-main '+((wx.since_micro||0)>0?'positive':(wx.since_micro||0)<0?'negative':'')));
+  const wn=node('div',undefined,'home-nums');
+  wn.append(homeNum('Dziś',wx.today_micro,wx.today_closed+' zamkniętych, z tym stare 5m'),homeNum('7 dni',wx.week_micro,'głównie przed zmianą'),homeNum('Od zmiany',wx.since_micro,wx.since_closed+' zamkniętych'));
+  wcard.append(wn);
+  const wl2=node('p',undefined,'home-line');wl2.append('Portfele: ',node('b',copying+' kopiujemy'),' · '+(r.paused||0)+' na pauzie (tracą) · '+(r.observed||0)+' obserwujemy');wcard.append(wl2);
+  homeSeries(wcard,wx);
+  wcard.append(node('p','Kopiujemy tylko portfele, które teraz zarabiają. Portfel, który zaczyna tracić, idzie na pauzę i wraca, gdy znowu zarabia. Wynik sprzed zmiany na BTC 15m zostaje w historii.','home-why'));
+  box.append(wcard);
+  // Readiness for LIVE
+  const rd=o.readiness||{};const rc=node('article',undefined,'home-card wide');
+  const left=node('div');left.append(node('h3','Gotowość do prawdziwych pieniędzy','')),left.firstChild.style.margin='0';
+  left.append(node('p',(rd.at?'Ostatni audyt '+homeWhen(rd.at)+'. ':'')+(rd.problems&&rd.problems.length?'Do poprawy: '+rd.problems.join('; ')+'.':'Audyt bez problemów.')+' Potrzeba 3 czystych dni z rzędu. LIVE i tak włączasz tylko Ty.','home-why'));
+  left.lastChild.style.border='0';left.lastChild.style.padding='6px 0 0';
+  const streak=rd.streak||0,need=rd.need||3;
+  rc.append(left,node('span',streak+' / '+need+' czystych dni','pill '+(streak>=need?'ok':streak?'warn':'bad')));
+  box.append(rc);
+}
 function renderOverview(s){
-  const net=$('overview-net');if(!net)return;
+  const net=$('overview-net')||node('div');
   const now=Date.now()/1000;
   const m=s.mitch_copy||{};const w=(s.wallet_copy_execution||{}).board||{};const p=w.periods||{};
   const usd=v=>v==null?missing():money(v/1e6,true);
@@ -967,7 +1073,7 @@ function renderOverview(s){
     sys.append(ovRow('Tunel zdalny',tun.edge_connected?'połączony':tun.edge_connected===false?'rozłączony':'—',tun.edge_connected===true?true:tun.edge_connected===false?false:null));
     const rec=s.recorder_status||{};
     const recDays=rec.started_at?((now-rec.started_at)/86400).toFixed(1):null;
-    sys.append(ovRow('Rejestrator danych (badania)',rec.ok==null?'nie działa':rec.ok?('zapis od '+recDays+' dni · '+(rec.bytes/1e9).toFixed(2)+' GB'):(rec.paused?'wstrzymany: mało miejsca':'brak danych: '+(rec.stale||[]).join(', ')),rec.ok==null?null:!!rec.ok));
+    sys.append(ovRow('Rejestrator danych (badania)',rec.ok==null||(rec.ok===false&&!rec.paused&&!(rec.stale||[]).length)?'wyłączony celowo (cisza laptopa)':rec.ok?('zapis od '+recDays+' dni · '+(rec.bytes/1e9).toFixed(2)+' GB'):(rec.paused?'wstrzymany: mało miejsca':'brak danych: '+(rec.stale||[]).join(', ')),rec.ok==null||(rec.ok===false&&!rec.paused&&!(rec.stale||[]).length)?null:!!rec.ok));
     sys.append(ovRow('STOP z Telegrama',m.stop_active?'AKTYWNY':'nie',m.stop_active?false:true));
     sys.append(ovRow('Tryb','PAPER · LIVE wyłączone',!s.live_enabled));
   }
