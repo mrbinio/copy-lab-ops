@@ -14,7 +14,7 @@ from .mid_window import simulate_sale
 from .reference import classify_rule
 from .wallet_observer import get_active_wallets, wallet_label
 from .strategy_control import is_paused as copy_paused, pauses as copy_pauses
-from .wallet_roster import buy_pause_reason, pause_if_period_negative, period_results_for_pause
+from .wallet_roster import buy_pause_reason, copied_market, pause_if_period_negative, period_results_for_pause
 from .copy_totals import paper_board, summarize as copy_summarize, path_stats, path_record
 from .profit_bank import ensure_reserved_column, lock_profit, rebuild_high_water, reserved_of, tradable_cash
 from .wallet_watch import build_watch
@@ -47,7 +47,7 @@ SLOW_LANE_PAUSE_S=8
 UPKEEP_EVERY_S=90
 REASON_SCAN_EVERY_S=300
 COMPACT_REASONS=('COPY_PAUSED','PAUSED','NOT_IN_COPY_ROSTER','UNSUPPORTED_MARKET','NOT_BUY_OR_SELL',
-                 'PRE_ACTIVATION','QUALIFIER_BUYS_OFF','SOURCE_IDENTITY_MISMATCH')
+                 'PRE_ACTIVATION','QUALIFIER_BUYS_OFF','SOURCE_IDENTITY_MISMATCH','MARKET_NOT_COPIED')
 # Fast-lane rows get their own threads. 11 Oct 2026: they reached the
 # qualifier 0.13 s after the trade but waited 9 s (median) behind ~3 paused
 # or observed rows a second in the shared database thread.
@@ -636,7 +636,7 @@ class WalletCopy:
                 (reason,json.dumps(stored,allow_nan=False),row['wallet'],row['event_key']))
             self._last_decision[row['wallet']]=(now, reason)
             match=re.fullmatch(r'(btc|eth)-updown-(5m|15m)-(\d+)',str(event.get('slug','')))
-            if (match and event.get('type')=='TRADE' and event.get('side')=='BUY'
+            if (match and event.get('type')=='TRADE' and event.get('side')=='BUY' and copied_market(event.get('slug'))
                 and reason not in ('PRE_ACTIVATION','SOURCE_IDENTITY_MISMATCH','NOT_BUY_OR_SELL')
                 and row['source_ts']>=self.started and event.get('conditionId') and event.get('asset')):
                 end=int(match[3])+(300 if match[2]=='5m' else 900)
@@ -842,6 +842,8 @@ class WalletCopy:
             # A buy already past the 1 s rule on arrival is refused by the gate
             # anyway; reading two books for it was 80% of this path's work
             # (660 of 822 fills an hour on 13 Oct) and slowed Mitch's lane.
+            if event.get('side')=='BUY' and not copied_market(event.get('slug')):
+                return  # the poll records MARKET_NOT_COPIED; no books needed
             stale=event.get('side')=='BUY' and float(row.get('_as_of') or self.clock())-float(row['source_ts'])>MAX_BUY_AGE_S
             if stale:
                 # Left to the qualifier's own poll after FAST_PATH_GRACE_S; it
@@ -1021,6 +1023,9 @@ class WalletCopy:
                 self.reason(row,'COPY_PAUSED');return {'stop':True}
             if not re.fullmatch(r'(btc|eth)-updown-(5m|15m)-\d+',str(event.get('slug',''))):
                 self.reason(row,'UNSUPPORTED_MARKET');return {'stop':True}
+            if kind=='BUY' and not copied_market(event.get('slug')):
+                # 16 Oct 2026: BTC 15m only; a SELL of an open position still copies.
+                self.reason(row,'MARKET_NOT_COPIED');return {'stop':True}
             if kind=='BUY' and roster_state in ('paper_test','paper_active'):
                 # Judged at arrival from the fast lane; a polled row is judged now.
                 age=float(row.get('_as_of') or now)-float(row['source_ts'])

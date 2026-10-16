@@ -44,7 +44,7 @@ class RosterTests(unittest.TestCase):
 
     def test_one_day_concentration_does_not_block(self):
         now=1_000_000
-        closed=[{'status':'CLOSED','opened':now-3600,'closed_at':now-3600,'pnl_micro':1_000_000,'market':f'm{i}'} for i in range(30)]
+        closed=[{'status':'CLOSED','opened':now-3600,'closed_at':now-3600,'pnl_micro':1_000_000,'market':f'btc-updown-15m-1{i}'} for i in range(30)]
         book=evaluate_copy_book(closed,now,now-86400)
         self.assertEqual(book['best_day_share'], 1)
         self.assertTrue(book['concentration_uncertain'])
@@ -52,13 +52,13 @@ class RosterTests(unittest.TestCase):
 
     def test_pause_and_retest_are_not_the_same_threshold(self):
         now=2_000_000
-        losses=[{'status':'CLOSED','closed_at':now-i,'pnl_micro':-2_000_000,'market':str(i)} for i in range(8)]
+        losses=[{'status':'CLOSED','closed_at':now-i,'pnl_micro':-2_000_000,'market':'btc-updown-15m-3%d' % i} for i in range(8)]
         book=evaluate_copy_book(losses,now,now-20*86400)
         self.assertTrue(book['should_pause'])
         self.assertFalse(book['can_retest'])
-        one=[{'status':'CLOSED','closed_at':now-1,'opened':now-2,'pnl_micro':-1,'market':'only'}]
+        one=[{'status':'CLOSED','closed_at':now-1,'opened':now-2,'pnl_micro':-1,'market':'btc-updown-15m-902'}]
         self.assertTrue(evaluate_copy_book(one,now,now-2)['should_pause'])
-        unknown=[{'status':'CLOSED','closed_at':now-1,'opened':now-2,'pnl_micro':None,'market':'x'}]
+        unknown=[{'status':'CLOSED','closed_at':now-1,'opened':now-2,'pnl_micro':None,'market':'btc-updown-15m-903'}]
         self.assertFalse(evaluate_copy_book(unknown,now,now-2)['should_pause'])
         self.assertIsNone(evaluate_copy_book(unknown,now,now-2)['net_usd'])
 
@@ -104,7 +104,7 @@ class RosterTests(unittest.TestCase):
                             'closed_at': now - i,
                             'opened': now - 86400,
                             'pnl_micro': -2_000_000,
-                            'market': str(i),
+                            'market': 'btc-updown-15m-3%d' % i,
                         }),),
                     )
             state = store.get('wallet_roster')
@@ -137,7 +137,7 @@ class RosterTests(unittest.TestCase):
                         (w, str(i), now, now, json.dumps({
                             'reason': 'COPY_PAUSED',
                             'official_seen_at': now - 86400,
-                            'source_event': {'slug': f'm{i}'},
+                            'source_event': {'slug': f'btc-updown-15m-4{i}'},
                             'shadow': {'status': 'SETTLED', 'pnl_micro': 1_000_000},
                         })),
                     )
@@ -155,7 +155,7 @@ class RosterTests(unittest.TestCase):
                         'INSERT INTO wallet_observation_positions VALUES (?,?,?)',
                         (str(i), w, json.dumps({
                             'policy': 'copy-observe-v1', 'status': 'CLOSED', 'opened': now - 21 * 86400,
-                            'closed_at': now - 20 * 86400, 'pnl_micro': 2_000_000, 'market': f'old{i}', 'fee': 1000,
+                            'closed_at': now - 20 * 86400, 'pnl_micro': 2_000_000, 'market': f'btc-updown-15m-2{i}', 'fee': 1000,
                         })),
                     )
             held, changed = tick(store, now=now)
@@ -166,7 +166,7 @@ class RosterTests(unittest.TestCase):
                     'INSERT INTO wallet_observation_positions VALUES (?,?,?)',
                     ('after', w, json.dumps({
                         'policy': 'copy-observe-v1', 'status': 'CLOSED', 'opened': now - 86400,
-                        'closed_at': now - 3600, 'pnl_micro': 50_000, 'market': 'new', 'fee': 1000,
+                        'closed_at': now - 3600, 'pnl_micro': 50_000, 'market': 'btc-updown-15m-904', 'fee': 1000,
                     })),
                 )
             updated, changed = tick(store, now=now)
@@ -222,7 +222,7 @@ class RosterTests(unittest.TestCase):
                     'INSERT INTO wallet_copy_positions(body) VALUES (?)',
                     (json.dumps({
                         'wallet': weak, 'status': 'CLOSED', 'closed_at': now - 1,
-                        'opened': now - 4, 'pnl_micro': -500_000, 'market': 'kept',
+                        'opened': now - 4, 'pnl_micro': -500_000, 'market': 'btc-updown-15m-905',
                     }),),
                 )
             updated, _changed = tick(store, now=now, candidate_stats={newbie: {
@@ -263,7 +263,7 @@ class RosterTests(unittest.TestCase):
                         (str(i), wallet, json.dumps({
                             'policy': 'copy-observe-v2', 'status': 'SETTLED',
                             'opened': now - 20, 'closed_at': now - 10,
-                            'pnl_micro': 1_000_000, 'market': f'm{i}', 'fee': 1000,
+                            'pnl_micro': 1_000_000, 'market': f'btc-updown-15m-1{i}', 'fee': 1000,
                         })),
                     )
             updated, changed = tick(store, now=now)
@@ -372,7 +372,7 @@ class RosterTests(unittest.TestCase):
                         (f'v1-{i}', wallet, json.dumps({
                             'policy': 'copy-observe-v1', 'status': 'SETTLED',
                             'opened': now - 86400, 'closed_at': now - 3600,
-                            'pnl_micro': 1_000_000, 'market': f'm{i}', 'fee': 1000,
+                            'pnl_micro': 1_000_000, 'market': f'btc-updown-15m-1{i}', 'fee': 1000,
                         })),
                     )
             evidence = copy_evidence(store, wallet, now)
@@ -419,8 +419,8 @@ class RosterTests(unittest.TestCase):
             with store.connect() as db:
                 db.execute('CREATE TABLE wallet_copy_positions (id INTEGER PRIMARY KEY, body TEXT)')
                 for pnl, opened, market in (
-                    (10_000_000, now - 86400, 'old'),
-                    (-1_000_000, now - 30, 'new'),
+                    (10_000_000, now - 86400, 'btc-updown-15m-906'),
+                    (-1_000_000, now - 30, 'btc-updown-15m-904'),
                 ):
                     db.execute(
                         'INSERT INTO wallet_copy_positions(body) VALUES (?)',
@@ -447,8 +447,8 @@ class RosterTests(unittest.TestCase):
             with store.connect() as db:
                 db.execute('CREATE TABLE wallet_copy_positions (id INTEGER PRIMARY KEY, body TEXT)')
                 for pnl, opened, market in (
-                    (-10_000_000, now - 86400, 'old'),
-                    (1_000_000, now - 30, 'new'),
+                    (-10_000_000, now - 86400, 'btc-updown-15m-906'),
+                    (1_000_000, now - 30, 'btc-updown-15m-904'),
                 ):
                     db.execute(
                         'INSERT INTO wallet_copy_positions(body) VALUES (?)',
@@ -476,7 +476,7 @@ class RosterTests(unittest.TestCase):
                     'INSERT INTO wallet_copy_positions(body) VALUES (?)',
                     (json.dumps({
                         'wallet': wallet, 'status': 'SETTLED', 'opened': now - 10,
-                        'closed_at': now, 'pnl_micro': -500_000, 'market': 'm',
+                        'closed_at': now, 'pnl_micro': -500_000, 'market': 'btc-updown-15m-900',
                     }),),
                 )
                 self.assertTrue(pause_if_period_negative(db, wallet, now))
@@ -500,7 +500,7 @@ class RosterTests(unittest.TestCase):
                     (json.dumps({
                         'wallet': wallet, 'status': 'RESOLVED', 'opened': now - 40,
                         'official_seen_at': now - 20, 'official_payout': 0,
-                        'cost': 3_270_000, 'fee': 0, 'market': 'm',
+                        'cost': 3_270_000, 'fee': 0, 'market': 'btc-updown-15m-900',
                     }),),
                 )
                 self.assertTrue(pause_if_period_negative(db, wallet, now))
@@ -525,7 +525,7 @@ class RosterTests(unittest.TestCase):
                     (json.dumps({
                         'wallet': wallet, 'status': 'RESOLVED', 'opened': now - 40,
                         'official_seen_at': now - 20, 'official_payout': 5_000_000,
-                        'cost': 2_000_000, 'fee': 0, 'market': 'm',
+                        'cost': 2_000_000, 'fee': 0, 'market': 'btc-updown-15m-900',
                     }),),
                 )
                 self.assertFalse(pause_if_period_negative(db, wallet, now))
@@ -555,7 +555,7 @@ class RosterTests(unittest.TestCase):
                     ('old', wallet, json.dumps({
                         'policy': 'copy-observe-v1', 'status': 'SETTLED',
                         'opened': now - 7200, 'closed_at': now - 7000,
-                        'pnl_micro': 9_000_000, 'market': 'm1', 'fee': 1000,
+                        'pnl_micro': 9_000_000, 'market': 'btc-updown-15m-901', 'fee': 1000,
                     })),
                 )
             updated, changed = tick(store, now=now)
@@ -582,7 +582,7 @@ class RosterTests(unittest.TestCase):
                     ('down', wallet, json.dumps({
                         'policy': 'copy-observe-v2', 'status': 'SETTLED',
                         'opened': now - 100, 'closed_at': now - 10,
-                        'pnl_micro': -2_000_000, 'market': 'm1', 'fee': 1000,
+                        'pnl_micro': -2_000_000, 'market': 'btc-updown-15m-901', 'fee': 1000,
                     })),
                 )
             updated, changed = tick(store, now=now)
@@ -605,9 +605,20 @@ class RosterTests(unittest.TestCase):
                     'INSERT INTO wallet_copy_positions(body) VALUES (?)',
                     (json.dumps({
                         'wallet': wallet, 'status': 'SETTLED', 'opened': now - 100,
-                        'closed_at': now - 10, 'pnl_micro': None, 'market': 'm1',
+                        'closed_at': now - 10, 'pnl_micro': None, 'market': 'btc-updown-15m-901',
                     }),),
                 )
             updated, changed = tick(store, now=now)
             self.assertNotIn(wallet, changed)
             self.assertEqual(updated['wallets'][wallet]['state'], 'paused')
+
+
+class CopyMarketTests(unittest.TestCase):
+    def test_only_btc_15m_counts_for_the_period(self):
+        from lab.wallet_roster import copied_market, period_closes
+        self.assertTrue(copied_market('btc-updown-15m-1792128600'))
+        for slug in ('btc-updown-5m-1792128600', 'eth-updown-15m-1792128600', '', None):
+            self.assertFalse(copied_market(slug))
+        rows = [{'status': 'SETTLED', 'opened': 10, 'market': 'btc-updown-5m-1'},
+                {'status': 'SETTLED', 'opened': 10, 'market': 'btc-updown-15m-1'}]
+        self.assertEqual([r['market'] for r in period_closes(rows, 0)], ['btc-updown-15m-1'])

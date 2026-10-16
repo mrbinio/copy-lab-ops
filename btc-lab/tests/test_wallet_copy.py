@@ -793,7 +793,7 @@ class CopyTests(unittest.TestCase):
                     db.execute('INSERT INTO wallet_copy_positions VALUES (?,?,?)',(
                         'loss-1',wallet,json.dumps({
                             'wallet':wallet,'status':'SETTLED','opened':self.now-20,
-                            'closed_at':self.now,'pnl_micro':-1_000_000,'market':'m',
+                            'closed_at':self.now,'pnl_micro':-1_000_000,'market':'btc-updown-15m-900',
                             'cost':1_000_000,'fee':0,
                         }),
                     ))
@@ -805,7 +805,7 @@ class CopyTests(unittest.TestCase):
         buyer=[]
         def buy():
             try:
-                trade={'id':'lot-1','wallet':wallet,'cost':1_000_000,'fee':0,'market':'m','status':'OPEN'}
+                trade={'id':'lot-1','wallet':wallet,'cost':1_000_000,'fee':0,'market':'btc-updown-15m-900','status':'OPEN'}
                 buyer.append(self.engine._open_lot(trade,{},wallet,'buy-1'))
             except Exception as error:
                 errors.append(error)
@@ -846,7 +846,7 @@ class CopyTests(unittest.TestCase):
         with self.store.connect() as db:
             db.execute('INSERT INTO wallet_copy_events VALUES (?,?,?,?,?)',(bad,'held',self.now,'PROCESSING','{}'))
             db.execute('INSERT INTO wallet_copy_events VALUES (?,?,?,?,?)',(other,'open',self.now,'PROCESSING','{}'))
-        trade=lambda name:{'id':name,'cost':1_000_000,'fee':0,'market':'m-'+name,'status':'OPEN'}
+        trade=lambda name:{'id':name,'cost':1_000_000,'fee':0,'market':'btc-updown-15m-'+name,'status':'OPEN'}
         self.assertFalse(self.engine._open_lot(trade('held'),{},bad,'held'))
         self.assertTrue(self.engine._open_lot(trade('open'),{},other,'open'))
         with self.store.connect() as db:
@@ -857,8 +857,8 @@ class CopyTests(unittest.TestCase):
     def test_a_third_open_waits_for_the_first_period_result(self):
         from lab.wallet_copy import exposure_block
         opens = [
-            {'status': 'OPEN', 'cost': 1_000_000, 'fee': 0, 'market': 'a'},
-            {'status': 'OPEN', 'cost': 1_000_000, 'fee': 0, 'market': 'b'},
+            {'status': 'OPEN', 'cost': 1_000_000, 'fee': 0, 'market': 'btc-updown-15m-907'},
+            {'status': 'OPEN', 'cost': 1_000_000, 'fee': 0, 'market': 'btc-updown-15m-908'},
         ]
         self.assertEqual(
             exposure_block(opens, 'c', 1_000_000, True, 500_000_000, False, 0),

@@ -20,6 +20,7 @@ paper-roster-v1 and paper-roster-v2 are kept below. Their results are not rewrit
 This is a PAPER experiment. It does not prove an edge and it does not raise risk limits.
 """
 import json
+import re
 import time
 from .wallet_observer import SEED_WALLETS, PAPER_EXTRA
 from .strategy_control import set_paused
@@ -112,6 +113,16 @@ RULES = {
     'concentration_uncertain_above': 0.70,
 }
 _RULES_FOR = {PREVIOUS_SPEC: RULES_V1, SPEC_V2: RULES_V2}
+# Damian, 16 Oct 2026: his wallets are copied on BTC 15m only, like Mitch.
+# Over 5-16 Oct the 5m markets lost 372 of the 436 USD; BTC 15m lost 40.
+# Pause, resume and admission are judged on BTC 15m results only.
+COPY_MARKET = re.compile(r'btc-updown-15m-\d+')
+
+
+def copied_market(slug):
+    return bool(COPY_MARKET.fullmatch(str(slug or '')))
+
+
 PAUSE_REASON = 'paper-roster-v3 pause: current copy period is negative'
 RETEST_REASON = 'paper-roster-v3 retest'
 RESTORE_PLUS_REASON = 'paper-roster-v3 retest: settled copy book is positive'
@@ -324,6 +335,7 @@ def period_closes(closed, since):
     return [
         t for t in closed
         if t.get('status') in ('CLOSED', 'SETTLED')
+        and copied_market(t.get('market'))
         and t.get('opened') is not None
         and t.get('opened') >= since
     ]
@@ -339,6 +351,8 @@ def period_results_for_pause(closed, since):
     rows = list(period_closes(closed, since))
     for trade in closed:
         if trade.get('status') != 'RESOLVED' or trade.get('official_payout') is None:
+            continue
+        if not copied_market(trade.get('market')):
             continue
         if trade.get('opened') is None or trade.get('opened') < since:
             continue
@@ -464,6 +478,8 @@ def hypothetical_settled(store):
             if shadow.get('status') != 'SETTLED' or shadow.get('pnl_micro') is None:
                 continue
             event = review.get('source_event') or {}
+            if not copied_market(event.get('slug')):
+                continue
             item = {
                 'status': 'CLOSED',
                 'closed_at': review.get('official_seen_at') or review.get('decision_at') or 0,
@@ -491,7 +507,7 @@ def observation_results(store):
             return found
         for wallet, body in db.execute('SELECT wallet, body FROM wallet_observation_positions'):
             trade = json.loads(body)
-            if trade.get('status') not in ('CLOSED', 'SETTLED') or trade.get('pnl_micro') is None:
+            if trade.get('status') not in ('CLOSED', 'SETTLED') or trade.get('pnl_micro') is None or not copied_market(trade.get('market')):
                 continue
             trade['fee_micro'] = trade.get('fee')
             found.setdefault(wallet, []).append(trade)
@@ -536,7 +552,7 @@ def observation_settled(store):
             # in the table and still settles, but it is not evidence for this version.
             if trade.get('policy') != version or (trade.get('opened') or 0) < started:
                 continue
-            if trade.get('status') not in ('CLOSED', 'SETTLED') or trade.get('pnl_micro') is None:
+            if trade.get('status') not in ('CLOSED', 'SETTLED') or trade.get('pnl_micro') is None or not copied_market(trade.get('market')):
                 continue
             trade['fee_micro'] = trade.get('fee')
             found.setdefault(wallet, []).append(trade)
