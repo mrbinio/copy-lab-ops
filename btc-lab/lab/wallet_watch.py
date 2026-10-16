@@ -120,6 +120,10 @@ def _policy_view(db, wallet, now, meta):
 # recent window (the first one reads a week).
 LAST_BUY = {}
 LAST_BUY_WINDOW_S = 900
+# 17 Oct 2026: the first scan after a start read 7 days of activity and
+# parsed every row's JSON, a full core for minutes after each restart (loud
+# fan). The last buy is shown, never decided on; one day is enough.
+LAST_BUY_COLD_S = 86400
 
 
 def summarize_wallet(db, wallet, roster_row, observer, now, meta=None):
@@ -310,7 +314,7 @@ def build_watch(store, now):
             for row in db.execute(f'SELECT key, body FROM state WHERE key IN ({marks})', keys):
                 observers[row['key']] = json.loads(row['body'])
         if _table(db, 'wallet_activity'):
-            since = now - LAST_BUY_WINDOW_S if LAST_BUY else now - 7 * 86400
+            since = now - LAST_BUY_WINDOW_S if LAST_BUY else now - LAST_BUY_COLD_S
             hint = ' INDEXED BY wallet_activity_seen' if db.execute(
                 "SELECT 1 FROM sqlite_master WHERE type='index' AND name='wallet_activity_seen'").fetchone() else ''
             for wallet, at in db.execute(
