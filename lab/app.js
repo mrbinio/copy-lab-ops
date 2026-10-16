@@ -849,6 +849,18 @@ function renderMitchFast(m){
     stopped?'Kupno wstrzymane (STOP / Mitch stop).':'Kopia powstaje tylko, gdy jego portfele kupią BTC 15m. Rynków 5m nie kopiujemy.'));
   box.append(mitchMetric('Okres testu od',st&&st.at?day(st.at):missing(),
     'Pauza liczy tylko ten okres. Wynik od startu zostaje poniżej.'));
+  // 16 Oct 2026: Damian read the desk cash (287.78) against the period
+  // result (+182.51) and could not tell them apart. Cash, result and reserve
+  // of the desk in one card, each with its start.
+  const desk=m&&m.desk;
+  if(desk){
+    const cash=(desk.money_micro||0)/1e6,line=(desk.line_micro||0)/1e6;
+    box.append(mitchMetric('Biurko: gotówka do gry',money(cash),
+      'z linii '+money(line)+' · wynik biurka od '+(desk.start_at?day(desk.start_at):'startu')+': '+money((desk.realized_micro||0)/1e6,true)+
+      ' · odłożone do rezerwy: '+money((desk.swept_micro||0)/1e6)+' · stop przy '+money((desk.stop_micro||0)/1e6)+
+      (cash<line?' · do rezerwy znowu, gdy wróci ponad '+money(line):''),
+      cash<=(desk.stop_micro||0)/1e6?'negative':''));
+  }
   renderMitchDecisions(m);
 }
 function renderMitchDiscovery(s){
