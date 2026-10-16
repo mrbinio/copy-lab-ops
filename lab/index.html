@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="pl" translate="no" class="notranslate">
-<head><meta charset="utf-8"><meta name="google" content="notranslate"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0b1018"><title>BTC Lab · PAPER</title><link rel="stylesheet" href="style.css?v=20261016-home4"><script defer src="app.js?v=20261016-home4"></script></head>
+<head><meta charset="utf-8"><meta name="google" content="notranslate"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0b1018"><title>BTC Lab · PAPER</title><link rel="stylesheet" href="style.css?v=20261016-en"><script defer src="app.js?v=20261016-en"></script></head>
 <body class="notranslate" translate="no">
 <aside class="sidebar"><a class="brand" href="#wynik"><span class="brand-mark">₿</span><span>BTC<span class="brand-light">LAB</span><small>PAPER</small></span></a>
 <p class="nav-label">WIDOK</p>
@@ -30,11 +30,12 @@
 </section>
 <section class="page" id="wynik" hidden>
 <p id="demo-banner" class="demo-banner" hidden>NIEAKTUALNY PODGLĄD — to nie są bieżące wyniki usługi na porcie 8769.</p>
-<p class="paper-banner">PAPER — symulacja, nie prawdziwe pieniądze. Tylko kopiowane portfele. Własne strategie 5–15 min są na osobnej zakładce i nie wchodzą do tej liczby.</p>
+<div class="home one" id="wynik-home"></div>
+<h2 class="home-sub">Szczegóły</h2>
 <p id="copy-flow" class="data-status stale">Stan kopiowania: brak danych</p>
 <p id="data-status" class="data-status">Dane nieaktualne</p>
-<p id="revision-line" class="revision-line">Rewizja: brak danych</p>
-<p id="revision-note" class="metric-note">To skrót kodu wczytanego przy starcie procesu. Plik ekranu skopiowany bez restartu może być nowszy. Poprzedni ekran pokazywał ab38d9c właśnie dlatego.</p>
+<p id="revision-line" class="revision-line" hidden>Rewizja: brak danych</p>
+<p id="revision-note" class="metric-note" hidden>To skrót kodu wczytanego przy starcie procesu. Plik ekranu skopiowany bez restartu może być nowszy. Poprzedni ekran pokazywał ab38d9c właśnie dlatego.</p>
 <div class="metrics" id="copy-periods">
 <article class="metric" id="card-today"><div class="metric-label" id="label-today">Dzisiaj</div><div class="metric-value" id="net-today">brak danych</div><p class="metric-note" id="note-today">Zamknięte kopie PAPER po kosztach. Strategie 5–15 min nie wchodzą.</p></article>
 <article class="metric" id="card-week"><div class="metric-label" id="label-week">Ostatnie 7 dni</div><div class="metric-value" id="net-week">brak danych</div><p class="metric-note" id="note-week">Zamknięte kopie PAPER po kosztach. Strategie 5–15 min nie wchodzą.</p></article>
@@ -42,7 +43,7 @@
 </div>
 <div class="period-switch" role="group" aria-label="Okres wyniku">
 <button type="button" id="period-today" data-period="today">Dzisiaj</button>
-<button type="button" id="period-week" data-period="week">Ostatnie 7 dni</button>
+<button type="button" id="period-week" data-period="week">Ostatnie 7 × 24 h</button>
 <button type="button" id="period-all" data-period="all">Od początku</button>
 </div>
 <article class="metric board-result"><div class="metric-label" id="board-net-label">Wybrany okres</div><div class="metric-value" id="board-net">brak danych</div><p class="metric-note" id="board-net-note">Zamknięte transakcje tej księgi. Otwarte pozycje są osobno.</p></article>
@@ -63,8 +64,9 @@
 </details>
 </section>
 <section class="page" id="mitch" hidden>
-<p class="paper-banner">PAPER — osobna księga mitch-copy-wallets-v1. To nie jest wynik kwalifikacji portfeli. Symulacja, nie prawdziwe pieniądze. Tylko BTC Up/Down 15 min. Miha 5m nie jest kopiowany.</p>
-<p id="mitch-miha-note" class="metric-note"></p>
+<div class="home one" id="mitch-home"></div>
+<p id="mitch-miha-note" class="metric-note" hidden></p>
+<h2 class="home-sub">Szczegóły</h2>
 <div class="metrics" id="mitch-fast"></div>
 <section class="panel" id="mitch-book-panel"><div class="panel-heading"><div><h2>Arkusz — bid i ask</h2><p>To jest ostatni odczyt CLOB przy decyzji Mitcha. Brak bidu albo asku jest powodem, nie zgadywaniem.</p></div></div>
 <div id="mitch-book"></div></section>
