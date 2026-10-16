@@ -845,13 +845,13 @@ function renderMitchFast(m){
     f&&f.resolve_p90_ms!=null?'mediana · p90 '+Math.round(f.resolve_p90_ms)+' ms · cel: decyzja poniżej 1 s':'Od printu CLOB do odczytu transakcji.'));
   const copies=rows.reduce((n,r)=>n+(r.period_copies||0),0);
   const net=rows.reduce((n,r)=>n+(r.period_net_micro||0),0);
-  box.append(mitchMetric('Wynik okresu testu'+(st&&st.at?' od '+new Date(st.at*1000).toLocaleString('pl-PL',{timeZone:'Europe/Stockholm',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):''),rows.length?money(net/1e6,true):missing(),
+  box.append(mitchMetric('Wynik okresu testu'+(st&&st.at?' od '+homeWhen(st.at):''),rows.length?money(net/1e6,true):missing(),
     copies+' kopii · '+rows.reduce((n,r)=>n+(r.period_closed||0),0)+' zamkniętych',net>0?'positive':net<0?'negative':''));
   // 15 Oct 2026: Damian saw the same numbers for days and could not tell that
   // Mitch's wallets simply had no BTC 15m buys to copy. Show when the last
   // copy happened and why nothing moves.
   const lastCopy=(m&&m.last_copy_at)||(m&&m.period_events||[]).filter(e=>e.reason==='MITCH_BUY'||e.reason==='MITCH_ADD').reduce((a,e)=>Math.max(a,e.at||0),0);
-  const day=t=>new Date(t*1000).toLocaleString('pl-PL',{timeZone:'Europe/Stockholm',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+  const day=homeWhen;
   const stopped=m&&m.stop_active;
   // 16 Oct 2026: last copy, period start and the desk are in the card above.
   renderMitchDecisions(m);
@@ -860,7 +860,7 @@ function renderMitchDiscovery(s){
   const body=$('mitch-discovery');if(!body)return;
   const d=s.mitch_discovery||{};const rows=d.rows||[];
   const sig=String(d.finished_at||'');if(body.dataset.sig===sig)return;body.dataset.sig=sig;
-  text('mitch-discovery-when',d.finished_at?('przeliczone '+new Date(d.finished_at*1000).toLocaleString('pl-PL',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})+' · przeszło '+(d.passed||[]).length):'czeka na pierwsze przeliczenie');
+  text('mitch-discovery-when',d.finished_at?('przeliczone '+homeWhen(d.finished_at)+' · przeszło '+(d.passed||[]).length):'czeka na pierwsze przeliczenie');
   body.replaceChildren();
   const usd=v=>v==null?'—':money(v,true);
   for(const r of rows){
@@ -911,7 +911,7 @@ function ovRow(label,value,ok){
 // with the date it is counted from), how much money, and why nothing moves.
 // The numbers come from the server's overview (lab/overview.py).
 const HOME_WHY={WINDOW_LIMIT:'limit na okno był już pełny',LATE_BUY_NOT_COPIED:'jego kupno dotarło za późno (ponad 1 s)',NO_LIQUIDITY:'brak ofert na arkuszu',PRICE_WORSE_THAN_10C:'cena uciekła o ponad 10 centów',TECH_BRAKE:'hamulec techniczny',MITCH_MANUAL_PAUSE:'pauza ręczna',MITCH_DESK_STOP:'biurko na stopie'};
-function homeWhen(t){return new Date(t*1000).toLocaleString('pl-PL',{timeZone:'Europe/Stockholm',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});}
+function homeWhen(t){const p={};for(const x of new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/Stockholm',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(new Date(t*1000)))p[x.type]=x.value;return p.day+'.'+p.month+', '+p.hour+':'+p.minute;}
 function homeAgo(t){const m=Math.max(0,Math.round((Date.now()/1000-t)/60));return m<60?m+' min temu':m<1440?Math.floor(m/60)+' h '+(m%60)+' min temu':Math.floor(m/1440)+' dni temu';}
 function homeBars(days){
   const ns='http://www.w3.org/2000/svg';const svg=document.createElementNS(ns,'svg');
