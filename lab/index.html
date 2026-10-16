@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="pl" translate="no" class="notranslate">
+<head><meta charset="utf-8"><meta name="google" content="notranslate"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0b1018"><title>BTC Lab · PAPER</title><link rel="stylesheet" href="style.css?v=20261016-home4"><script defer src="app.js?v=20261016-home4"></script></head>
+<body class="notranslate" translate="no">
+<aside class="sidebar"><a class="brand" href="#wynik"><span class="brand-mark">₿</span><span>BTC<span class="brand-light">LAB</span><small>PAPER</small></span></a>
+<p class="nav-label">WIDOK</p>
+<nav aria-label="Main navigation">
+<a class="nav-item active" href="#przeglad"><span>◆</span><b>Przegląd</b></a>
+<a class="nav-item" href="#mitch"><span>▣</span><b>Mitch</b></a>
+<a class="nav-item" href="#wynik"><span>◈</span><b>Portfele</b></a>
+<a class="nav-item" href="#dziennik"><span>≋</span><b>Historia</b></a>
+<a class="nav-item" href="#obserwacje"><span>⌕</span><b>Odkrywanie</b></a>
+<a class="nav-item" href="#diagnostyka"><span>◎</span><b>System</b></a>
+<a class="nav-item" href="#strategie"><span>⊞</span><b>Archiwum</b></a>
+</nav>
+<div class="sidebar-bottom"><strong>PAPER — symulacja, nie prawdziwe pieniądze</strong><p>Port 8769. To nie jest saldo giełdy i nie są to prawdziwe zlecenia.</p><div class="build"><span id="service-version">—</span></div></div></aside>
+<main>
+<header><div class="breadcrumb">BTC Lab <span>/</span> <b id="tab-name">Przegląd</b></div><div class="header-actions"><span id="clock">—</span><button id="language" class="small-button" aria-label="Change language">EN</button></div></header>
+<div id="ops-status" class="ops-status" role="status">Stan: brak danych</div>
+<nav class="project-tabs" aria-label="Projekty"><a href="#przeglad">Przegląd</a><a href="#mitch">Mitch</a><a href="#wynik">Portfele</a><a href="#dziennik">Historia</a></nav>
+<p id="stop-banner" class="stop-banner" hidden>STOP aktywny: nowe kupna są wstrzymane (Mitch, portfele, strategie). Sprzedaż i rozliczenia działają. Zdejmiesz go komendą /wznow w Telegramie.</p>
+<section class="page" id="przeglad">
+<div class="home" id="home"></div>
+<h2 class="home-sub">Szczegóły</h2>
+<div class="main-grid">
+<section class="panel"><div class="panel-heading"><div><h2>Lista kontrolna przed LIVE</h2><p>Warunki na PAPER, zanim LIVE w ogóle będzie rozważane. Spełnienie nie włącza LIVE samo.</p></div><span class="chip" id="overview-ready-count">—</span></div><div id="overview-ready"></div></section>
+<section class="panel"><div class="panel-heading"><div><h2>System</h2><p>Stan usług na tym Macu.</p></div></div><div id="overview-system"></div></section>
+</div>
+<section class="panel" style="margin-top:22px"><div class="panel-heading"><div><h2>Rezerwa zysku</h2><p id="overview-bank-note">40% z każdego nowego szczytu wyniku netto księgi.</p></div></div><div id="overview-bank"></div></section>
+</section>
+<section class="page" id="wynik" hidden>
+<p id="demo-banner" class="demo-banner" hidden>NIEAKTUALNY PODGLĄD — to nie są bieżące wyniki usługi na porcie 8769.</p>
+<p class="paper-banner">PAPER — symulacja, nie prawdziwe pieniądze. Tylko kopiowane portfele. Własne strategie 5–15 min są na osobnej zakładce i nie wchodzą do tej liczby.</p>
+<p id="copy-flow" class="data-status stale">Stan kopiowania: brak danych</p>
+<p id="data-status" class="data-status">Dane nieaktualne</p>
+<p id="revision-line" class="revision-line">Rewizja: brak danych</p>
+<p id="revision-note" class="metric-note">To skrót kodu wczytanego przy starcie procesu. Plik ekranu skopiowany bez restartu może być nowszy. Poprzedni ekran pokazywał ab38d9c właśnie dlatego.</p>
+<div class="metrics" id="copy-periods">
+<article class="metric" id="card-today"><div class="metric-label" id="label-today">Dzisiaj</div><div class="metric-value" id="net-today">brak danych</div><p class="metric-note" id="note-today">Zamknięte kopie PAPER po kosztach. Strategie 5–15 min nie wchodzą.</p></article>
+<article class="metric" id="card-week"><div class="metric-label" id="label-week">Ostatnie 7 dni</div><div class="metric-value" id="net-week">brak danych</div><p class="metric-note" id="note-week">Zamknięte kopie PAPER po kosztach. Strategie 5–15 min nie wchodzą.</p></article>
+<article class="metric" id="card-all"><div class="metric-label" id="label-all">Od początku księgi</div><div class="metric-value" id="net-all">brak danych</div><p class="metric-note" id="note-all">Zamknięte kopie PAPER po kosztach. Strategie 5–15 min nie wchodzą.</p></article>
+</div>
+<div class="period-switch" role="group" aria-label="Okres wyniku">
+<button type="button" id="period-today" data-period="today">Dzisiaj</button>
+<button type="button" id="period-week" data-period="week">Ostatnie 7 dni</button>
+<button type="button" id="period-all" data-period="all">Od początku</button>
+</div>
+<article class="metric board-result"><div class="metric-label" id="board-net-label">Wybrany okres</div><div class="metric-value" id="board-net">brak danych</div><p class="metric-note" id="board-net-note">Zamknięte transakcje tej księgi. Otwarte pozycje są osobno.</p></article>
+<article class="metric"><div class="metric-label">Otwarte pozycje</div><div class="metric-value" id="board-open-count">brak danych</div><p class="metric-note" id="board-open-note">Aktualny wynik po szacowanych kosztach sprzedaży jest osobno od wyniku zamkniętych transakcji.</p></article>
+<section class="panel" id="profit-bank-panel"><div class="panel-heading"><div><h2>Rezerwa zysku</h2><p>40% z nowych zamkniętych plusów. Osobny portfel PAPER. Nie LIVE.</p></div></div>
+<div id="profit-bank-tile" class="strategy-grid"></div></section>
+<section class="panel"><div class="panel-heading"><div><h2>Śledzone portfele</h2><p id="wallet-track">Każdy kafel to portfel, który usługa sprawdza. Strategii 5–15 min tu nie ma.</p></div></div>
+<div id="wallet-tiles" class="strategy-grid"></div></section>
+<section class="panel" id="wallet-detail" hidden></section>
+<details class="panel diag-fold"><summary>Szczegóły księgi, skład dnia i filtr ceny</summary>
+<section class="panel"><div class="panel-heading"><div><h2>Skład wyniku z dzisiaj</h2><p id="today-scope">Zamknięte kopie PAPER z dzisiejszej daty w Sztokholmie. Ta lista jest sumą liczby „Dzisiaj”.</p></div></div>
+<div id="today-lines"></div></section>
+<section class="panel"><div class="panel-heading"><div><h2>Filtr ceny 20–70¢</h2><p id="price-band-note">Pasmo 20–70¢ jest limitem tej wersji PAPER. Zakup źródła za 75¢ odpada przez ten limit. To nie jest teza, że 75¢ jest z góry stratnym zakupem. Zmiana pasma należy do osobnego PAPER.</p></div></div>
+<p id="price-band-counts">brak danych</p>
+<p id="copy-rules">Reguły kopiowania. Ujemny wynik zamkniętych kopii bieżącego okresu blokuje nowe zakupy. Sprzedaż i rozliczenie zostają.</p></section>
+<section class="panel"><div class="panel-heading"><div><h2 id="table-title">Portfele w wybranym okresie</h2><p id="table-scope">Ta sama księga i ten sam okres co wyróżniona liczba u góry.</p></div></div>
+<div class="table-scroll"><table><thead><tr><th>Portfel</th><th>Czy teraz kopiujemy?</th><th>Wynik netto</th><th>Zamknięte transakcje</th><th>Powód wstrzymania</th></tr></thead><tbody id="board-wallets"></tbody><tfoot><tr><th>Suma</th><td></td><th id="board-sum">brak danych</th><th id="board-sum-count">brak danych</th><td id="board-sum-note"></td></tr></tfoot></table></div></section>
+</details>
+</section>
+<section class="page" id="mitch" hidden>
+<p class="paper-banner">PAPER — osobna księga mitch-copy-wallets-v1. To nie jest wynik kwalifikacji portfeli. Symulacja, nie prawdziwe pieniądze. Tylko BTC Up/Down 15 min. Miha 5m nie jest kopiowany.</p>
+<p id="mitch-miha-note" class="metric-note"></p>
+<div class="metrics" id="mitch-fast"></div>
+<section class="panel" id="mitch-book-panel"><div class="panel-heading"><div><h2>Arkusz — bid i ask</h2><p>To jest ostatni odczyt CLOB przy decyzji Mitcha. Brak bidu albo asku jest powodem, nie zgadywaniem.</p></div></div>
+<div id="mitch-book"></div></section>
+<div class="metrics" id="mitch-metrics"></div>
+<section class="panel" id="mitch-bank-panel"><div class="panel-heading"><div><h2>Rezerwa zysku</h2><p>Mitch: wszystko ponad 500 USD biurka. Portfele: 40% z każdego nowego szczytu. PAPER.</p></div></div>
+<div id="mitch-bank"></div></section>
+<div id="mitch-wallets" class="strategy-grid"></div>
+<section class="panel" id="mitch-detail" hidden></section>
+<section class="panel" id="mitch-decisions-panel">
+<div class="panel-heading"><div><h2>Decyzje w okresie testu</h2><p>Każda transakcja Mitcha na BTC 15m i co z nią zrobiliśmy. Czas liczony od jego transakcji na giełdzie do naszej decyzji.</p></div><span class="chip" id="mitch-decisions-count">brak danych</span></div>
+<div class="table-scroll"><table><thead><tr><th>CZAS</th><th>PORTFEL</th><th>DECYZJA</th><th>STRONA</th><th>RYNEK</th><th>OD JEGO TRANSAKCJI</th></tr></thead><tbody id="mitch-decisions"></tbody></table></div>
+<p id="mitch-decisions-empty" class="metric-note" style="margin:12px 22px">Mitch jeszcze nie handlował w tym okresie.</p>
+</section>
+<section class="panel" id="mitch-discovery-panel">
+<div class="panel-heading"><div><h2>Odkrywanie metodą Mitcha (90 dni)</h2><p>Każdy portfel i rynek: nasza kopia jego transakcji o 2 centy gorzej od jego ceny, z opłatami, rozmiarem i limitem jak u Mitcha. Przechodzi, gdy kopia jest na plusie przez 90 i 30 dni, także bez najlepszego okna, i ma co najmniej 100 okien. Nowe portfele nie trafiają same do księgi Mitcha.</p></div><span class="chip" id="mitch-discovery-when">brak danych</span></div>
+<div class="table-scroll"><table><thead><tr><th>PORTFEL</th><th>RYNEK</th><th>KOPIA 90 DNI</th><th>BEZ NAJLEPSZEGO OKNA</th><th>30 DNI</th><th>7 DNI</th><th>OKNA</th><th>DNI +/−</th><th>WERDYKT</th></tr></thead><tbody id="mitch-discovery"></tbody></table></div>
+</section>
+<section class="panel" id="mitch-trades-panel">
+<div class="panel-heading"><div><h2>Transakcje Mitcha</h2><p>Zamknięte kopie tej księgi. Zakup spóźniony albo z listy publicznej tu nie wejdzie.</p></div></div>
+<div class="table-scroll"><table><thead><tr><th>CZAS</th><th>PORTFEL</th><th>RYNEK</th><th>ŹRÓDŁO</th><th>KOPIA</th><th>STATUS</th><th>WYNIK</th></tr></thead><tbody id="mitch-trades"></tbody></table></div>
+<p id="mitch-trades-empty" class="metric-note" style="margin:12px 22px">Brak zamkniętych kopii w tej księdze.</p>
+</section>
+<details class="panel diag-fold"><summary>Zdarzenia, opóźnienia i założenia</summary><div id="mitch-extra"></div></details>
+</section>
+<section class="page" id="dziennik" hidden>
+<p class="paper-banner">PAPER — historia. Starsze wpisy zostają w bazie. Ta lista jest stronami po 25, od najnowszych.</p>
+<section class="panel" id="activity"><div class="panel-heading"><div><h2>Historia</h2><p id="journal-scope">Zamknięte kopie i otwarte pozycje. Filtr nie usuwa danych.</p></div><span class="chip" id="journal-count">brak danych</span></div>
+<div class="history-filters"><label>Portfel <input id="history-wallet" type="search" placeholder="końcówka adresu"></label><label>Data <input id="history-date" type="date"></label><label>Rodzaj <select id="history-kind"><option value="all">Wszystkie</option><option value="buy">Zakupy</option><option value="sell">Sprzedaże</option><option value="open">Otwarte</option><option value="closed">Zamknięte</option></select></label><button type="button" id="history-prev" class="small-button">Nowsze</button><button type="button" id="history-next" class="small-button">Starsze</button><span id="history-page"></span></div>
+<div class="table-scroll"><table><thead><tr><th>CZAS</th><th>PORTFEL</th><th>STRONA</th><th>KOSZT + OPŁATY</th><th>STATUS</th><th>WYNIK</th></tr></thead><tbody id="trades"></tbody></table></div>
+<p id="journal-sum" class="metric-note"></p>
+<div class="empty-journal" id="journal-empty" hidden><strong>brak danych</strong></div>
+</section>
+</section>
+<section class="page" id="obserwacje" hidden>
+<p class="paper-banner">To nie jest wynik kopiowania PAPER. Obserwacje i niezależne bilety nie wchodzą do liczby na ekranie Wynik.</p>
+<div id="wallet-content"></div>
+<h2 style="margin:28px 0 12px">Kandydaci</h2>
+<p class="paper-banner">Kandydaci nie są wynikiem kopiowania PAPER i nie są prawdziwymi pieniędzmi.</p>
+<div id="candidate-content"></div>
+
+</section>
+
+<section class="page" id="strategie" hidden>
+<p class="paper-banner">ARCHIWUM · PAPER. Od 9.10.2026 wszystkie własne strategie 5–15 min są zatrzymane: każda straciła po opłatach (łącznie ok. −73 USD na 206 transakcjach). Otwarte pozycje dochodzą do rozliczenia. Ta liczba nie jest wynikiem kopiowanych portfeli.</p>
+<p id="asset-note" class="asset-note" hidden></p>
+<div class="title-actions"><label class="asset-control" for="asset"><span id="asset-label">Rynek</span><select id="asset" aria-label="Market / Rynek"><option value="BTC">BTC</option><option value="ETH">ETH</option></select></label><label>Data raportu <input id="report-date" type="date" aria-label="Completed Stockholm date; empty means yesterday"></label><span id="export-status" role="status"></span><button id="export" class="button primary">↓ Raport</button></div>
+<p id="selected-account-status" class="asset-note" role="status"></p>
+<div class="metrics"><article class="metric"><div class="metric-label">Wynik strategii 5–15 min · od początku · tylko ta strategia</div><div class="metric-value" id="pnl">—</div><div class="metric-note" id="capital-note"></div></article><article class="metric"><div class="metric-label">Gotówka</div><div class="metric-value" id="balance">—</div></article><article class="metric"><div class="metric-label">Skuteczność</div><div class="metric-value" id="win-rate">—</div><div class="metric-note" id="trade-count"></div></article><article class="metric"><div class="metric-label">Obserwacje</div><div class="metric-value" id="observations">—</div><div class="metric-note" id="labels"></div></article></div>
+<div class="main-grid"><article class="panel chart-panel"><div class="panel-heading"><div><h2 data-i18n="performance">5–15 min strategy result</h2></div><select id="account" aria-label="Choose strategy"></select></div><div class="chart-wrap"><svg id="performance-chart" viewBox="0 0 760 245" role="img"></svg><div id="chart-empty" class="chart-empty"></div></div><div class="chart-footer"><span id="curve-period"></span></div></article>
+<article class="panel"><div class="panel-heading"><h2 data-i18n="currentWindow">Current window</h2></div><div class="market-title"><b id="asset-window">BTC</b></div><div class="countdown" id="countdown">—:—</div><div class="quote-pair"><div><small>UP</small><strong id="up-ask">—</strong></div><div><small>DOWN</small><strong id="down-ask">—</strong></div></div><dl class="decision-details"><div><dt id="reference-label">Reference</dt><dd id="reference-price">—</dd></div><div><dt>Opening</dt><dd id="opening-price">—</dd></div><div><dt>Age</dt><dd id="reference-age">—</dd></div></dl><div class="decision-reason"><span id="decision-reason"></span></div></article></div>
+<div id="strategy-cards" class="strategy-grid"></div>
+<label hidden><span id="journal-filter-label"></span><select id="journal-strategy" aria-label="Journal strategy"><option id="journal-all" value="all">All</option></select></label>
+<label hidden><span id="journal-book-label"></span><select id="journal-book" aria-label="Journal book"></select></label>
+<span id="asset-heading" hidden></span><span id="asset-build" hidden></span>
+</section>
+<section class="page" id="diagnostyka" hidden>
+<p class="paper-banner">Diagnostyka usługi. To nie jest wynik kopiowania PAPER.</p>
+<div class="status-strip" role="status"><span class="status-dot" id="status-dot"></span><strong id="status-text">NOT CONNECTED</strong><span id="status-detail"></span></div>
+<section class="panel"><div class="health-row"><span>Collector</span><b id="collector-health">OFFLINE</b></div><div class="health-row"><span>Reference</span><b id="reference-health">WAITING</b></div><div class="health-row"><span>Model</span><b id="model-health"></b></div><div class="progress-label"><span id="training-count"></span></div><progress id="training-progress" max="200" value="0"></progress></section>
+<details class="panel diag-fold"><summary>Log techniczny</summary><div id="events" class="events"></div></details>
+<p id="updated"></p>
+</section>
+<section class="page" id="guide" hidden><div class="page-title"><div><h1 id="guide-title" tabindex="-1"></h1><p id="guide-intro"></p></div><a href="#wynik" class="button" id="guide-back"></a></div><nav id="guide-toc" class="guide-toc"></nav><div id="guide-content" class="guide-content"></div></section>
+</main>
+</body>
+</html>
