@@ -34,6 +34,8 @@ MAX_EXPOSURE_USD = Decimal('10')
 DAY_LOSS_STOP_USD = Decimal('5')
 MIN_MARKET_BUY_USD = Decimal('1')
 POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix='lab-live')
+PUSD = '0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB'
+WALLET_RPCS = ('https://polygon-bor-rpc.publicnode.com', 'https://polygon.drpc.org')
 
 
 def ensure(db):
@@ -272,6 +274,44 @@ class MitchLive:
         LOG.info('live %s %s %s %s', row['mode'], row['side'], status, str(row.get('amount_usd', '')))
         return row
 
+    def address(self):
+        """The wallet's public address (derived once from the key file)."""
+        if getattr(self, '_address', None) is None and self.key_path().exists():
+            from eth_account import Account
+            key = self.key_path().read_text().strip()
+            self._address = Account.from_key(key).address
+            del key
+        return getattr(self, '_address', None)
+
+    def wallet(self):
+        """On-chain balances, read at most once a minute (public node first)."""
+        now = self.clock()
+        cached = getattr(self, '_wallet', None)
+        if cached and now - cached['at'] < 55:
+            return cached
+        address = self.address()
+        if not address:
+            return None
+        import urllib.request
+        def call(method, params):
+            last = None
+            for url in WALLET_RPCS:
+                try:
+                    req = urllib.request.Request(url, data=json.dumps({'jsonrpc': '2.0', 'id': 1, 'method': method, 'params': params}).encode(),
+                                                 headers={'Content-Type': 'application/json', 'User-Agent': 'BTC-Lab-Paper/0.1'})
+                    return json.load(urllib.request.urlopen(req, timeout=8))['result']
+                except Exception as error:
+                    last = error
+            raise RuntimeError(str(last)[:120])
+        try:
+            data = '0x70a08231' + address[2:].lower().rjust(64, '0')
+            pusd = int(call('eth_call', [{'to': PUSD, 'data': data}, 'latest']), 16) / 1e6
+            pol = int(call('eth_getBalance', [address, 'latest']), 16) / 1e18
+            self._wallet = {'at': now, 'address': address, 'pusd': round(pusd, 6), 'pol': round(pol, 4)}
+        except Exception as error:
+            self._wallet = dict(cached or {'address': address}, at=now, error=str(error)[:120])
+        return self._wallet
+
     def summary(self):
         rows = self._rows()
         settings = self.settings()
@@ -282,7 +322,7 @@ class MitchLive:
         return {
             'at': self.clock(), 'mode': settings['mode'], 'key_present': self.key_path().exists(),
             'limits': {k: str(v) for k, v in settings.items() if k != 'mode'},
-            'counts': counts, 'exposure_usd': str(self.exposure_usd(rows)),
+            'wallet': self.wallet(), 'counts': counts, 'exposure_usd': str(self.exposure_usd(rows)),
             'day_loss_usd': str(self.day_loss_usd(rows)), 'recent': recent,
         }
 

@@ -945,12 +945,51 @@ function homeSeries(c,x){
 function renderHome(s){
   const box=$('home');if(!box)return;
   const o=s.overview||{};const m=s.mitch_copy||{};const now=Date.now()/1000;
-  const sig=JSON.stringify([lang,o.at,m.updated_at&&Math.floor(m.updated_at/30),m.brake&&m.brake.on,m.stop_active,(s.wallet_copy_execution||{}).buys_enabled,Math.floor(now/60)]);
+  const sig=JSON.stringify([lang,(s.mitch_live||{}).at,o.at,m.updated_at&&Math.floor(m.updated_at/30),m.brake&&m.brake.on,m.stop_active,(s.wallet_copy_execution||{}).buys_enabled,Math.floor(now/60)]);
   if(box.dataset.sig===sig)return;box.dataset.sig=sig;box.replaceChildren();
-  const tabs=[['mitch-home',c=>c.append(homeMitchCard(s,o))],['wynik-home',c=>c.append(homeWalletsCard(s,o))]];
+  const tabs=[['mitch-home',c=>{c.append(homeMitchCard(s,o));if((s.mitch_live||{}).mode&&(s.mitch_live||{}).mode!=='off')c.append(homeLiveCard(s));}],['wynik-home',c=>c.append(homeWalletsCard(s,o))]];
   for(const [id,fill] of tabs){const el=$(id);if(el){el.replaceChildren();if(o.mitch)fill(el);}}
   if(!o.mitch){box.append(node('p','Podsumowanie liczy się raz na minutę. Za chwilę się pojawi.','home-why'));return;}
-  box.append(homeMitchCard(s,o),homeWalletsCard(s,o),homeReadyCard(o));
+  box.append(homeMitchCard(s,o));
+  if((s.mitch_live||{}).mode&&(s.mitch_live||{}).mode!=='off')box.append(homeLiveCard(s));
+  box.append(homeWalletsCard(s,o),homeReadyCard(o));
+}
+// 17 Oct 2026: Mitch on real money. Wallet balance straight from the chain,
+// what is in play, the live result and reserve, and every live order next to
+// the PAPER copy it mirrors.
+const LIVE_STATUS={DRY_SIGNED:['signed (test, not sent)','podpisane (test, niewysłane)'],FILLED:['filled','wykonane'],NOT_FILLED:['not filled (no offers)','niewykonane (brak ofert)'],SKIPPED_MIN_ABOVE_CAP:['skipped: market minimum above the cap','pominięte: minimum rynku ponad limit'],SKIPPED_EXPOSURE_CAP:['skipped: in-play cap','pominięte: limit w grze'],SKIPPED_DAY_LOSS_STOP:['skipped: day loss cap','pominięte: limit straty dnia'],SKIPPED_STOP:['skipped: STOP','pominięte: STOP'],HELD_BELOW_MIN:['held to settlement (under the minimum)','trzymane do rozliczenia (poniżej minimum)'],SKIPPED_NOTHING_HELD:['nothing to sell','nic do sprzedania'],ERROR:['error','błąd']};
+const liveStatus=x=>LIVE_STATUS[x]?t(...LIVE_STATUS[x]):x;
+function homeLiveCard(s){
+  const l=s.mitch_live||{};const w=l.wallet||{};const mode=l.mode||'off';const rows=l.recent||[];const c=l.counts||{};
+  const pill=mode==='live'?t('LIVE: real orders','LIVE: prawdziwe zlecenia'):mode==='dry'?t('test: signs, sends nothing','test: podpisuje, nic nie wysyła'):t('off','wyłączone');
+  const card=homeCard(t('Mitch · real money','Mitch · prawdziwe pieniądze'),w.address?(t('wallet ','portfel ')+w.address.slice(0,6)+'…'+w.address.slice(-4)+' · Polygon · Polymarket'):t('wallet not connected','portfel nie podłączony'),pill,mode==='live'?'ok':mode==='dry'?'warn':'bad');
+  card.append(node('div',t('Wallet balance (pUSD, straight from the chain)','Saldo portfela (pUSD, prosto z sieci)'),'home-main-label'));
+  card.append(node('div',w.pusd==null?'brak danych':money(w.pusd),'home-main'));
+  const pnl=rows.filter(r=>r.closed).reduce((a,r)=>a+Number(r.pnl_usd||0),0);const closed=rows.filter(r=>r.closed).length;
+  const nums=node('div',undefined,'home-nums');
+  const inPlay=node('div',undefined,'home-num');inPlay.append(node('span',t('In play','W grze')),node('b',money(Number(l.exposure_usd||0))),node('small',t('cap ','limit ')+money(Number((l.limits||{}).max_exposure_usd||0))));
+  const res=node('div',undefined,'home-num');res.append(node('span',t('LIVE result','Wynik LIVE')),node('b',closed?money(pnl,true):t('no settlements','brak rozliczeń'),closed?(pnl>0?'positive':pnl<0?'negative':''):''),node('small',closed?closed+t(' settled',' rozliczonych'):t('appears after the first window','pojawi się po pierwszym oknie')));
+  const reserve=node('div',undefined,'home-num');reserve.append(node('span',t('Profit reserve (Kraken)','Rezerwa zysku (Kraken)')),node('b',money(Number(l.swept_usd||0))),node('small',t('surplus above the desk line','nadwyżka ponad linię biurka')));
+  nums.append(inPlay,res,reserve);card.append(nums);
+  const signed=c.DRY_SIGNED||0,filled=c.FILLED||0,errs=c.ERROR||0,skipped=Object.entries(c).filter(([k])=>k.startsWith('SKIPPED')||k==='HELD_BELOW_MIN'||k==='NOT_FILLED').reduce((a,[,v])=>a+v,0);
+  const line=node('p',undefined,'home-line');
+  line.append(t('Orders: ','Zlecenia: '),node('b',(mode==='live'?filled+t(' filled',' wykonanych'):signed+t(' signed',' podpisanych'))),' · '+skipped+t(' skipped · ',' pominiętych · ')+errs+t(' errors · day loss ',' błędów · strata dnia ')+money(Number(l.day_loss_usd||0))+t(' of the cap ',' z limitu ')+money(Number((l.limits||{}).day_loss_stop_usd||0))+t(' · POL for fees ',' · POL na opłaty ')+(w.pol==null?'—':w.pol));
+  card.append(line);
+  if(rows.length){
+    const t=node('div',undefined,'live-orders');
+    const head=node('div',undefined,'live-row live-head');[t('Time','Czas'),t('Move','Ruch'),t("Mitch's price",'Cena Mitcha'),t('Our cap','Nasz limit'),t('Paper','Papier'),t('Amount','Kwota'),'Status'].forEach(h=>head.append(node('span',h)));t.append(head);
+    for(const r of rows.slice(0,6)){
+      const row=node('div',undefined,'live-row');
+      row.append(node('span',r.finished_at?homeWhen(r.finished_at):'—'),node('span',r.side==='BUY'?t('buy','kupno'):t('sell','sprzedaż')),node('span',r.source_price||'—'),node('span',r.order_limit||r.limit_price||'—'),node('span',r.paper_vwap||'—'),node('span',r.amount_usd?money(Number(r.amount_usd)):(r.shares?r.shares+t(' sh.',' udz.'):'—')),node('span',liveStatus(r.status)+(r.error?': '+String(r.error).slice(0,60):''),r.status==='ERROR'?'negative':r.status==='FILLED'?'positive':''));
+      t.append(row);
+    }
+    card.append(t);
+  }
+  const why=node('p',undefined,'home-why');
+  why.append(mode==='live'?t("Every PAPER copy of Mitch also goes with real money, at the same moment and with the same price cap. ",'Każda papierowa kopia Mitcha idzie też za prawdziwe pieniądze, w tej samej chwili i z tym samym limitem ceny. '):t("Test: at every PAPER copy of Mitch the lab signs a real order but does not send it. We compare them with PAPER. ",'Test: przy każdej papierowej kopii Mitcha lab podpisuje prawdziwe zlecenie, ale go nie wysyła. Porównujemy je z papierem. '));
+  if(w.address){const a1=node('a',t('wallet on Polygonscan','portfel na Polygonscan'));a1.href='https://polygonscan.com/address/'+w.address;a1.target='_blank';const a2=node('a',t('profile on Polymarket','profil na Polymarket'));a2.href='https://polymarket.com/profile/'+w.address;a2.target='_blank';why.append(a1,' · ',a2);}
+  card.append(why);
+  return card;
 }
 function homeMitchCard(s,o){
   const m=s.mitch_copy||{};const now=Date.now()/1000;
