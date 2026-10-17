@@ -125,6 +125,39 @@ class FastLaneTests(unittest.TestCase):
         self.assertEqual(lane.status()['missed'], 1)
         self.assertLessEqual(len(calls), 17)
 
+    def test_a_rate_limited_endpoint_rests_while_the_other_reads(self):
+        from lab.fast_match import RateLimited, RATE_LIMIT_PAUSE_S
+        clock = Clock(1791535910.0)
+        got, calls = [], []
+
+        async def sink(wallet, row, arrived):
+            got.append(row)
+
+        def lookup(url, tx):
+            calls.append(url)
+            if url == 'rpc-a':
+                raise RateLimited('rpc-a: 429')
+            return dict(DC27['tx'], blockNumber=None)
+
+        async def sleep(seconds):
+            clock.now += seconds
+
+        lane = FastMatch([DC27['wallet']], sink, urls=['rpc-a', 'rpc-b'], lookup=lookup, clock=clock, sleep=sleep)
+
+        async def go(tx):
+            return await lane.note({'transaction_hash': tx, 'timestamp': '1791535909900'}, arrived=clock.now)
+
+        asyncio.run(go(DC27['tx']['hash']))
+        self.assertEqual(len(got), 1)
+        self.assertEqual(lane.status()['rate_limited'], 1)
+        calls.clear()
+        asyncio.run(lane.resolve('0xother', clock.now, clock.now))
+        self.assertNotIn('rpc-a', calls)
+        clock.now += RATE_LIMIT_PAUSE_S + 1
+        calls.clear()
+        asyncio.run(lane.resolve('0xthird', clock.now, clock.now))
+        self.assertIn('rpc-a', calls)
+
     def test_the_same_print_twice_is_one_lookup(self):
         lane = FastMatch([DC27['wallet']], None, urls=['x'], lookup=lambda u, t: None)
         item = {'transaction_hash': '0xaa', 'timestamp': '1'}

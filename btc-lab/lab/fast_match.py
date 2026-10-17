@@ -35,6 +35,15 @@ RPC_POOL = ThreadPoolExecutor(max_workers=16, thread_name_prefix='lab-fast')
 # Mitch trades only BTC 15m. Since 10 Oct the lane also reads ETH and 5m
 # prints for the qualifier; those must not queue in front of his.
 PRIORITY_POOL = ThreadPoolExecutor(max_workers=16, thread_name_prefix='lab-fast-btc15')
+# 17 Oct 2026: at the night peak blockmachine answered 429 to most reads. The
+# lane kept retrying it every 40-60 ms; those calls filled the pools, drpc's
+# reads waited behind them and 11% of prints were missed. A rate-limited
+# endpoint now rests while the other one carries the reads.
+RATE_LIMIT_PAUSE_S = 30
+
+
+class RateLimited(RuntimeError):
+    pass
 
 
 def _priority(item):
@@ -88,7 +97,13 @@ def _lookup(url, tx):
     try:
         conn.request('POST', path, body, {'User-Agent': 'BTC-Lab-Paper/0.1', 'Content-Type': 'application/json',
                                            'Accept': 'application/json'})
-        reply = json.loads(conn.getresponse().read(2_000_001))
+        response = conn.getresponse()
+        raw = response.read(2_000_001)
+        if response.status == 429:
+            raise RateLimited('%s: 429' % (parts.hostname or 'rpc'))
+        reply = json.loads(raw)
+    except RateLimited:
+        raise
     except Exception:
         conns.pop(url, None)
         conn.close()
@@ -136,6 +151,7 @@ class FastMatch:
         self.counts = {'prints': 0, 'resolved': 0, 'missed': 0, 'other_shape': 0,
                        'watched': 0, 'dropped': 0, 'errors': 0}
         self._resolve_ms = []
+        self._rest_until = {}
 
     def set_wallets(self, wallets):
         """Replace the watched set (Mitch plus the qualifier's copying wallets)."""
@@ -174,6 +190,10 @@ class FastMatch:
         while True:
             try:
                 found = await loop.run_in_executor(pool, self.lookup, url, tx)
+            except RateLimited:
+                self._rest_until[url] = self.clock() + RATE_LIMIT_PAUSE_S
+                self.counts['rate_limited'] = self.counts.get('rate_limited', 0) + 1
+                return None
             except Exception:
                 found = None
             if isinstance(found, dict) and found.get('input'):
@@ -189,7 +209,10 @@ class FastMatch:
         """Each endpoint retries on its own; the first one that has it wins.
         10 Oct 2026: one round waited for the slower endpoint (up to 0.5 s)
         before the next try, while blockmachine had the tx in 0.12 s p50."""
-        tasks = [asyncio.ensure_future(self._poll(url, tx, deadline, pool)) for url in self.urls]
+        now = self.clock()
+        # A resting endpoint is skipped; if all rest, all are asked.
+        urls = [url for url in self.urls if self._rest_until.get(url, 0) <= now] or list(self.urls)
+        tasks = [asyncio.ensure_future(self._poll(url, tx, deadline, pool)) for url in urls]
         try:
             for done in asyncio.as_completed(tasks):
                 found = await done
