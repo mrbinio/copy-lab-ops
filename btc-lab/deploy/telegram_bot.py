@@ -78,7 +78,7 @@ MOVE_5M = 1.0
 MOVE_15M = 2.0
 MOVE_COOLDOWN = 1800
 MORNING_HOUR = 8
-WARN_BEFORE = (60, 10)
+WARN_BEFORE = (60,)  # 17 Oct 2026: one warning an hour ahead is enough
 LABELS = {
     '0x16217458b59b3458149918058754cd234096b159': '096b159',
     '0xeda9247a2b3c99a9e0bf46cdac6e1974365cf589': '0x9f672c31',
@@ -596,13 +596,20 @@ def discovery_text(d):
     return '\n'.join(lines)
 
 
-def alerts(state, memory):
-    """New things worth a message. Updates memory in place."""
+BRAKE_ALERT_AFTER_S = 300
+LIVE_ALARMS = {'ERROR': 'BŁĄD prawdziwego zlecenia', 'SKIPPED_DAY_LOSS_STOP': 'LIMIT STRATY DNIA osiągnięty: prawdziwe kupna stoją do jutra',
+               'SKIPPED_DESK_STOP': 'STOP BIURKA: w portfelu za mało pieniędzy, prawdziwe kupna stoją'}
+
+
+def alerts(state, memory, now=None):
+    """Only what needs Damian now. Damian, 17 Oct 2026: too many messages; single
+    PAPER trades, window reports, pause flips and discovery results are no
+    longer sent (they are in the evening summary, the dashboard and the commands).
+    Updates memory in place."""
+    now = now or time.time()
     out = []
     found = state.get('mitch_discovery') or {}
-    if found.get('finished_at') and found.get('finished_at') != memory.get('discovery_at'):
-        if memory.get('primed'):
-            out.append(discovery_text(found))
+    if found.get('finished_at'):
         memory['discovery_at'] = found.get('finished_at')
     mitch = state.get('mitch_copy') or {}
     seen = set(memory.get('seen') or [])
@@ -610,35 +617,32 @@ def alerts(state, memory):
     for event in mitch.get('recent') or []:
         if event.get('reason') not in TRADE_REASONS:
             continue
-        key = '%s|%s|%s' % (event.get('at'), event.get('wallet'), event.get('reason'))
-        if key not in seen:
-            seen.add(key)
-            if not first:
-                out.append(trade_text(event))
-    # Closes are reported once per window, when every copy in it is closed.
-    for w in mitch.get('windows') or []:
-        key = 'window|%s' % w.get('market')
-        if w.get('done') and key not in seen:
-            seen.add(key)
-            if not first:
-                text = window_text(w)
-                desk = desk_line(mitch)
-                out.append(text + ('\n' + desk if desk else ''))
+        seen.add('%s|%s|%s' % (event.get('at'), event.get('wallet'), event.get('reason')))
     paused = memory.get('paused') or {}
     for row in mitch.get('wallets') or []:
-        wallet = row.get('wallet')
-        now = bool(row.get('paused'))
-        if wallet in paused and paused[wallet] != now and not first:
-            out.append('Mitch %s: %s' % (row.get('label') or label(wallet),
-                                         ('PAUZA. ' + (row.get('pause_reason') or 'minus w okresie testu')) if now else 'pauza zdjęta, kupno wraca'))
-        paused[wallet] = now
+        paused[row.get('wallet')] = bool(row.get('paused'))
+    # The brake is news only when it lasts: every restart has a 2-minute warm-up.
     brake = mitch.get('brake') or {}
-    if 'brake' in memory and bool(brake.get('on')) != memory['brake'] and not first:
-        out.append(('HAMULEC TECHNICZNY: nowe kupna Mitcha wstrzymane — %s. Wracają same, gdy złapiemy co najmniej 75%% jego kupna w 1 s.'
-                    % (brake.get('reason') or '?')) if brake.get('on') else
-                   'Hamulec techniczny zdjęty: kopiowanie Mitcha znowu działa (%.0f%% w 1 s).' % (100 * float(brake.get('share') or 0)))
-    if mitch.get('brake') is not None:
-        memory['brake'] = bool(brake.get('on'))
+    if brake.get('on'):
+        since = memory.setdefault('brake_since', now)
+        if now - since >= BRAKE_ALERT_AFTER_S and not memory.get('brake_alerted') and not first:
+            out.append('HAMULEC TECHNICZNY od %d min: nowe kupna Mitcha wstrzymane — %s. Wracają same, gdy złapiemy '
+                       'co najmniej 75%% jego kupna w 1 s.' % ((now - since) // 60, brake.get('reason') or '?'))
+            memory['brake_alerted'] = True
+    else:
+        if memory.get('brake_alerted'):
+            out.append('Hamulec techniczny zdjęty: kopiowanie Mitcha znowu działa.')
+        memory.pop('brake_since', None)
+        memory['brake_alerted'] = False
+    live = state.get('mitch_live') or {}
+    live_seen = set(memory.get('live_seen') or [])
+    for row in live.get('recent') or []:
+        key = str(row.get('id')) + '|' + str(row.get('status'))
+        if row.get('status') in LIVE_ALARMS and key not in live_seen:
+            live_seen.add(key)
+            if not first:
+                out.append('%s.%s' % (LIVE_ALARMS[row['status']], (' ' + str(row.get('error'))[:150]) if row.get('error') else ''))
+    memory['live_seen'] = sorted(live_seen)[-300:]
     if state.get('live_enabled'):
         out.append('UWAGA: pulpit zgłasza live_enabled=true. Sprawdź natychmiast.')
     memory['paused'] = paused
@@ -798,13 +802,9 @@ def main():
                     messages.append('Heartbeat workera stoi %.0f s (status %s). Watchdog powinien go wznowić.' % (age, worker.get('status')))
                 memory['stale_alerted'] = stale
                 messages.extend(alerts(state, memory))
+                # 17 Oct 2026: BTC move alerts are no longer sent (/rynek shows them).
                 today = now_local().date().isoformat()
                 now_ts = time.time()
-                try:
-                    price = float(get_json(BINANCE_PRICE)['price'])
-                    messages.extend(market_moves(memory, price, now_ts))
-                except Exception as error:
-                    print('binance:', str(error)[:120], file=sys.stderr, flush=True)
                 messages.extend(calendar_alerts(memory, now_ts))
                 if now_local().hour >= MORNING_HOUR and memory.get('morning') != today:
                     memory['morning'] = today
@@ -820,7 +820,8 @@ def main():
                     messages.append(review_text(state))
                 if now_local().hour >= DAILY_HOUR and memory.get('daily') != today:
                     memory['daily'] = today
-                    messages.append('Podsumowanie dnia\n\n' + mitch_text(state) + '\n\n' + wallets_text(state) + '\n\n' + bank_text(state))
+                    messages.append('Podsumowanie dnia\n\n' + mitch_text(state) + '\n\n' + live_text(state) + '\n\n'
+                                    + wallets_text(state) + '\n\n' + bank_text(state))
             except Exception as error:
                 if time.time() - float(memory.get('last_ok') or time.time()) > DOWN_AFTER and not memory.get('down_alerted'):
                     messages.append('Pulpit nie odpowiada od ponad %d s: %s' % (DOWN_AFTER, str(error)[:150]))

@@ -40,20 +40,20 @@ class AlertTests(unittest.TestCase):
         self.assertEqual(bot.alerts(state([buy]), memory), [])
         self.assertEqual(bot.alerts(state([buy]), memory), [])
 
-    def test_a_new_buy_and_a_pause_are_sent_once(self):
+    def test_paper_trades_and_pauses_are_not_messages(self):
+        # Damian, 17 Oct 2026: only what needs him now.
         memory = {}
         bot.alerts(state(), memory)
-        buy = {'at': 2, 'wallet': WALLET, 'reason': 'MITCH_BUY',
-               'detail': {'market': 'btc-updown-15m-1', 'timing': {'total_ms': 240.0}}}
-        skip = {'at': 3, 'wallet': WALLET, 'reason': 'LATE_BUY_NOT_COPIED', 'detail': {}}
-        close = {'at': 4, 'wallet': WALLET, 'slug': 'btc-updown-15m-1', 'pnl_micro': -1_500_000}
-        out = bot.alerts(state([buy, skip], [close], paused=True), memory)
-        # A single close is no longer its own message; the window report carries it.
-        self.assertEqual(len(out), 2)
-        self.assertIn('KUPNO', out[0])
-        self.assertIn('240 ms', out[0])
-        self.assertIn('PAUZA', out[1])
-        self.assertEqual(bot.alerts(state([buy, skip], [close], paused=True), memory), [])
+        buy = {'at': 2, 'wallet': WALLET, 'reason': 'MITCH_BUY', 'detail': {'market': 'btc-updown-15m-1'}}
+        self.assertEqual(bot.alerts(state([buy], paused=True), memory), [])
+
+    def test_a_live_error_is_alerted_once(self):
+        memory = {'primed': True}
+        st = dict(state(), mitch_live={'recent': [{'id': 'live:1', 'status': 'ERROR', 'error': 'not enough balance'}]})
+        out = bot.alerts(st, memory)
+        self.assertEqual(len(out), 1)
+        self.assertIn('BŁĄD prawdziwego zlecenia', out[0])
+        self.assertEqual(bot.alerts(st, memory), [])
 
     def test_live_flag_is_always_alerted(self):
         memory = {'primed': True}
@@ -71,7 +71,7 @@ class MarketGuardTests(unittest.TestCase):
         self.assertIn('+1.20% w 5 min', out[0])
         self.assertEqual(bot.market_moves(memory, 80000.0 * 1.013, now + 330), [])
 
-    def test_calendar_warns_at_60_and_10_minutes(self):
+    def test_calendar_warns_once_an_hour_ahead(self):
         import json as _json
         with tempfile.TemporaryDirectory() as tmp:
             bot.CALENDAR = Path(tmp) / 'cal.json'
@@ -81,7 +81,7 @@ class MarketGuardTests(unittest.TestCase):
             self.assertEqual(bot.calendar_alerts(memory, 10_000 - 4000), [])
             self.assertEqual(len(bot.calendar_alerts(memory, 10_000 - 3000)), 1)
             self.assertEqual(bot.calendar_alerts(memory, 10_000 - 2000), [])
-            self.assertEqual(len(bot.calendar_alerts(memory, 10_000 - 300)), 1)
+            self.assertEqual(bot.calendar_alerts(memory, 10_000 - 300), [])
             self.assertTrue(bot.MARKET_LOG.exists())
 
 
@@ -198,22 +198,23 @@ class WindowReport(unittest.TestCase):
         self.assertIn('Down: 55.00 USD w, 140 akcji, śr. 39¢', text)
         self.assertIn('WYGRANA', text)
 
-    def test_a_finished_window_is_sent_once(self):
+    def test_a_finished_window_is_not_a_message(self):
         state = {'mitch_copy': {'windows': [{'market': 'btc-updown-15m-1', 'done': True, 'fills': 1,
                                              'sides': {}, 'pnl_micro': -1_000_000, 'wallets': []}]}}
-        memory = {'primed': True}
-        self.assertEqual(len([m for m in bot.alerts(state, memory) if 'okno' in m]), 1)
-        self.assertEqual(len([m for m in bot.alerts(state, memory) if 'okno' in m]), 0)
+        self.assertEqual(bot.alerts(state, {'primed': True}), [])
 
 
 class Brake(unittest.TestCase):
-    def test_brake_on_and_off_is_sent_once_each(self):
+    def test_a_warm_up_brake_is_silent_a_long_one_is_sent_once(self):
         memory = {'primed': True}
-        bot.alerts({'mitch_copy': {'brake': {'on': False}}}, memory)
-        on = bot.alerts({'mitch_copy': {'brake': {'on': True, 'reason': 'tylko 40%'}}}, memory)
-        self.assertTrue(any('HAMULEC' in m for m in on))
-        self.assertFalse(any('HAMULEC' in m for m in bot.alerts({'mitch_copy': {'brake': {'on': True}}}, memory)))
-        off = bot.alerts({'mitch_copy': {'brake': {'on': False, 'share': 0.8}}}, memory)
+        on = {'mitch_copy': {'brake': {'on': True, 'reason': 'rozgrzewka'}}}
+        self.assertEqual(bot.alerts(on, memory, now=1000), [])
+        self.assertEqual(bot.alerts({'mitch_copy': {'brake': {'on': False}}}, memory, now=1120), [])   # 2 min: silent
+        bot.alerts(on, memory, now=2000)
+        late = bot.alerts(on, memory, now=2000 + bot.BRAKE_ALERT_AFTER_S)
+        self.assertTrue(any('HAMULEC' in m for m in late))
+        self.assertEqual(bot.alerts(on, memory, now=2600), [])
+        off = bot.alerts({'mitch_copy': {'brake': {'on': False}}}, memory, now=2700)
         self.assertTrue(any('zdjęty' in m for m in off))
 
 
