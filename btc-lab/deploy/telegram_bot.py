@@ -35,6 +35,7 @@ PAUSE = ROOT / 'data' / 'PAUSE'
 QUALIFIER_OFF = ROOT / 'data' / 'QUALIFIER_OFF'
 MITCH_OFF = ROOT / 'data' / 'MITCH_OFF'
 MITCH_MANUAL = ROOT / 'data' / 'mitch_manual_pauses.json'
+LIVE_STOP = ROOT / 'data' / 'LIVE_STOP'
 WEEKLY_DAY = 6  # Sunday
 WEEKLY_HOUR = 20
 COMMANDS = [
@@ -57,6 +58,9 @@ COMMANDS = [
     ('mitch_wznow', 'Wznów jeden portfel Mitcha, np. /mitch_wznow dc27'),
     ('mitch_stop', 'Wstrzymaj kupno Mitcha'),
     ('mitch_start', 'Włącz kupno Mitcha'),
+    ('live', 'Prawdziwe pieniądze: saldo, w grze, ostatnie zlecenia'),
+    ('live_stop', 'Wstrzymaj prawdziwe kupna od razu (papier działa)'),
+    ('live_start', 'Wznów prawdziwe kupna'),
     ('stop', 'STOP: wszystkie nowe kupna'),
     ('wznow', 'Usuń STOP'),
     ('pomoc', 'Lista komend'),
@@ -105,8 +109,48 @@ HELP = (
     '/mitch_stop, /mitch_start – wszystkie portfele Mitcha\n'
     '/przeglad – tydzień każdego portfela Mitcha i co sprawdzić\n'
     '/mitch_pauza dc27 [powód], /mitch_wznow dc27 – jeden portfel (jak u Mitcha: decyzja człowieka)\n'
-    'LIVE jest wyłączone w kodzie. Bot nie składa zleceń.'
+    '\nPrawdziwe pieniądze (tylko Mitch):\n'
+    '/live – saldo portfela, w grze, strata dnia, ostatnie zlecenia\n'
+    '/live_stop – natychmiast wstrzymaj prawdziwe kupna (papier i sprzedaże działają)\n'
+    '/live_start – wznów prawdziwe kupna\n'
+    '/stop zatrzymuje też prawdziwe kupna, /mitch_stop też.'
 )
+
+
+LIVE_STATUS_PL = {'DRY_SIGNED': 'test: podpisane', 'FILLED': 'wykonane', 'NOT_FILLED': 'niewykonane',
+                  'SKIPPED_STOP': 'pominięte: STOP', 'SKIPPED_LIVE_STOP': 'pominięte: /live_stop',
+                  'SKIPPED_EXPOSURE_CAP': 'pominięte: limit w grze', 'SKIPPED_DAY_LOSS_STOP': 'pominięte: limit dnia',
+                  'SKIPPED_DESK_STOP': 'pominięte: stop biurka', 'SKIPPED_MIN_ABOVE_CAP': 'pominięte: minimum > limit',
+                  'HELD_BELOW_MIN': 'trzymane do rozliczenia', 'SKIPPED_NOTHING_HELD': 'nic do sprzedania', 'ERROR': 'błąd'}
+
+
+def live_text(state):
+    live = state.get('mitch_live') or {}
+    if not live.get('mode'):
+        return 'Prawdziwe pieniądze: brak danych.'
+    wallet = live.get('wallet') or {}
+    limits = live.get('limits') or {}
+    mode = {'live': 'LIVE (prawdziwe zlecenia)', 'dry': 'TEST (podpisuje, nic nie wysyła)', 'off': 'wyłączone'}.get(live['mode'], live['mode'])
+    lines = ['Mitch · prawdziwe pieniądze: %s%s' % (mode, ' · WSTRZYMANE (/live_stop)' if LIVE_STOP.exists() else ''),
+             'Portfel: %s pUSD · POL %s' % (wallet.get('pusd', '—'), wallet.get('pol', '—')),
+             'W grze: %s z limitu %s USD · strata dnia %s z limitu %s USD' % (
+                 live.get('exposure_usd', '0'), limits.get('max_exposure_usd', '—'),
+                 live.get('day_loss_usd', '0'), limits.get('day_loss_stop_usd', '—'))]
+    counts = live.get('counts') or {}
+    if counts:
+        lines.append('Zlecenia: ' + ', '.join('%s %d' % (LIVE_STATUS_PL.get(k, k), v) for k, v in counts.items()))
+    recent = live.get('recent') or []
+    if recent:
+        lines.append('Ostatnie:')
+        for r in recent[:5]:
+            at = time.strftime('%H:%M', time.localtime(float(r.get('finished_at') or 0)))
+            size = ('%s USD' % r['amount_usd']) if r.get('amount_usd') else ('%s udz.' % r.get('shares', '—'))
+            took = r.get('from_source_ms')
+            lines.append('%s %s %s · cena Mitcha %s · %s%s' % (
+                at, 'kupno' if r.get('side') == 'BUY' else 'sprzedaż', size, r.get('source_price', '—'),
+                LIVE_STATUS_PL.get(r.get('status'), r.get('status')),
+                ' · %.2f s od Mitcha' % (took / 1000) if took is not None else ''))
+    return '\n'.join(lines)
 
 
 def load(path, default):
@@ -624,6 +668,17 @@ def handle(command, chat, tg, allowed, opener=urllib.request.urlopen):
     if command == '/kwalifikator_start':
         tg.send(chat, switch(QUALIFIER_OFF, True, chat, 'Twoje portfele'))
         return
+    if command == '/live_stop':
+        LIVE_STOP.parent.mkdir(parents=True, exist_ok=True)
+        LIVE_STOP.write_text('telegram %s %s\n' % (chat, now_local().isoformat()))
+        tg.send(chat, 'Prawdziwe pieniądze: kupno WSTRZYMANE od teraz. Papier działa dalej, otwarte pozycje dalej się '
+                      'sprzedają i rozliczają. /live_start wznawia.')
+        return
+    if command == '/live_start':
+        if LIVE_STOP.exists():
+            LIVE_STOP.unlink()
+        tg.send(chat, 'Prawdziwe pieniądze: kupno wraca (dalej obowiązują limity: w grze, strata dnia, stop biurka, /stop).')
+        return
     if command == '/mitch_stop':
         tg.send(chat, switch(MITCH_OFF, False, chat, 'Mitch'))
         return
@@ -657,6 +712,8 @@ def handle(command, chat, tg, allowed, opener=urllib.request.urlopen):
         tg.send(chat, status_text(state, health(opener)))
     elif command == '/mitch':
         tg.send(chat, mitch_text(state))
+    elif command == '/live':
+        tg.send(chat, live_text(state))
     elif command == '/portfele':
         tg.send(chat, wallets_detail_text(state))
     elif command == '/kopie':

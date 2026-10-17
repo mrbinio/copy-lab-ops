@@ -107,6 +107,10 @@ class MitchLive:
     def settings(self):
         return load_settings(self.root)
 
+    def live_stopped(self):
+        """/live_stop in Telegram: real buys stop at once; PAPER and live sells go on."""
+        return (self.root / 'data' / 'LIVE_STOP').exists()
+
     def key_path(self):
         return self.root / 'secrets' / 'polygon.key'
 
@@ -207,6 +211,8 @@ class MitchLive:
         try:
             if job['stopped']:
                 return self._finish(job, 'SKIPPED_STOP', started)
+            if self.live_stopped():
+                return self._finish(job, 'SKIPPED_LIVE_STOP', started)
             rows = self._rows()
             if self.day_loss_usd(rows) >= settings['day_loss_stop_usd']:
                 return self._finish(job, 'SKIPPED_DAY_LOSS_STOP', started)
@@ -373,6 +379,7 @@ class MitchLive:
         recent = sorted(rows, key=lambda r: -float(r.get('finished_at') or 0))[:20]
         return {
             'at': self.clock(), 'mode': settings['mode'], 'key_present': self.key_path().exists(),
+            'live_stop': self.live_stopped(),
             'limits': {k: str(v) for k, v in settings.items() if k != 'mode'},
             'wallet': self.wallet(), 'counts': counts, 'exposure_usd': str(self.exposure_usd(rows)),
             'day_loss_usd': str(self.day_loss_usd(rows)), 'recent': recent,

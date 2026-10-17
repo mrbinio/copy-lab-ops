@@ -91,6 +91,7 @@ class CommandTests(unittest.TestCase):
         bot.PAUSE = Path(self.tmp.name) / 'data' / 'PAUSE'
         bot.QUALIFIER_OFF = Path(self.tmp.name) / 'data' / 'QUALIFIER_OFF'
         bot.MITCH_OFF = Path(self.tmp.name) / 'data' / 'MITCH_OFF'
+        bot.LIVE_STOP = Path(self.tmp.name) / 'data' / 'LIVE_STOP'
 
     def test_qualifier_and_mitch_switches(self):
         tg = FakeTelegram()
@@ -104,6 +105,26 @@ class CommandTests(unittest.TestCase):
         self.assertIn('WYŁĄCZONE', tg.sent[0][1])
         bot.handle('/kwalifikator_stop', 99, tg, allowed={1})
         self.assertFalse(bot.QUALIFIER_OFF.exists())
+
+    def test_live_stop_and_start(self):
+        tg = FakeTelegram()
+        bot.handle('/live_stop', 1, tg, allowed={1})
+        self.assertTrue(bot.LIVE_STOP.exists())
+        self.assertIn('WSTRZYMANE', tg.sent[-1][1])
+        bot.handle('/live_stop', 99, tg, allowed={1})   # a stranger changes nothing
+        bot.handle('/live_start', 1, tg, allowed={1})
+        self.assertFalse(bot.LIVE_STOP.exists())
+
+    def test_live_text(self):
+        st = {'mitch_live': {'mode': 'dry', 'wallet': {'pusd': 9.99, 'pol': 10.8},
+                             'limits': {'max_exposure_usd': '30', 'day_loss_stop_usd': '20'},
+                             'exposure_usd': '0', 'day_loss_usd': '0', 'counts': {'DRY_SIGNED': 2},
+                             'recent': [{'finished_at': 1792232100, 'side': 'BUY', 'amount_usd': '1.30',
+                                         'source_price': '0.16', 'status': 'DRY_SIGNED', 'from_source_ms': 324.9}]}}
+        text = bot.live_text(st)
+        self.assertIn('TEST', text)
+        self.assertIn('9.99 pUSD', text)
+        self.assertIn('0.32 s od Mitcha', text)
 
     def test_text_views(self):
         st = {'mitch_copy': {'wallets': [{'wallet': WALLET, 'label': '0xdc27', 'paused': True,
