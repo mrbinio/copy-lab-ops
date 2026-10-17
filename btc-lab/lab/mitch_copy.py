@@ -764,44 +764,57 @@ class MitchCopy:
         return reason
 
     def _live_early(self, pre, checked, terms, book_started, book_done):
-        """The PAPER buy decision on reads only (no write lock), then the live order."""
+        """The PAPER buy decision on reads only (no write lock), then the live order.
+        17 Oct 2026: every outcome is logged with its time, to see why some
+        orders still took the slow path after the PAPER write."""
+        started = time.monotonic()
+        why = 'error'
         try:
-            live = self.live_mirror()
-            row, event = pre['row'], pre['event']
-            wallet, key = row['wallet'], row['event_key']
-            if wallet not in WALLETS or not str(event.get('slug') or '').startswith('btc-updown-15m-'):
-                return
-            if event.get('_source') == 'chain_fast' or event.get('_source') not in CHAIN_SOURCES or source_price(event) is None:
-                return
-            if float(row['source_ts']) < self.started() or pre['decided_at'] - float(row['source_ts']) > MAX_BUY_AGE:
-                return
-            if book_done - book_started > MAX_BUY_AGE or not checked or checked.get('error'):
-                return
-            if not terms or not terms.get('fee_verified') or not terms.get('accepting'):
-                return
-            if self.stopped() or self.brake.get('on'):
-                return
-            tx, token = str(event.get('transactionHash') or ''), str(event.get('asset') or '')
-            with self.store.connect() as db:
-                if self._seen(db, wallet, key) or self._is_paused(db, wallet) or self._held(db, wallet):
-                    return
-                if tx and db.execute('SELECT 1 FROM mitch_seen_tx WHERE wallet=? AND tx=? AND side=? AND token=?',
-                                     (wallet, tx, 'BUY', token)).fetchone():
-                    return
-                remaining = int(WALLETS[wallet]['limit_usd'] * 1_000_000) - self._window_spent(db, wallet, str(event.get('slug')))
-            why, fill = self.plan_buy(event, checked['asks'], terms['fee_rate'], checked['tick'], checked['min_shares'],
-                                      remaining, fee_verified=True)
-            if why:
-                return
-            fired = self.__dict__.setdefault('_live_fired', {})
-            fired[key] = self.clock()
-            if len(fired) > 500:
-                for old in sorted(fired, key=fired.get)[:100]:
-                    fired.pop(old, None)
-            live.on_buy(wallet, key, event, fill, min(Decimal('0.999999'), source_price(event) + PRICE_WORSE),
-                        stopped=False, paper_decided_at=pre['decided_at'])
+            why = self._live_early_check(pre, checked, terms, book_started, book_done)
         except Exception as error:
             log.warning('live early: %s', str(error)[:200])
+        log.info('live early %s in %.0f ms', why, (time.monotonic() - started) * 1000)
+
+    def _live_early_check(self, pre, checked, terms, book_started, book_done):
+        live = self.live_mirror()
+        row, event = pre['row'], pre['event']
+        wallet, key = row['wallet'], row['event_key']
+        if wallet not in WALLETS or not str(event.get('slug') or '').startswith('btc-updown-15m-'):
+            return 'not_btc15'
+        if event.get('_source') == 'chain_fast' or event.get('_source') not in CHAIN_SOURCES or source_price(event) is None:
+            return 'source:%s' % event.get('_source')
+        if float(row['source_ts']) < self.started():
+            return 'before_start'
+        if pre['decided_at'] - float(row['source_ts']) > MAX_BUY_AGE:
+            return 'late'
+        if book_done - book_started > MAX_BUY_AGE or not checked or checked.get('error'):
+            return 'book'
+        if not terms or not terms.get('fee_verified') or not terms.get('accepting'):
+            return 'terms'
+        if self.stopped() or self.brake.get('on'):
+            return 'stop_or_brake'
+        tx, token = str(event.get('transactionHash') or ''), str(event.get('asset') or '')
+        with self.store.connect() as db:
+            if self._seen(db, wallet, key):
+                return 'seen'
+            if self._is_paused(db, wallet) or self._held(db, wallet):
+                return 'paused'
+            if tx and db.execute('SELECT 1 FROM mitch_seen_tx WHERE wallet=? AND tx=? AND side=? AND token=?',
+                                 (wallet, tx, 'BUY', token)).fetchone():
+                return 'seen_tx'
+            remaining = int(WALLETS[wallet]['limit_usd'] * 1_000_000) - self._window_spent(db, wallet, str(event.get('slug')))
+        why, fill = self.plan_buy(event, checked['asks'], terms['fee_rate'], checked['tick'], checked['min_shares'],
+                                  remaining, fee_verified=True)
+        if why:
+            return 'plan:%s' % why
+        fired = self.__dict__.setdefault('_live_fired', {})
+        fired[key] = self.clock()
+        if len(fired) > 500:
+            for old in sorted(fired, key=fired.get)[:100]:
+                fired.pop(old, None)
+        live.on_buy(wallet, key, event, fill, min(Decimal('0.999999'), source_price(event) + PRICE_WORSE),
+                    stopped=False, paper_decided_at=pre['decided_at'])
+        return 'fired'
 
     def _live_paper_verdict(self, key, reason):
         """An early live order whose PAPER copy ended otherwise is flagged on its row."""
