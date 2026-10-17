@@ -38,7 +38,10 @@ DAY_LOSS_STOP_USD = Decimal('20')
 MAX_SCALE = Decimal('0.2')
 DESK_STOP_USD = Decimal('10')
 MIN_MARKET_BUY_USD = Decimal('1')
-POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix='lab-live')
+# 17 Oct 2026: the second dry order waited 308 ms for a thread (two threads,
+# shared with warm-up and market prefetch). Orders get four of their own.
+POOL = ThreadPoolExecutor(max_workers=4, thread_name_prefix='lab-live')
+PREP_POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix='lab-live-prep')
 PUSD = '0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB'
 WALLET_RPCS = ('https://polygon-bor-rpc.publicnode.com', 'https://polygon.drpc.org')
 
@@ -169,7 +172,7 @@ class MitchLive:
                 self.client().get_version()
             except Exception as error:
                 LOG.warning('live warm: %s', str(error)[:200])
-        return self.pool.submit(run)
+        return PREP_POOL.submit(run)
 
     def prefetch(self, condition, token):
         """Market minimum and tick for a fresh BTC 15m buy, while PAPER decides."""
@@ -180,7 +183,7 @@ class MitchLive:
                 self._min_shares(self.client(), condition, token)
             except Exception as error:
                 LOG.warning('live prefetch: %s', str(error)[:200])
-        return self.pool.submit(run)
+        return PREP_POOL.submit(run)
 
     # -- mirror of PAPER decisions -----------------------------------------
     def on_buy(self, wallet, paper_key, event, fill, limit_price, stopped=False, paper_decided_at=None):
