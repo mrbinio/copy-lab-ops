@@ -2,6 +2,7 @@
 import json
 import os
 import sqlite3
+import threading
 import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -106,6 +107,22 @@ def simulate_fill(asks, notional, limit, fee_rate, min_shares, tick, depth_fract
     return {"shares": units(shares), "cost": units(spent, ROUND_CEILING), "fee": fee,
             "vwap": float(spent / shares), "limit": str(cap), "fills": fills}
 
+_KEEPERS = {}
+_KEEPERS_LOCK = threading.Lock()
+
+
+def _keep_open(path):
+    with _KEEPERS_LOCK:
+        if path in _KEEPERS:
+            return
+        try:
+            keeper = sqlite3.connect(path, timeout=10, check_same_thread=False)
+            keeper.execute('SELECT count(*) FROM sqlite_master').fetchone()   # touches the file; SELECT 1 does not
+            _KEEPERS[path] = keeper
+        except Exception:
+            pass
+
+
 class Store:
     def __init__(self, path, initial=500, asset="BTC"):
         if asset not in ("BTC", "ETH"): raise ValueError("unsupported asset")
@@ -113,6 +130,12 @@ class Store:
         self.strategies=STRATEGIES if asset=="BTC" else ETH_STRATEGIES
         self.path = str(path)
         Path(path).parent.mkdir(parents=True, exist_ok=True)
+        # 17 Oct 2026: with no connection left open, every close of the last
+        # one checkpointed the log, fsynced and deleted -wal/-shm, and the next
+        # open created them again (the ETH worker, several times a second).
+        # That storm kept fseventsd at a full core and the fan loud. One idle
+        # connection per process keeps the log files in place. It never holds
+        # a transaction, so it does not block checkpoints.
         with self.connect() as db:
             db.executescript('''
               PRAGMA journal_mode=WAL;
@@ -139,6 +162,7 @@ class Store:
             db.execute('CREATE INDEX IF NOT EXISTS decisions_time ON decisions(ts)')
             for strategy in self.strategies:
                 db.execute("INSERT OR IGNORE INTO accounts VALUES (?,?,?)", (strategy, units(initial), units(initial)))
+        _keep_open(self.path)
 
     HOLD_LOG_S = 0.5
 
