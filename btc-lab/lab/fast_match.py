@@ -25,7 +25,10 @@ from decimal import Decimal
 from .match_decoder import decode_match, wallet_fills
 
 LOG = logging.getLogger('btc-lab.fast')
-PUBLIC_RPC = ('https://rpc-polygon.blockmachine.io', 'https://polygon.drpc.org')
+# 17 Oct 2026: blockmachine answers 429 to most reads at night peaks;
+# publicnode answered pending-tx lookups in 57-76 ms and races as a third.
+PUBLIC_RPC = ('https://rpc-polygon.blockmachine.io', 'https://polygon.drpc.org',
+              'https://polygon-bor-rpc.publicnode.com')
 RESOLVE_DEADLINE = 0.6
 PRIORITY_DEADLINE = 0.9
 RETRY_EVERY = 0.04
