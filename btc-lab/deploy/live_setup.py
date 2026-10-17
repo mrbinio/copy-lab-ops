@@ -3,12 +3,14 @@ native USDC -> USDC.e (Uniswap, 0.01% pool) -> pUSD (Polymarket onramp), then
 approvals for the CLOB V2 exchange. No order is placed. Each step is simulated
 first, then sent, then checked. The key is read from the owner-only file and
 never printed. Usage: live_setup.py <key file> [--send]"""
-import json, sys, time, urllib.request
+import json, sys, time, urllib.error, urllib.request
 from eth_abi import encode
 from eth_account import Account
 from eth_utils import keccak, to_checksum_address
 
-RPC = 'https://polygon.drpc.org'
+# 17 Oct 2026: drpc answered 429 mid-setup (the lab uses it all day); a
+# second public node takes over.
+RPCS = ('https://polygon-bor-rpc.publicnode.com', 'https://polygon.drpc.org')
 ME_EXPECTED = '0xEb1FA4A1AFA2138Bba3B106E4a56778236a3bF01'
 USDC = '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359'
 USDCE = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174'
@@ -21,9 +23,19 @@ ALLOW_PUSD = 50_000_000   # 50 pUSD, not unlimited
 
 
 def rpc(method, params):
-    req = urllib.request.Request(RPC, data=json.dumps({'jsonrpc': '2.0', 'id': 1, 'method': method, 'params': params}).encode(),
-                                 headers={'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0'})
-    reply = json.load(urllib.request.urlopen(req, timeout=20))
+    last = None
+    for attempt in range(6):
+        url = RPCS[attempt % len(RPCS)]
+        req = urllib.request.Request(url, data=json.dumps({'jsonrpc': '2.0', 'id': 1, 'method': method, 'params': params}).encode(),
+                                     headers={'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0'})
+        try:
+            reply = json.load(urllib.request.urlopen(req, timeout=20))
+            break
+        except urllib.error.URLError as error:
+            last = error
+            time.sleep(2)
+    else:
+        raise RuntimeError('%s: no node answered (%s)' % (method, last))
     if 'error' in reply:
         raise RuntimeError('%s: %s' % (method, reply['error']))
     return reply['result']
