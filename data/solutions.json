@@ -35,13 +35,13 @@
   "dead_en": [
     "gopfan2 · ECONOMICS · jeden event / veto"
   ],
-  "error": "http 401 claude-sonnet-5 {\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"invalid x-api-key\"},\"request_id\":\"req_011Cg84Yxw6R1NNJMqJHAoyL\"}",
-  "updated_at": "2026-10-17T15:40:36.714746+00:00",
-  "hunt_updated_at": "2026-10-17T15:40:36.481013+00:00",
+  "error": "http 401 claude-sonnet-5 {\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"invalid x-api-key\"},\"request_id\":\"req_011Cg8Ta2FUdot8GC6G2MdXL\"}",
+  "updated_at": "2026-10-17T20:42:27.948700+00:00",
+  "hunt_updated_at": "2026-10-17T20:42:27.748833+00:00",
   "x_source": "error",
   "x_model": null,
   "x_error": "http 403 grok-4.6 {\"code\":\"permission-denied\",\"error\":\"Your newly created team doesn't have any credits or licenses yet. You can purchase those on https://conso",
   "x_pl": "Filtr X: błąd API. Zostają sity. Copy off.",
   "x_en": "X filter: API error. Gates stand. Copy off.",
-  "x_updated_at": "2026-10-17T15:40:36.933602+00:00"
+  "x_updated_at": "2026-10-17T20:42:28.130653+00:00"
 }
