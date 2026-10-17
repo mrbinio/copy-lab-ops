@@ -86,10 +86,16 @@ def dashboard_state(store):
     try:
         value = _decorate(store, store.snapshot())
         cache = Path(store.path).resolve().parent.parent / 'logs' / ('dashboard-state-%s.json' % key)
-        try:
-            cache.write_text(json.dumps(value, allow_nan=False))
-        except Exception:
-            pass
+        # 17 Oct 2026: the 2.6 MB fallback copy was rewritten on every build
+        # (every few seconds: dashboard, bot, watchdog), ~0.5 MB/s of writes
+        # that kept fseventsd near a full core and the fan loud. It is only
+        # read when a build fails, so once a minute is enough.
+        if time.time() - _CACHE_WRITTEN.get(key, 0) >= CACHE_WRITE_EVERY_S:
+            _CACHE_WRITTEN[key] = time.time()
+            try:
+                cache.write_text(json.dumps(value, allow_nan=False))
+            except Exception:
+                pass
     except Exception:
         with _SNAP_LOCK:
             hit = _SNAP.get(key)
@@ -111,6 +117,10 @@ def dashboard_state(store):
     if ready is not None:
         ready.set()
     return value
+
+CACHE_WRITE_EVERY_S = 60
+_CACHE_WRITTEN = {}
+
 
 def drop_dashboard_state(asset=None):
     with _SNAP_LOCK:
