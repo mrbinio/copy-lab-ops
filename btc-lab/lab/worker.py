@@ -837,6 +837,13 @@ class Worker:
         except Exception as error:
             LOG.warning('trials: %s', str(error)[:200])
         try:
+            from .mitch_live import MitchLive
+            live=getattr(self,'_live_view',None) or MitchLive(self.store, self.data.parent if self.data.name=='data' else self.data)
+            self._live_view=live
+            self.store.set('mitch_live', live.summary())
+        except Exception as error:
+            LOG.warning('mitch live summary: %s', str(error)[:200])
+        try:
             from . import overview
             self.store.set('overview', overview.build(self.store, self.data.parent if self.data.name=='data' else self.data))
         except Exception as error:

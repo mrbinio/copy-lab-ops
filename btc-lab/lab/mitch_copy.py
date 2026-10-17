@@ -751,7 +751,27 @@ class MitchCopy:
             'cost': fill['cost'], 'fee': fill['fee'], 'shares': fill['shares'],
             'source_ts': event.get('timestamp'),
         }))
+        # 17 Oct 2026: the real-money mirror takes the same copy at the same
+        # moment, on its own thread (off unless data/mitch_live.json says so).
+        live = self.live_mirror()
+        if live is not None:
+            try:
+                live.on_buy(wallet, key, event, fill, min(Decimal('0.999999'), source_price(event) + PRICE_WORSE),
+                            stopped=self.stopped())
+            except Exception as error:
+                log.warning('live mirror: %s', str(error)[:200])
         return reason
+
+    def live_mirror(self):
+        if not hasattr(self, '_live'):
+            self._live = None
+            try:
+                from pathlib import Path
+                from .mitch_live import MitchLive
+                self._live = MitchLive(self.store, Path(self.store.path).parent.parent, self.clock)
+            except Exception as error:
+                log.warning('live mirror unavailable: %s', str(error)[:200])
+        return self._live
 
     def _record_source(self, db, wallet, token, key, event, buy):
         """Remember the source trade once, then rebuild the book from the anchor."""
@@ -873,6 +893,13 @@ class MitchCopy:
             'pnl_micro': pnl,
             'price_basis': 'current_book' if reason == 'LATE_SELL_RECOVERED' else 'copy_book',
         })
+        live = self.live_mirror()
+        if live is not None:
+            try:
+                live.on_sell(wallet, key, event, fraction,
+                             max(Decimal('0.01'), (source_price(event) or Decimal('0.11')) - PRICE_WORSE))
+            except Exception as error:
+                log.warning('live mirror: %s', str(error)[:200])
         return reason
 
     @staticmethod
