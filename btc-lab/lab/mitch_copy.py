@@ -754,7 +754,7 @@ class MitchCopy:
         # 17 Oct 2026: the real-money mirror takes the same copy at the same
         # moment, on its own thread (off unless data/mitch_live.json says so).
         live = self.live_mirror()
-        if live is not None:
+        if live is not None and key not in self.__dict__.get('_live_fired', {}):
             try:
                 live.on_buy(wallet, key, event, fill, min(Decimal('0.999999'), source_price(event) + PRICE_WORSE),
                             stopped=self.stopped(),
@@ -762,6 +762,58 @@ class MitchCopy:
             except Exception as error:
                 log.warning('live mirror: %s', str(error)[:200])
         return reason
+
+    def _live_early(self, pre, checked, terms, book_started, book_done):
+        """The PAPER buy decision on reads only (no write lock), then the live order."""
+        try:
+            live = self.live_mirror()
+            row, event = pre['row'], pre['event']
+            wallet, key = row['wallet'], row['event_key']
+            if wallet not in WALLETS or not str(event.get('slug') or '').startswith('btc-updown-15m-'):
+                return
+            if event.get('_source') == 'chain_fast' or event.get('_source') not in CHAIN_SOURCES or source_price(event) is None:
+                return
+            if float(row['source_ts']) < self.started() or pre['decided_at'] - float(row['source_ts']) > MAX_BUY_AGE:
+                return
+            if book_done - book_started > MAX_BUY_AGE or not checked or checked.get('error'):
+                return
+            if not terms or not terms.get('fee_verified') or not terms.get('accepting'):
+                return
+            if self.stopped() or self.brake.get('on'):
+                return
+            tx, token = str(event.get('transactionHash') or ''), str(event.get('asset') or '')
+            with self.store.connect() as db:
+                if self._seen(db, wallet, key) or self._is_paused(db, wallet) or self._held(db, wallet):
+                    return
+                if tx and db.execute('SELECT 1 FROM mitch_seen_tx WHERE wallet=? AND tx=? AND side=? AND token=?',
+                                     (wallet, tx, 'BUY', token)).fetchone():
+                    return
+                remaining = int(WALLETS[wallet]['limit_usd'] * 1_000_000) - self._window_spent(db, wallet, str(event.get('slug')))
+            why, fill = self.plan_buy(event, checked['asks'], terms['fee_rate'], checked['tick'], checked['min_shares'],
+                                      remaining, fee_verified=True)
+            if why:
+                return
+            fired = self.__dict__.setdefault('_live_fired', {})
+            fired[key] = self.clock()
+            if len(fired) > 500:
+                for old in sorted(fired, key=fired.get)[:100]:
+                    fired.pop(old, None)
+            live.on_buy(wallet, key, event, fill, min(Decimal('0.999999'), source_price(event) + PRICE_WORSE),
+                        stopped=False, paper_decided_at=pre['decided_at'])
+        except Exception as error:
+            log.warning('live early: %s', str(error)[:200])
+
+    def _live_paper_verdict(self, key, reason):
+        """An early live order whose PAPER copy ended otherwise is flagged on its row."""
+        fired = self.__dict__.get('_live_fired', {})
+        if key in fired and reason not in ('MITCH_BUY', 'MITCH_ADD'):
+            live = self.live_mirror()
+            if live is not None:
+                try:
+                    live.note_paper(key, reason)
+                except Exception as error:
+                    log.warning('live paper verdict: %s', str(error)[:200])
+        fired.pop(key, None)
 
     def live_mirror(self):
         if not hasattr(self, '_live'):
@@ -1706,8 +1758,9 @@ class MitchCopy:
                     self._mark(db, wallet, key, why, self._case(row, event, {
                         'timing': timing, 'source_price': str(source_price(event) or ''),
                     }))
+                    self._live_paper_verdict(key, why)
                     return
-                self.apply_buy(db, wallet, key, event, fill, timing)
+                self._live_paper_verdict(key, self.apply_buy(db, wallet, key, event, fill, timing))
                 return
             fraction = self.fraction_for(db, wallet, event)
             self.apply_sell(
@@ -1744,6 +1797,15 @@ class MitchCopy:
             stage = checked.pop('_stage', None) or {}
         pre['decided_at'] = decided or self.clock()
         pre['recorded_queue_s'] = round(self.clock() - float(row.get('_as_of') or self.clock()), 3)
+        # 17 Oct 2026: the live order waited 0.4-0.8 s for the PAPER write in the
+        # evening. The same decision is taken here, before the database queue.
+        live = self.live_mirror()
+        if live is not None and (pre.get('event') or {}).get('side') == 'BUY' and live.settings()['mode'] != 'off':
+            try:
+                from .mitch_live import POOL as LIVE_POOL
+                LIVE_POOL.submit(self._live_early, pre, checked, terms, book_started, book_done)
+            except Exception as error:
+                log.warning('live early: %s', str(error)[:200])
         db_submitted = time.perf_counter()
         await asyncio.get_running_loop().run_in_executor(
             pool, self._finish, pre, checked, terms, book_started, book_done, stage, db_submitted,

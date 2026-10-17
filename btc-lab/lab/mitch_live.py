@@ -201,6 +201,16 @@ class MitchLive:
         settings = self.settings()
         if settings['mode'] == 'off':
             return None
+        # One live order per PAPER buy: the early path and the PAPER write may
+        # both hand it over.
+        with self._lock:
+            taken = self.__dict__.setdefault('_taken', {})
+            if paper_key in taken:
+                return None
+            taken[paper_key] = self.clock()
+            if len(taken) > 2000:
+                for old in sorted(taken, key=taken.get)[:500]:
+                    taken.pop(old, None)
         job = {
             'id': 'live:' + paper_key[:24], 'paper_key': paper_key, 'wallet': wallet, 'side': 'BUY',
             'market': event.get('slug'), 'token': str(event.get('asset') or ''),
@@ -375,6 +385,22 @@ class MitchLive:
         except Exception as error:
             self._wallet = dict(cached or {'address': address}, at=now, error=str(error)[:120])
         return self._wallet
+
+    def note_paper(self, paper_key, reason):
+        """The PAPER copy of an early live order ended with another verdict."""
+        row_id = 'live:' + paper_key[:24]
+        for _ in range(20):
+            with self.store.connect() as db:
+                ensure(db)
+                found = db.execute('SELECT body FROM mitch_live_orders WHERE id=?', (row_id,)).fetchone()
+                if found:
+                    body = json.loads(found[0])
+                    body['paper_result'] = reason
+                    db.execute('UPDATE mitch_live_orders SET body=? WHERE id=?', (json.dumps(body), row_id))
+                    LOG.warning('live order %s: PAPER ended %s', row_id, reason)
+                    return True
+            time.sleep(0.1)
+        return False
 
     def summary(self):
         rows = self._rows()

@@ -138,5 +138,15 @@ class MitchLiveTests(unittest.TestCase):
             self.assertEqual(row['amount_usd'], '5')               # 8 USD wanted, capped at 5 an order
 
 
+    def test_the_same_paper_buy_is_one_live_order(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            live, client = self.make(tmp, 'dry')
+            first = live.on_buy('w', 'z' * 30, event(), {'vwap': '0.43', 'cost': 1}, Decimal('0.52'))
+            second = live.on_buy('w', 'z' * 30, event(), {'vwap': '0.43', 'cost': 1}, Decimal('0.52'))
+            self.assertEqual(first['status'], 'DRY_SIGNED')
+            self.assertIsNone(second)
+            self.assertEqual(len(client.orders), 1)
+
+
 if __name__ == '__main__':
     unittest.main()
