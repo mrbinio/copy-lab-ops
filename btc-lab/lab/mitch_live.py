@@ -184,7 +184,13 @@ class MitchLive:
             return None
         def run():
             try:
-                self._min_shares(self.client(), condition, token)
+                client = self.client()
+                self._min_shares(client, condition, token)
+                # 17 Oct 2026: the first order in a new window spent 378 ms in
+                # the client fetching this token's tick and neg-risk flag.
+                if token:
+                    client.get_tick_size(token)
+                    client.get_neg_risk(token)
             except Exception as error:
                 LOG.warning('live prefetch: %s', str(error)[:200])
         return PREP_POOL.submit(run)

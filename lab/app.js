@@ -960,6 +960,7 @@ function renderHome(s){
 const LIVE_STATUS={DRY_SIGNED:['signed (test, not sent)','podpisane (test, niewysłane)'],FILLED:['filled','wykonane'],NOT_FILLED:['not filled (no offers)','niewykonane (brak ofert)'],SKIPPED_MIN_ABOVE_CAP:['skipped: market minimum above the cap','pominięte: minimum rynku ponad limit'],SKIPPED_EXPOSURE_CAP:['skipped: in-play cap','pominięte: limit w grze'],SKIPPED_DAY_LOSS_STOP:['skipped: day loss cap','pominięte: limit straty dnia'],SKIPPED_STOP:['skipped: STOP','pominięte: STOP'],SKIPPED_LIVE_STOP:['skipped: /live_stop','pominięte: /live_stop'],SKIPPED_DESK_STOP:['skipped: desk stop','pominięte: stop biurka'],HELD_BELOW_MIN:['held to settlement (under the minimum)','trzymane do rozliczenia (poniżej minimum)'],SKIPPED_NOTHING_HELD:['nothing to sell','nic do sprzedania'],ERROR:['error','błąd']};
 const liveStatus=x=>LIVE_STATUS[x]?t(...LIVE_STATUS[x]):x;
 function homeLiveCard(s){
+  const px=v=>v==null||v===''||isNaN(Number(v))?'—':String(Number(Number(v).toFixed(3)));
   const l=s.mitch_live||{};const w=l.wallet||{};const mode=l.mode||'off';const rows=l.recent||[];const c=l.counts||{};
   const pill=l.live_stop?t('PAUSED (/live_stop)','WSTRZYMANE (/live_stop)'):mode==='live'?t('LIVE: real orders','LIVE: prawdziwe zlecenia'):mode==='dry'?t('test: signs, sends nothing','test: podpisuje, nic nie wysyła'):t('off','wyłączone');
   const card=homeCard(t('Mitch · real money','Mitch · prawdziwe pieniądze'),w.address?(t('wallet ','portfel ')+w.address.slice(0,6)+'…'+w.address.slice(-4)+' · Polygon · Polymarket'):t('wallet not connected','portfel nie podłączony'),pill,l.live_stop?'bad':mode==='live'?'ok':mode==='dry'?'warn':'bad');
@@ -976,14 +977,14 @@ function homeLiveCard(s){
   line.append(t('Orders: ','Zlecenia: '),node('b',(mode==='live'?filled+t(' filled',' wykonanych'):signed+t(' signed',' podpisanych'))),' · '+skipped+t(' skipped · ',' pominiętych · ')+errs+t(' errors · day loss ',' błędów · strata dnia ')+money(Number(l.day_loss_usd||0))+t(' of the cap ',' z limitu ')+money(Number((l.limits||{}).day_loss_stop_usd||0))+t(' · POL for fees ',' · POL na opłaty ')+(w.pol==null?'—':w.pol));
   card.append(line);
   if(rows.length){
-    const t=node('div',undefined,'live-orders');
-    const head=node('div',undefined,'live-row live-head');[t('Time','Czas'),t('Move','Ruch'),t("Mitch's price",'Cena Mitcha'),t('Our cap','Nasz limit'),t('Paper','Papier'),t('Amount','Kwota'),t('From Mitch','Od Mitcha'),'Status'].forEach(h=>head.append(node('span',h)));t.append(head);
+    const tbl=node('div',undefined,'live-orders');
+    const head=node('div',undefined,'live-row live-head');[t('Time','Czas'),t('Move','Ruch'),t("Mitch's price",'Cena Mitcha'),t('Our cap','Nasz limit'),t('Paper','Papier'),t('Amount','Kwota'),t('From Mitch','Od Mitcha'),'Status'].forEach(h=>head.append(node('span',h)));tbl.append(head);
     for(const r of rows.slice(0,6)){
       const row=node('div',undefined,'live-row');
-      row.append(node('span',r.finished_at?homeWhen(r.finished_at):'—'),node('span',r.side==='BUY'?t('buy','kupno'):t('sell','sprzedaż')),node('span',r.source_price||'—'),node('span',r.order_limit||r.limit_price||'—'),node('span',r.paper_vwap||'—'),node('span',r.amount_usd?money(Number(r.amount_usd)):(r.shares?r.shares+t(' sh.',' udz.'):'—')),node('span',r.from_source_ms==null?'—':(r.from_source_ms/1000).toFixed(2)+' s',r.from_source_ms>1000?'negative':r.from_source_ms!=null?'positive':''),node('span',liveStatus(r.status)+(r.error?': '+String(r.error).slice(0,60):''),r.status==='ERROR'?'negative':r.status==='FILLED'?'positive':''));
-      t.append(row);
+      row.append(node('span',r.finished_at?homeWhen(r.finished_at):'—'),node('span',r.side==='BUY'?t('buy','kupno'):t('sell','sprzedaż')),node('span',px(r.source_price)),node('span',px(r.order_limit||r.limit_price)),node('span',px(r.paper_vwap)),node('span',r.amount_usd?money(Number(r.amount_usd)):(r.shares?r.shares+t(' sh.',' udz.'):'—')),node('span',r.from_source_ms==null?'—':(r.from_source_ms/1000).toFixed(2)+' s',r.from_source_ms>1000?'negative':r.from_source_ms!=null?'positive':''),node('span',liveStatus(r.status)+(r.error?': '+String(r.error).slice(0,60):''),r.status==='ERROR'?'negative':r.status==='FILLED'?'positive':''));
+      tbl.append(row);
     }
-    card.append(t);
+    card.append(tbl);
   }
   const why=node('p',undefined,'home-why');
   why.append(mode==='live'?t("Every PAPER copy of Mitch also goes with real money, at the same moment and with the same price cap. ",'Każda papierowa kopia Mitcha idzie też za prawdziwe pieniądze, w tej samej chwili i z tym samym limitem ceny. '):t("Test: at every PAPER copy of Mitch the lab signs a real order but does not send it. We compare them with PAPER. ",'Test: przy każdej papierowej kopii Mitcha lab podpisuje prawdziwe zlecenie, ale go nie wysyła. Porównujemy je z papierem. '));
