@@ -757,7 +757,8 @@ class MitchCopy:
         if live is not None:
             try:
                 live.on_buy(wallet, key, event, fill, min(Decimal('0.999999'), source_price(event) + PRICE_WORSE),
-                            stopped=self.stopped())
+                            stopped=self.stopped(),
+                            paper_decided_at=(timing or {}).get('decision_at') if isinstance(timing, dict) else None)
             except Exception as error:
                 log.warning('live mirror: %s', str(error)[:200])
         return reason
@@ -769,6 +770,7 @@ class MitchCopy:
                 from pathlib import Path
                 from .mitch_live import MitchLive
                 self._live = MitchLive(self.store, Path(self.store.path).parent.parent, self.clock)
+                self._live.warm()
             except Exception as error:
                 log.warning('live mirror unavailable: %s', str(error)[:200])
         return self._live
@@ -1354,6 +1356,12 @@ class MitchCopy:
         if body.get('side') == 'BUY' and str(body.get('slug') or '').startswith('btc-updown-15m-') \
                 and arrived - float(body.get('timestamp') or 0) <= MAX_BUY_AGE:
             early = asyncio.ensure_future(self._early_book(body))
+            live = self.live_mirror()
+            if live is not None:
+                try:
+                    live.prefetch(body.get('conditionId'), str(body.get('asset') or ''))
+                except Exception:
+                    pass
         loop = asyncio.get_running_loop()
         row = await loop.run_in_executor(MITCH, insert_row, self.store, wallet, body, detected_at)
         if row:

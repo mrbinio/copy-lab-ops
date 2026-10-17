@@ -63,4 +63,4 @@ body.data-stale .metric-value{opacity:.55}
 @media(max-width:900px){.home{grid-template-columns:1fr}.home-main{font-size:30px}}
 @media(max-width:480px){.home-nums{grid-template-columns:1fr 1fr}.home-card{padding:18px 16px}}
 .home.one{grid-template-columns:1fr}
-.live-orders{display:grid;gap:2px;font-size:11px;font-variant-numeric:tabular-nums;overflow-x:auto}.live-row{display:grid;grid-template-columns:90px 70px 80px 80px 70px 70px minmax(160px,1fr);gap:8px;padding:6px 8px;border-bottom:1px solid #1d2a37;min-width:640px}.live-head{color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.6px}.home-why a{color:var(--teal);text-decoration:underline;text-underline-offset:3px}
+.live-orders{display:grid;gap:2px;font-size:11px;font-variant-numeric:tabular-nums;overflow-x:auto}.live-row{display:grid;grid-template-columns:90px 60px 80px 75px 65px 65px 70px minmax(160px,1fr);gap:8px;padding:6px 8px;border-bottom:1px solid #1d2a37;min-width:700px}.live-head{color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.6px}.home-why a{color:var(--teal);text-decoration:underline;text-underline-offset:3px}

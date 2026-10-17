@@ -977,10 +977,10 @@ function homeLiveCard(s){
   card.append(line);
   if(rows.length){
     const t=node('div',undefined,'live-orders');
-    const head=node('div',undefined,'live-row live-head');[t('Time','Czas'),t('Move','Ruch'),t("Mitch's price",'Cena Mitcha'),t('Our cap','Nasz limit'),t('Paper','Papier'),t('Amount','Kwota'),'Status'].forEach(h=>head.append(node('span',h)));t.append(head);
+    const head=node('div',undefined,'live-row live-head');[t('Time','Czas'),t('Move','Ruch'),t("Mitch's price",'Cena Mitcha'),t('Our cap','Nasz limit'),t('Paper','Papier'),t('Amount','Kwota'),t('From Mitch','Od Mitcha'),'Status'].forEach(h=>head.append(node('span',h)));t.append(head);
     for(const r of rows.slice(0,6)){
       const row=node('div',undefined,'live-row');
-      row.append(node('span',r.finished_at?homeWhen(r.finished_at):'—'),node('span',r.side==='BUY'?t('buy','kupno'):t('sell','sprzedaż')),node('span',r.source_price||'—'),node('span',r.order_limit||r.limit_price||'—'),node('span',r.paper_vwap||'—'),node('span',r.amount_usd?money(Number(r.amount_usd)):(r.shares?r.shares+t(' sh.',' udz.'):'—')),node('span',liveStatus(r.status)+(r.error?': '+String(r.error).slice(0,60):''),r.status==='ERROR'?'negative':r.status==='FILLED'?'positive':''));
+      row.append(node('span',r.finished_at?homeWhen(r.finished_at):'—'),node('span',r.side==='BUY'?t('buy','kupno'):t('sell','sprzedaż')),node('span',r.source_price||'—'),node('span',r.order_limit||r.limit_price||'—'),node('span',r.paper_vwap||'—'),node('span',r.amount_usd?money(Number(r.amount_usd)):(r.shares?r.shares+t(' sh.',' udz.'):'—')),node('span',r.from_source_ms==null?'—':(r.from_source_ms/1000).toFixed(2)+' s',r.from_source_ms>1000?'negative':r.from_source_ms!=null?'positive':''),node('span',liveStatus(r.status)+(r.error?': '+String(r.error).slice(0,60):''),r.status==='ERROR'?'negative':r.status==='FILLED'?'positive':''));
       t.append(row);
     }
     card.append(t);

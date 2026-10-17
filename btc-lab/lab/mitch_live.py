@@ -28,10 +28,15 @@ CLOB = 'https://clob.polymarket.com'
 CHAIN_ID = 137
 MODES = ('off', 'dry', 'live')
 # Hard limits for the test wallet. A config file may lower them, never raise.
-# The market minimum is 5 shares on BTC 15m, about 2.5 USD near 50 cents.
-MAX_ORDER_USD = Decimal('3')
-MAX_EXPOSURE_USD = Decimal('10')
-DAY_LOSS_STOP_USD = Decimal('5')
+# Damian, 17 Oct 2026: desk line 100 USD (1/5 of the PAPER 500), each live
+# buy is the PAPER amount x 1/5 (at least the market minimum), at most 5 USD
+# an order, 30 USD in play, 20 USD day loss; buys stop below 10 USD in the
+# wallet (PAPER stops at 50 of 500).
+MAX_ORDER_USD = Decimal('5')
+MAX_EXPOSURE_USD = Decimal('30')
+DAY_LOSS_STOP_USD = Decimal('20')
+MAX_SCALE = Decimal('0.2')
+DESK_STOP_USD = Decimal('10')
 MIN_MARKET_BUY_USD = Decimal('1')
 POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix='lab-live')
 PUSD = '0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB'
@@ -57,6 +62,8 @@ def load_settings(root):
         return min(value, ceiling) if value > 0 else ceiling
     return {
         'mode': mode,
+        'scale': capped('scale', MAX_SCALE),
+        'desk_stop_usd': max(DESK_STOP_USD, Decimal(str(raw.get('desk_stop_usd', DESK_STOP_USD)))),
         'max_order_usd': capped('max_order_usd', MAX_ORDER_USD),
         'max_exposure_usd': capped('max_exposure_usd', MAX_EXPOSURE_USD),
         'day_loss_stop_usd': capped('day_loss_stop_usd', DAY_LOSS_STOP_USD),
@@ -68,11 +75,15 @@ def tick_floor(price, tick):
     return (Decimal(str(price)) / tick).to_integral_value(rounding=ROUND_DOWN) * tick
 
 
-def buy_amount(limit_price, min_shares, cap):
-    """Dollars for one minimum buy at the cap price, or None when it does not fit the cap."""
-    need = max(MIN_MARKET_BUY_USD, Decimal(str(min_shares or 0)) * Decimal(str(limit_price)))
-    need = need.quantize(Decimal('0.01'), rounding=ROUND_UP)
-    return need if need <= cap else None
+def buy_amount(limit_price, min_shares, cap, paper_usd=None, scale=Decimal(0)):
+    """The PAPER amount x scale, at least the market minimum at the cap price.
+    None when even the minimum does not fit the per-order cap."""
+    floor = max(MIN_MARKET_BUY_USD, Decimal(str(min_shares or 0)) * Decimal(str(limit_price)))
+    floor = floor.quantize(Decimal('0.01'), rounding=ROUND_UP)
+    if floor > cap:
+        return None
+    wanted = (Decimal(str(paper_usd or 0)) * scale).quantize(Decimal('0.01'), rounding=ROUND_DOWN)
+    return min(max(floor, wanted), cap)
 
 
 class MitchLive:
@@ -149,8 +160,30 @@ class MitchLive:
                 self._market_info.pop(next(iter(self._market_info)))
         return hit
 
+    def warm(self):
+        """Build the client and learn the exchange version before the first order."""
+        if self.settings()['mode'] == 'off':
+            return None
+        def run():
+            try:
+                self.client().get_version()
+            except Exception as error:
+                LOG.warning('live warm: %s', str(error)[:200])
+        return self.pool.submit(run)
+
+    def prefetch(self, condition, token):
+        """Market minimum and tick for a fresh BTC 15m buy, while PAPER decides."""
+        if not condition or condition in self._market_info or self.settings()['mode'] == 'off':
+            return None
+        def run():
+            try:
+                self._min_shares(self.client(), condition, token)
+            except Exception as error:
+                LOG.warning('live prefetch: %s', str(error)[:200])
+        return self.pool.submit(run)
+
     # -- mirror of PAPER decisions -----------------------------------------
-    def on_buy(self, wallet, paper_key, event, fill, limit_price, stopped=False):
+    def on_buy(self, wallet, paper_key, event, fill, limit_price, stopped=False, paper_decided_at=None):
         """Called right after a PAPER copy. Never blocks the PAPER path."""
         settings = self.settings()
         if settings['mode'] == 'off':
@@ -161,7 +194,8 @@ class MitchLive:
             'condition': event.get('conditionId'), 'source_price': str(event.get('price')),
             'source_ts': event.get('timestamp'), 'limit_price': str(limit_price),
             'paper_vwap': str(fill.get('vwap')), 'paper_cost_micro': fill.get('cost'),
-            'decided_at': self.clock(), 'mode': settings['mode'], 'stopped': bool(stopped),
+            'decided_at': self.clock(), 'paper_decided_at': paper_decided_at,
+            'mode': settings['mode'], 'stopped': bool(stopped),
         }
         return self.pool.submit(self._buy, job, settings)
 
@@ -176,11 +210,16 @@ class MitchLive:
             client = self.client()
             info = self._min_shares(client, job['condition'], job['token'])
             limit = tick_floor(min(Decimal(job['limit_price']), Decimal('0.99')), info['tick'])
-            amount = buy_amount(limit, info['mos'], settings['max_order_usd'])
+            paper_usd = Decimal(int(job.get('paper_cost_micro') or 0)) / Decimal(1_000_000)
+            amount = buy_amount(limit, info['mos'], settings['max_order_usd'], paper_usd, settings['scale'])
             if amount is None:
                 return self._finish(job, 'SKIPPED_MIN_ABOVE_CAP', started, min_shares=info['mos'])
             if self.exposure_usd(rows) + amount > settings['max_exposure_usd']:
                 return self._finish(job, 'SKIPPED_EXPOSURE_CAP', started, amount_usd=str(amount))
+            wallet = getattr(self, '_wallet', None) or {}
+            if settings['mode'] == 'live' and wallet.get('pusd') is not None and \
+                    Decimal(str(wallet['pusd'])) - amount < settings['desk_stop_usd']:
+                return self._finish(job, 'SKIPPED_DESK_STOP', started, amount_usd=str(amount))
             from py_clob_client_v2.clob_types import MarketOrderArgsV2, OrderType
             order = client.create_market_order(MarketOrderArgsV2(
                 token_id=job['token'], amount=float(amount), side='BUY', price=float(limit),
@@ -267,8 +306,18 @@ class MitchLive:
             return self._finish(job, 'ERROR', started, error=str(error)[:300])
 
     def _finish(self, job, status, started, **extra):
-        row = dict(job, status=status, finished_at=self.clock(),
-                   from_source_ms=round((self.clock() - float(job.get('source_ts') or started)) * 1000, 1),
+        # Where the time goes, for Damian: source -> PAPER decision -> live
+        # hand-off (after the PAPER write) -> signed (and posted) order.
+        source = float(job.get('source_ts') or started)
+        paper = job.get('paper_decided_at')
+        timing = {
+            'decide_ms': round((float(paper) - source) * 1000, 1) if paper else None,
+            'handoff_ms': round((float(job['decided_at']) - float(paper)) * 1000, 1) if paper else None,
+            'wait_ms': round((started - float(job['decided_at'])) * 1000, 1),
+            'work_ms': round((self.clock() - started) * 1000, 1),
+        }
+        row = dict(job, status=status, finished_at=self.clock(), timing=timing,
+                   from_source_ms=round((self.clock() - source) * 1000, 1),
                    **extra)
         self._save(row)
         LOG.info('live %s %s %s %s', row['mode'], row['side'], status, str(row.get('amount_usd', '')))

@@ -75,12 +75,12 @@ class MitchLiveTests(unittest.TestCase):
             args = client.orders[0]
             self.assertEqual(args.side, 'BUY')
             self.assertEqual(Decimal(str(args.price)), Decimal('0.52'))   # floored to the tick
-            self.assertEqual(Decimal(str(args.amount)), Decimal('2.60'))  # 5 shares x 0.52
+            self.assertEqual(Decimal(str(args.amount)), Decimal('2.60'))  # paper 1 micro x 1/5 < minimum 5 x 0.52
             self.assertEqual(args.order_type, 'FOK')
 
     def test_live_needs_the_code_gate(self):
         with tempfile.TemporaryDirectory() as tmp:
-            live, client = self.make(tmp, 'live', max_order_usd='3')
+            live, client = self.make(tmp, 'live')
             row = live.on_buy('w', 'k' * 30, event(), {'vwap': '0.43', 'cost': 1}, Decimal('0.52'))
             self.assertEqual(row['status'], 'ERROR')
             self.assertIn('disabled in code', row['error'])
@@ -90,7 +90,7 @@ class MitchLiveTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             live, client = self.make(tmp, 'dry', client=FakeClient(mos=10))
             row = live.on_buy('w', 'a' * 30, event(), {'vwap': '0.43', 'cost': 1}, Decimal('0.52'))
-            self.assertEqual(row['status'], 'SKIPPED_MIN_ABOVE_CAP')  # 10 x 0.52 > 3 USD cap
+            self.assertEqual(row['status'], 'SKIPPED_MIN_ABOVE_CAP')  # 10 x 0.52 > 5 USD cap
             row = live.on_buy('w', 'b' * 30, event(), {'vwap': '0.43', 'cost': 1}, Decimal('0.52'), stopped=True)
             self.assertEqual(row['status'], 'SKIPPED_STOP')
             self.assertEqual(client.orders, [])
@@ -104,7 +104,7 @@ class MitchLiveTests(unittest.TestCase):
 
     def test_exposure_cap_counts_open_filled_buys(self):
         with tempfile.TemporaryDirectory() as tmp:
-            live, client = self.make(tmp, 'dry', max_exposure_usd='3')
+            live, client = self.make(tmp, 'dry', max_exposure_usd='4')
             live._save({'id': 'x', 'paper_key': 'x', 'side': 'BUY', 'status': 'FILLED', 'spent_usd': '2.0'})
             row = live.on_buy('w', 'c' * 30, event(), {'vwap': '0.43', 'cost': 1}, Decimal('0.52'))
             self.assertEqual(row['status'], 'SKIPPED_EXPOSURE_CAP')
@@ -127,6 +127,15 @@ class MitchLiveTests(unittest.TestCase):
             live.on_buy('w', 'g' * 30, event('0.40'), {'vwap': '0.41', 'cost': 1}, Decimal('0.50'))
             row = live.on_sell('w', 'h' * 30, event('0.70'), Decimal('0.4'), Decimal('0.60'))
             self.assertEqual(row['status'], 'HELD_BELOW_MIN')
+
+
+    def test_a_buy_is_one_fifth_of_the_paper_amount(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            live, client = self.make(tmp, 'dry')
+            row = live.on_buy('w', 'i' * 30, event('0.20'), {'vwap': '0.21', 'cost': 15_000_000}, Decimal('0.30'))
+            self.assertEqual(row['amount_usd'], '3.00')            # 15 USD on paper -> 3 USD live
+            row = live.on_buy('w', 'j' * 30, event('0.20'), {'vwap': '0.21', 'cost': 40_000_000}, Decimal('0.30'))
+            self.assertEqual(row['amount_usd'], '5')               # 8 USD wanted, capped at 5 an order
 
 
 if __name__ == '__main__':
