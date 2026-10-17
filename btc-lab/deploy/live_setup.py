@@ -59,7 +59,17 @@ def main():
     def tx(label, to, payload):
         nonce = int(rpc('eth_getTransactionCount', [me, 'pending']), 16)
         call = {'from': me, 'to': to, 'data': payload}
-        gas = int(rpc('eth_estimateGas', [call]), 16)          # simulation: reverts here if it would fail
+        # Simulation: reverts here if it would fail. 17 Oct 2026: the node that
+        # answered had not seen the approve confirmed seconds earlier, so the
+        # swap is retried a few times before it counts as a real revert.
+        for attempt in range(5):
+            try:
+                gas = int(rpc('eth_estimateGas', [call]), 16)
+                break
+            except RuntimeError:
+                if attempt == 4:
+                    raise
+                time.sleep(4)
         base = int(rpc('eth_gasPrice', []), 16)
         tip = max(30_000_000_000, base // 4)
         print('  %-28s simulated ok, gas %d, max fee %.0f gwei' % (label, gas, base * 2 / 1e9))
@@ -76,6 +86,7 @@ def main():
                 print('  %-28s %s https://polygonscan.com/tx/%s' % (label, 'CONFIRMED' if ok else 'FAILED', h))
                 if not ok:
                     raise SystemExit('stopped: %s failed' % label)
+                time.sleep(6)   # let every node see the new state
                 return h
         raise SystemExit('stopped: %s not mined in 3 min (%s)' % (label, h))
 
