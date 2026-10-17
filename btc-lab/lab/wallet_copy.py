@@ -540,6 +540,22 @@ class WalletCopy:
             return [json.loads(r[0]) for r in db.execute('SELECT body FROM wallet_copy_positions WHERE wallet=?',(wallet,))]
         return [json.loads(r[0]) for r in db.execute('SELECT body FROM wallet_copy_positions')]
 
+    def _reason_scan(self,now):
+        """Board-only counts of the last day's decisions. Never on the publish path."""
+        try:
+            with self.store.connect() as db:
+                reasons=[dict(r) for r in db.execute(
+                    'SELECT wallet,reason,COUNT(*) AS count FROM wallet_copy_events INDEXED BY copy_events_ts WHERE ts>=? GROUP BY wallet,reason',
+                    (now-86400,))]
+                recent=[]
+                for r in db.execute('SELECT wallet,event_key,ts,reason,body FROM wallet_copy_events ORDER BY ts DESC,rowid DESC LIMIT 30'):
+                    e=json.loads(r['body']);recent.append({k:r[k] for k in ('wallet','event_key','ts','reason')}|{'error':e.get('error'),'copy_delay':e.get('copy_delay')})
+                errors=[dict(r)|{'detail':json.loads(r['body']).get('error')} for r in db.execute(
+                    "SELECT wallet,event_key,ts,body FROM wallet_copy_events WHERE reason='ERROR' ORDER BY ts DESC LIMIT 30")]
+            self._scan.update(reasons=reasons,recent=recent,errors=errors,reasons_at=now,reasons_window='24h')
+        except Exception as error:
+            log.warning('reason scan: %s',str(error)[:200])
+
     def publish(self,status,error=None):
         now=self.clock()
         roster=(self.store.get('wallet_roster') or {}).get('wallets') or {}
@@ -583,21 +599,24 @@ class WalletCopy:
                     current_block=self.risk_reason(db,wallet,now,trades=trades),last_reason=cached[1] if cached else 'NO_NEW_SOURCE_TRADE',last_decision_at=cached[0] if cached else None))
             # The reason counts group every decision ever made (2.3 s); the
             # board shows them, nothing decides on them.
-            if now-self._scan_at>=REASON_SCAN_EVERY_S or not self._scan:
-                reasons=[dict(r) for r in db.execute('SELECT wallet,reason,COUNT(*) AS count FROM wallet_copy_events GROUP BY wallet,reason')]
-                recent=[]
-                for r in db.execute('SELECT wallet,event_key,ts,reason,body FROM wallet_copy_events ORDER BY ts DESC,rowid DESC LIMIT 30'):
-                    e=json.loads(r['body']);recent.append({k:r[k] for k in ('wallet','event_key','ts','reason')}|{'error':e.get('error'),'copy_delay':e.get('copy_delay')})
-                errors=[dict(r)|{'detail':json.loads(r['body']).get('error')} for r in db.execute("SELECT wallet,event_key,ts,body FROM wallet_copy_events WHERE reason='ERROR' ORDER BY ts DESC LIMIT 30")]
-                self._scan={'reasons':reasons,'recent':recent,'errors':errors}
-                self._scan_at=now
+            # 17 Oct 2026: the reason counts read all 1.8 M decisions in random
+            # order (minutes on a cold 14 GB file); publish waited past 180 s and
+            # the qualifier restarted itself twice. They run on their own thread
+            # now, over the last day, and publish shows the last finished result.
+            if now-self._scan_at>=REASON_SCAN_EVERY_S or not self._scan.get('reasons_at'):
+                running=getattr(self,'_scan_thread',None)
+                if running is None or not running.is_alive():
+                    import threading
+                    self._scan_at=now
+                    self._scan_thread=threading.Thread(target=self._reason_scan,args=(now,),daemon=True,name='lab-q-reasons')
+                    self._scan_thread.start()
         if 'skip' not in self._scan or now-self._scan.get('skip_at',0)>=30:
             self._scan['skip']=self.skip_summary()
             self._scan['skip_at']=now
         if mismatches:
             self._record_ledger_failure(now,mismatches)
             raise CopyLedgerError('COPY_LEDGER_MISMATCH %s'%','.join(item['wallet'][-8:] for item in mismatches))
-        reasons,recent,errors=self._scan['reasons'],self._scan['recent'],self._scan['errors']
+        reasons,recent,errors=self._scan.get('reasons',[]),self._scan.get('recent',[]),self._scan.get('errors',[])
         samples=[]
         for t in trades:
             path=(t.get('entry_evidence') or {}).get('path_ms')
