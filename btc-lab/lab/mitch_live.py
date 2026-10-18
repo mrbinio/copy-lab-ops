@@ -596,7 +596,25 @@ class MitchLive:
         return {'pnl_usd': str(sum((Decimal(r.get('pnl_usd') or '0') for r in done), Decimal(0))),
                 'closed': len([r for r in done if r.get('side') == 'BUY']),
                 'won': len([r for r in done if r.get('side') == 'BUY' and r.get('won')]),
-                'estimated': any(r.get('estimated') for r in done)}
+                'estimated': any(r.get('estimated') for r in done), 'days': self._days(done)}
+
+    @staticmethod
+    def _days(done):
+        """Per local day of the buy: what the test made, what it put in, and what
+        PAPER put into the same copies, newest first."""
+        days = {}
+        for r in done:
+            if r.get('side') != 'BUY':
+                continue
+            day = time.strftime('%Y-%m-%d', time.localtime(float(r.get('finished_at') or 0)))
+            d = days.setdefault(day, {'day': day, 'pnl': Decimal(0), 'spent': Decimal(0), 'paper': Decimal(0), 'closed': 0, 'won': 0})
+            d['pnl'] += Decimal(r.get('pnl_usd') or '0')
+            d['spent'] += Decimal(r.get('spent_usd') or r.get('amount_usd') or '0')
+            d['paper'] += Decimal(int(r.get('paper_cost_micro') or 0)) / Decimal(1_000_000)
+            d['closed'] += 1
+            d['won'] += 1 if r.get('won') else 0
+        return [{k: (str(v.quantize(Decimal('0.01'))) if isinstance(v, Decimal) else v) for k, v in d.items()}
+                for d in sorted(days.values(), key=lambda d: d['day'], reverse=True)[:7]]
 
     def summary(self):
         rows = self._rows()

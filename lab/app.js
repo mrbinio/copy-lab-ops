@@ -966,16 +966,28 @@ function homeLiveCard(s){
   const card=homeCard(t('Mitch · real money','Mitch · prawdziwe pieniądze'),w.address?(t('wallet ','portfel ')+w.address.slice(0,6)+'…'+w.address.slice(-4)+' · Polygon · Polymarket'):t('wallet not connected','portfel nie podłączony'),pill,l.live_stop?'bad':mode==='live'?'ok':mode==='dry'?'warn':'bad');
   card.append(node('div',t('Wallet balance (pUSD, straight from the chain)','Saldo portfela (pUSD, prosto z sieci)'),'home-main-label'));
   card.append(node('div',w.pusd==null?'brak danych':money(w.pusd),'home-main'));
-  const pnl=rows.filter(r=>r.closed).reduce((a,r)=>a+Number(r.pnl_usd||0),0);const closed=rows.filter(r=>r.closed).length;
+  const R=l.result||{};const pnl=Number(R.pnl_usd||0);const closed=Number(R.closed||0);const est=!!R.estimated;
   const nums=node('div',undefined,'home-nums');
   const inPlay=node('div',undefined,'home-num');inPlay.append(node('span',t('In play','W grze')),node('b',money(Number(l.exposure_usd||0))),node('small',t('cap ','limit ')+money(Number((l.limits||{}).max_exposure_usd||0))));
-  const res=node('div',undefined,'home-num');res.append(node('span',t('LIVE result','Wynik LIVE')),node('b',closed?money(pnl,true):t('no settlements','brak rozliczeń'),closed?(pnl>0?'positive':pnl<0?'negative':''):''),node('small',closed?closed+t(' settled',' rozliczonych'):t('appears after the first window','pojawi się po pierwszym oknie')));
+  const res=node('div',undefined,'home-num');res.append(node('span',t('LIVE result','Wynik LIVE')),node('b',closed?money(pnl,true):t('no settlements','brak rozliczeń'),closed?(pnl>0?'positive':pnl<0?'negative':''):''),node('small',closed?(est?t('test estimate · ','szacunek testu · '):'')+closed+t(' settled, ',' rozliczonych, ')+Number(R.won||0)+t(' won',' wygranych'):t('appears after the first window','pojawi się po pierwszym oknie')));
   const reserve=node('div',undefined,'home-num');reserve.append(node('span',t('Profit reserve (Kraken)','Rezerwa zysku (Kraken)')),node('b',money(Number(l.swept_usd||0))),node('small',t('surplus above the desk line','nadwyżka ponad linię biurka')));
   nums.append(inPlay,res,reserve);card.append(nums);
   const signed=c.DRY_SIGNED||0,filled=c.FILLED||0,errs=c.ERROR||0,skipped=Object.entries(c).filter(([k])=>k.startsWith('SKIPPED')||k==='HELD_BELOW_MIN'||k==='NOT_FILLED').reduce((a,[,v])=>a+v,0);
   const line=node('p',undefined,'home-line');
   line.append(t('Orders: ','Zlecenia: '),node('b',(mode==='live'?filled+t(' filled',' wykonanych'):signed+t(' signed',' podpisanych'))),' · '+skipped+t(' skipped · ',' pominiętych · ')+errs+t(' errors · day loss ',' błędów · strata dnia ')+money(Number(l.day_loss_usd||0))+t(' of the cap ',' z limitu ')+money(Number((l.limits||{}).day_loss_stop_usd||0))+t(' · POL for fees ',' · POL na opłaty ')+(w.pol==null?'—':w.pol));
   card.append(line);
+  const days=Array.isArray(R.days)?R.days:[];
+  if(days.length){
+    card.append(node('div',est?t('Test result by day (estimate: what these orders would have made)','Wynik testu dzień po dniu (szacunek: ile zarobiłyby te zlecenia)'):t('Result by day','Wynik dzień po dniu'),'home-main-label'));
+    const dt=node('div',undefined,'live-orders live-days');
+    const dh=node('div',undefined,'live-row live-head');[t('Day','Dzień'),t('Result','Wynik'),t('Won','Wygrane'),t('Put in','Włożone'),t('Paper put in','Papier włożył')].forEach(h=>dh.append(node('span',h)));dt.append(dh);
+    for(const d of days){
+      const row=node('div',undefined,'live-row');const v=Number(d.pnl||0);
+      row.append(node('span',d.day.slice(8,10)+'.'+d.day.slice(5,7)),node('span',money(v,true),v>0?'positive':v<0?'negative':''),node('span',d.won+' / '+d.closed),node('span',money(Number(d.spent||0))),node('span',money(Number(d.paper||0))));
+      dt.append(row);
+    }
+    card.append(dt);
+  }
   if(rows.length){
     const tbl=node('div',undefined,'live-orders');
     const head=node('div',undefined,'live-row live-head');[t('Time','Czas'),t('Move','Ruch'),t("Mitch's price",'Cena Mitcha'),t('Our cap','Nasz limit'),t('Paper','Papier'),t('Amount','Kwota'),t('From Mitch','Od Mitcha'),'Status'].forEach(h=>head.append(node('span',h)));tbl.append(head);
