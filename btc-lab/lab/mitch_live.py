@@ -17,6 +17,7 @@ logged, printed or stored anywhere else.
 """
 import json
 import logging
+import sqlite3
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -137,9 +138,18 @@ class MitchLive:
         self._creds = True
 
     def _rows(self):
-        with self.store.connect() as db:
-            ensure(db)
-            return [json.loads(b) for (b,) in db.execute('SELECT body FROM mitch_live_orders')]
+        # 18 Oct 2026: four dry orders failed on 'database is locked' during a
+        # 23 s write stall. A failed read uses the last rows read.
+        try:
+            with self.store.connect() as db:
+                ensure(db)
+                rows = [json.loads(b) for (b,) in db.execute('SELECT body FROM mitch_live_orders')]
+            self._last_rows = rows
+            return rows
+        except sqlite3.OperationalError:
+            if getattr(self, '_last_rows', None) is not None:
+                return list(self._last_rows)
+            raise
 
     def exposure_usd(self, rows=None):
         rows = self._rows() if rows is None else rows
@@ -153,10 +163,28 @@ class MitchLive:
                      if r.get('closed') and float(r.get('closed_at') or 0) >= start), Decimal(0))
 
     def _save(self, row):
-        with self.store.connect() as db:
-            ensure(db)
-            db.execute('INSERT OR REPLACE INTO mitch_live_orders VALUES (?,?,?)',
-                       (row['id'], row.get('paper_key'), json.dumps(row)))
+        """The journal file first: a real order must never be lost to a locked
+        database. Then the table, retried."""
+        try:
+            (self.root / 'logs').mkdir(parents=True, exist_ok=True)
+            with open(self.root / 'logs' / 'live-orders.jsonl', 'a') as journal:
+                journal.write(json.dumps(row) + '\n')
+        except OSError as error:
+            LOG.warning('live journal: %s', str(error)[:200])
+        for attempt in range(4):
+            try:
+                with self.store.connect() as db:
+                    ensure(db)
+                    db.execute('INSERT OR REPLACE INTO mitch_live_orders VALUES (?,?,?)',
+                               (row['id'], row.get('paper_key'), json.dumps(row)))
+                if getattr(self, '_last_rows', None) is not None:
+                    self._last_rows = [r for r in self._last_rows if r.get('id') != row['id']] + [row]
+                return
+            except sqlite3.OperationalError as error:
+                if attempt == 3:
+                    LOG.warning('live save %s: %s (kept in logs/live-orders.jsonl)', row.get('id'), error)
+                    return
+                time.sleep(2)
 
     def _min_shares(self, client, condition, token):
         hit = self._market_info.get(condition)

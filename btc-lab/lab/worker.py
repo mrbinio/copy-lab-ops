@@ -649,6 +649,9 @@ class Worker:
                 if dropped:
                     LOG.info('pruned %d old book/price notes',dropped)
             except Exception as e:
+                # 18 Oct 2026: on the damaged ETH file this failed and was
+                # retried every pass (~2 s, 11,000 times). Next try in 10 min.
+                self.last_prune=time.time()
                 failure('prune',e)
         if errors:
             await self._db(self.store.set,'worker',{'status':'DEGRADED','heartbeat':time.time(),
@@ -1044,13 +1047,21 @@ def wal_checkpoint(path, wait_ms=500):
         # cache; the power cut of 15 Oct broke the ETH state index. This
         # checkpoint flushes fully. Not on every connection: there it made
         # each write 42 ms instead of 1.5 ms.
-        db.execute('PRAGMA checkpoint_fullfsync=ON')
         try:
             big=_os.path.getsize(str(path)+'-wal')>WAL_TRUNCATE_ABOVE
         except OSError:
             big=False
         mode='TRUNCATE' if big else 'PASSIVE'
-        return (mode,)+tuple(db.execute('PRAGMA wal_checkpoint(%s)' % mode).fetchone())
+        # 18 Oct 2026: every writer stalled ~23 s twice at 07:21; a TRUNCATE
+        # checkpoint holds writers, and the full flush made it far longer.
+        # The full flush stays on PASSIVE, which never blocks a writer.
+        db.execute('PRAGMA checkpoint_fullfsync=%s' % ('OFF' if big else 'ON'))
+        started=time.monotonic()
+        result=(mode,)+tuple(db.execute('PRAGMA wal_checkpoint(%s)' % mode).fetchone())
+        took=time.monotonic()-started
+        if took>1:
+            LOG.warning('wal checkpoint %s took %.1f s', mode, took)
+        return result
     finally:
         db.close()
 

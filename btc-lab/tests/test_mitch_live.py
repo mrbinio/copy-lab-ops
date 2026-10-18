@@ -148,5 +148,13 @@ class MitchLiveTests(unittest.TestCase):
             self.assertEqual(len(client.orders), 1)
 
 
+    def test_every_order_is_also_journaled_outside_the_database(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            live, _ = self.make(tmp, 'dry')
+            live.on_buy('w', 'q' * 30, event(), {'vwap': '0.43', 'cost': 1}, Decimal('0.52'))
+            lines = (Path(tmp) / 'logs' / 'live-orders.jsonl').read_text().splitlines()
+            self.assertEqual(json.loads(lines[-1])['status'], 'DRY_SIGNED')
+
+
 if __name__ == '__main__':
     unittest.main()
