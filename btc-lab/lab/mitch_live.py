@@ -84,6 +84,15 @@ def tick_floor(price, tick):
     return (Decimal(str(price)) / tick).to_integral_value(rounding=ROUND_DOWN) * tick
 
 
+def window_end(row):
+    """When the row's market window ended (the slug carries its start), so a
+    late or back-filled settlement still lands on the right day."""
+    try:
+        return int(str(row.get('market') or '').rsplit('-', 1)[1]) + 900
+    except (IndexError, ValueError):
+        return float(row.get('closed_at') or 0)
+
+
 def buy_amount(limit_price, min_shares, cap, paper_usd=None, scale=Decimal(0)):
     """The PAPER amount x scale, at least the market minimum at the cap price.
     None when even the minimum does not fit the per-order cap."""
@@ -176,7 +185,7 @@ class MitchLive:
         now = time.localtime(self.clock())
         start = time.mktime((now.tm_year, now.tm_mon, now.tm_mday, 0, 0, 0, 0, 0, -1))
         closed = sum((Decimal(r.get('pnl_usd') or '0') for r in rows
-                      if r.get('closed') and float(r.get('closed_at') or 0) >= start), Decimal(0))
+                      if r.get('closed') and window_end(r) >= start), Decimal(0))
         return self.exposure_usd(rows) - closed
 
     def _save(self, row):

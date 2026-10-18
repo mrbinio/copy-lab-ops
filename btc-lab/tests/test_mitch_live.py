@@ -203,6 +203,9 @@ class MitchLiveTests(unittest.TestCase):
                         'closed_at': now - 1, 'pnl_usd': '-3'})
             live._save({'id': 'o', 'paper_key': 'o', 'side': 'BUY', 'status': 'DRY_SIGNED', 'amount_usd': '4'})
             self.assertEqual(live.day_loss_usd(), Decimal('7'))
+            live._save({'id': 'b', 'paper_key': 'b', 'side': 'BUY', 'status': 'DRY_SIGNED', 'closed': True,
+                        'closed_at': now, 'market': 'btc-updown-15m-%d' % (now - 86400), 'pnl_usd': '40'})
+            self.assertEqual(live.day_loss_usd(), Decimal('7'))   # settled today, but yesterday's window
             live, client = self.make(tmp, 'dry', day_loss_stop_usd='7')
             row = live.on_buy('w', 'e' * 30, event(), {'vwap': '0.43', 'cost': 13_000_000}, Decimal('0.52'))
             self.assertEqual(row['status'], 'SKIPPED_DAY_LOSS_STOP')
