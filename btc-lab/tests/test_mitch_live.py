@@ -63,25 +63,25 @@ class MitchLiveTests(unittest.TestCase):
     def test_off_does_nothing(self):
         with tempfile.TemporaryDirectory() as tmp:
             live, client = self.make(tmp, 'off')
-            self.assertIsNone(live.on_buy('w', 'k' * 30, event(), {'vwap': '0.43', 'cost': 1}, Decimal('0.52')))
+            self.assertIsNone(live.on_buy('w', 'k' * 30, event(), {'vwap': '0.43', 'cost': 13_000_000}, Decimal('0.52')))
             self.assertEqual(client.orders, [])
 
     def test_dry_signs_the_minimum_buy_at_the_paper_cap_and_never_posts(self):
         with tempfile.TemporaryDirectory() as tmp:
             live, client = self.make(tmp, 'dry')
-            row = live.on_buy('w', 'k' * 30, event(), {'vwap': '0.43', 'cost': 1}, Decimal('0.523'))
+            row = live.on_buy('w', 'k' * 30, event(), {'vwap': '0.43', 'cost': 13_000_000}, Decimal('0.523'))
             self.assertEqual(row['status'], 'DRY_SIGNED')
             self.assertEqual(client.posted, [])
             args = client.orders[0]
             self.assertEqual(args.side, 'BUY')
             self.assertEqual(Decimal(str(args.price)), Decimal('0.52'))   # floored to the tick
-            self.assertEqual(Decimal(str(args.amount)), Decimal('2.60'))  # paper 1 micro x 1/5 < minimum 5 x 0.52
+            self.assertEqual(Decimal(str(args.amount)), Decimal('2.60'))  # paper 13 x 1/5 = minimum 5 x 0.52
             self.assertEqual(args.order_type, 'FOK')
 
     def test_live_needs_the_code_gate(self):
         with tempfile.TemporaryDirectory() as tmp:
             live, client = self.make(tmp, 'live')
-            row = live.on_buy('w', 'k' * 30, event(), {'vwap': '0.43', 'cost': 1}, Decimal('0.52'))
+            row = live.on_buy('w', 'k' * 30, event(), {'vwap': '0.43', 'cost': 13_000_000}, Decimal('0.52'))
             self.assertEqual(row['status'], 'ERROR')
             self.assertIn('disabled in code', row['error'])
             self.assertEqual(client.posted, [])
@@ -89,9 +89,9 @@ class MitchLiveTests(unittest.TestCase):
     def test_limits_skip_before_signing(self):
         with tempfile.TemporaryDirectory() as tmp:
             live, client = self.make(tmp, 'dry', client=FakeClient(mos=10))
-            row = live.on_buy('w', 'a' * 30, event(), {'vwap': '0.43', 'cost': 1}, Decimal('0.52'))
+            row = live.on_buy('w', 'a' * 30, event(), {'vwap': '0.43', 'cost': 13_000_000}, Decimal('0.52'))
             self.assertEqual(row['status'], 'SKIPPED_MIN_ABOVE_CAP')  # 10 x 0.52 > 5 USD cap
-            row = live.on_buy('w', 'b' * 30, event(), {'vwap': '0.43', 'cost': 1}, Decimal('0.52'), stopped=True)
+            row = live.on_buy('w', 'b' * 30, event(), {'vwap': '0.43', 'cost': 13_000_000}, Decimal('0.52'), stopped=True)
             self.assertEqual(row['status'], 'SKIPPED_STOP')
             self.assertEqual(client.orders, [])
 
@@ -106,14 +106,14 @@ class MitchLiveTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             live, client = self.make(tmp, 'dry', max_exposure_usd='4')
             live._save({'id': 'x', 'paper_key': 'x', 'side': 'BUY', 'status': 'FILLED', 'spent_usd': '2.0'})
-            row = live.on_buy('w', 'c' * 30, event(), {'vwap': '0.43', 'cost': 1}, Decimal('0.52'))
+            row = live.on_buy('w', 'c' * 30, event(), {'vwap': '0.43', 'cost': 13_000_000}, Decimal('0.52'))
             self.assertEqual(row['status'], 'SKIPPED_EXPOSURE_CAP')
 
 
     def test_dry_sell_mirrors_the_paper_fraction_of_what_was_signed(self):
         with tempfile.TemporaryDirectory() as tmp:
             live, client = self.make(tmp, 'dry')
-            live.on_buy('w', 'd' * 30, event('0.40'), {'vwap': '0.41', 'cost': 1}, Decimal('0.50'))
+            live.on_buy('w', 'd' * 30, event('0.40'), {'vwap': '0.41', 'cost': 12_500_000}, Decimal('0.50'))
             row = live.on_sell('w', 'e' * 30, event('0.70'), Decimal('1'), Decimal('0.60'))
             self.assertEqual(row['status'], 'DRY_SIGNED')
             self.assertEqual(row['shares'], '5.00')
@@ -124,7 +124,7 @@ class MitchLiveTests(unittest.TestCase):
     def test_a_partial_sell_under_the_minimum_is_held_to_settlement(self):
         with tempfile.TemporaryDirectory() as tmp:
             live, client = self.make(tmp, 'dry')
-            live.on_buy('w', 'g' * 30, event('0.40'), {'vwap': '0.41', 'cost': 1}, Decimal('0.50'))
+            live.on_buy('w', 'g' * 30, event('0.40'), {'vwap': '0.41', 'cost': 12_500_000}, Decimal('0.50'))
             row = live.on_sell('w', 'h' * 30, event('0.70'), Decimal('0.4'), Decimal('0.60'))
             self.assertEqual(row['status'], 'HELD_BELOW_MIN')
 
@@ -141,8 +141,8 @@ class MitchLiveTests(unittest.TestCase):
     def test_the_same_paper_buy_is_one_live_order(self):
         with tempfile.TemporaryDirectory() as tmp:
             live, client = self.make(tmp, 'dry')
-            first = live.on_buy('w', 'z' * 30, event(), {'vwap': '0.43', 'cost': 1}, Decimal('0.52'))
-            second = live.on_buy('w', 'z' * 30, event(), {'vwap': '0.43', 'cost': 1}, Decimal('0.52'))
+            first = live.on_buy('w', 'z' * 30, event(), {'vwap': '0.43', 'cost': 13_000_000}, Decimal('0.52'))
+            second = live.on_buy('w', 'z' * 30, event(), {'vwap': '0.43', 'cost': 13_000_000}, Decimal('0.52'))
             self.assertEqual(first['status'], 'DRY_SIGNED')
             self.assertIsNone(second)
             self.assertEqual(len(client.orders), 1)
@@ -151,7 +151,7 @@ class MitchLiveTests(unittest.TestCase):
     def test_every_order_is_also_journaled_outside_the_database(self):
         with tempfile.TemporaryDirectory() as tmp:
             live, _ = self.make(tmp, 'dry')
-            live.on_buy('w', 'q' * 30, event(), {'vwap': '0.43', 'cost': 1}, Decimal('0.52'))
+            live.on_buy('w', 'q' * 30, event(), {'vwap': '0.43', 'cost': 13_000_000}, Decimal('0.52'))
             lines = (Path(tmp) / 'logs' / 'live-orders.jsonl').read_text().splitlines()
             self.assertEqual(json.loads(lines[-1])['status'], 'DRY_SIGNED')
 
@@ -184,6 +184,28 @@ class MitchLiveTests(unittest.TestCase):
             live.settle(fetch=fetch)
             self.assertEqual(live.result()['pnl_usd'], '-2.5000')
             self.assertEqual(live.day_loss_usd(), Decimal('2.5000'))
+
+    def test_a_market_minimum_over_twice_paper_is_skipped(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            live, client = self.make(tmp, 'dry')
+            # paper 5 USD x 1/5 = 1 USD; the minimum 5 x 0.52 = 2.60 is over 2 USD
+            row = live.on_buy('w', 'd' * 30, event(), {'vwap': '0.43', 'cost': 5_000_000}, Decimal('0.52'))
+            self.assertEqual(row['status'], 'SKIPPED_MIN_TOO_BIG')
+            self.assertEqual(client.orders, [])
+
+    def test_day_loss_starts_at_midnight_and_counts_money_in_play(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            live, client = self.make(tmp, 'dry')
+            now = live.clock()
+            live._save({'id': 'y', 'paper_key': 'y', 'side': 'BUY', 'status': 'DRY_SIGNED', 'closed': True,
+                        'closed_at': now - 86400, 'pnl_usd': '50'})      # yesterday's gain does not cover today
+            live._save({'id': 'z', 'paper_key': 'z', 'side': 'BUY', 'status': 'DRY_SIGNED', 'closed': True,
+                        'closed_at': now - 1, 'pnl_usd': '-3'})
+            live._save({'id': 'o', 'paper_key': 'o', 'side': 'BUY', 'status': 'DRY_SIGNED', 'amount_usd': '4'})
+            self.assertEqual(live.day_loss_usd(), Decimal('7'))
+            live, client = self.make(tmp, 'dry', day_loss_stop_usd='7')
+            row = live.on_buy('w', 'e' * 30, event(), {'vwap': '0.43', 'cost': 13_000_000}, Decimal('0.52'))
+            self.assertEqual(row['status'], 'SKIPPED_DAY_LOSS_STOP')
 
     def test_an_open_window_is_not_settled(self):
         with tempfile.TemporaryDirectory() as tmp:

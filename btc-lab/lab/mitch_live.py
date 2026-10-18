@@ -36,6 +36,7 @@ MODES = ('off', 'dry', 'live')
 MAX_ORDER_USD = Decimal('5')
 MAX_EXPOSURE_USD = Decimal('30')
 DAY_LOSS_STOP_USD = Decimal('20')
+MAX_MIN_RATIO = Decimal('2')   # skip when the market minimum is over 2x PAPER x scale (Damian, 18 Oct 2026)
 MAX_SCALE = Decimal('0.2')
 DESK_STOP_USD = Decimal('10')
 MIN_MARKET_BUY_USD = Decimal('1')
@@ -168,10 +169,15 @@ class MitchLive:
         return total
 
     def day_loss_usd(self, rows=None):
+        """Loss since local midnight, counting the money still in play as if it
+        were lost: a yesterday gain never covers today, and the stop does not wait
+        for windows to settle (Damian, 18 Oct 2026)."""
         rows = self._rows() if rows is None else rows
-        start = self.clock() - 86400
-        return -sum((Decimal(r.get('pnl_usd') or '0') for r in rows
-                     if r.get('closed') and float(r.get('closed_at') or 0) >= start), Decimal(0))
+        now = time.localtime(self.clock())
+        start = time.mktime((now.tm_year, now.tm_mon, now.tm_mday, 0, 0, 0, 0, 0, -1))
+        closed = sum((Decimal(r.get('pnl_usd') or '0') for r in rows
+                      if r.get('closed') and float(r.get('closed_at') or 0) >= start), Decimal(0))
+        return self.exposure_usd(rows) - closed
 
     def _save(self, row):
         """The journal file first: a real order must never be lost to a locked
@@ -278,6 +284,8 @@ class MitchLive:
             amount = buy_amount(limit, info['mos'], settings['max_order_usd'], paper_usd, settings['scale'])
             if amount is None:
                 return self._finish(job, 'SKIPPED_MIN_ABOVE_CAP', started, min_shares=info['mos'])
+            if paper_usd > 0 and amount > paper_usd * settings['scale'] * MAX_MIN_RATIO:
+                return self._finish(job, 'SKIPPED_MIN_TOO_BIG', started, amount_usd=str(amount))
             if self.exposure_usd(rows) + amount > settings['max_exposure_usd']:
                 return self._finish(job, 'SKIPPED_EXPOSURE_CAP', started, amount_usd=str(amount))
             wallet = getattr(self, '_wallet', None) or {}
