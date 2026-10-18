@@ -19,6 +19,7 @@ ROUTER = '0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45'   # Uniswap SwapRouter02
 ONRAMP = '0x93070a847efEf7F70739046A929D47a521F5B8ee'
 EXCHANGE_V2 = '0xE111180000d2663C0091e4f400237545B87B996B'
 CTF = '0x4D97DCd97eC945f40cF65F87097ACe5EA0476045'
+CTF_ADAPTER = '0xAdA100Db00Ca00073811820692005400218FcE1f'   # redeems winnings to pUSD (V2)
 ALLOW_PUSD = 200_000_000  # 200 pUSD (desk line 100, agreed 17 Oct), not unlimited
 
 
@@ -125,6 +126,9 @@ def main():
     approved = int(rpc('eth_call', [{'to': CTF, 'data': data('isApprovedForAll(address,address)', ['address', 'address'], [me, EXCHANGE_V2])}, 'latest']), 16)
     if not approved:
         tx('approve shares -> exchange', CTF, data('setApprovalForAll(address,bool)', ['address', 'bool'], [EXCHANGE_V2, True]))
+    approved = int(rpc('eth_call', [{'to': CTF, 'data': data('isApprovedForAll(address,address)', ['address', 'address'], [me, CTF_ADAPTER])}, 'latest']), 16)
+    if not approved:
+        tx('approve shares -> redeemer', CTF, data('setApprovalForAll(address,bool)', ['address', 'bool'], [CTF_ADAPTER, True]))
     print('after: POL', int(rpc('eth_getBalance', [me, 'latest']), 16) / 1e18, 'USDC', balance(USDC, me) / 1e6,
           'USDC.e', balance(USDCE, me) / 1e6, 'pUSD', balance(PUSD, me) / 1e6,
           'pUSD allowance', allowance(PUSD, me, EXCHANGE_V2) / 1e6)

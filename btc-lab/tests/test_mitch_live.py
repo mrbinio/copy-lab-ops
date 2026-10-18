@@ -156,5 +156,41 @@ class MitchLiveTests(unittest.TestCase):
             self.assertEqual(json.loads(lines[-1])['status'], 'DRY_SIGNED')
 
 
+    def settled_store(self, tmp, winner):
+        live, client = self.make(tmp, 'dry')
+        live.clock = Now(1792200000 + 900 + 200)        # window ended, settle delay passed
+        live.on_buy('w', 'm' * 30, event('0.40'), {'vwap': '0.40', 'cost': 10_000_000}, Decimal('0.50'))
+        fetch = lambda url: {'closed': True, 'clobTokenIds': '["tok", "other"]',
+                             'outcomePrices': '["1", "0"]' if winner == 'tok' else '["0", "1"]'}
+        return live, fetch
+
+    def test_a_dry_win_is_settled_on_the_estimate(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            live, fetch = self.settled_store(tmp, 'tok')
+            self.assertEqual(live.exposure_usd(), Decimal('2.50'))     # 1/5 of 10 USD is under 5 shares x 0.50
+            self.assertEqual(live.settle(fetch=fetch), 1)
+            res = live.result()
+            # 2.50 USD at 0.40 with fee 0.07*0.4*0.6 per share -> 5.99 shares paid 1 each
+            self.assertEqual(res['closed'], 1)
+            self.assertEqual(res['won'], 1)
+            self.assertTrue(res['estimated'])
+            self.assertAlmostEqual(float(res['pnl_usd']), 5.99 - 2.50, places=2)
+            self.assertEqual(live.exposure_usd(), Decimal(0))
+            self.assertEqual(live.settle(fetch=fetch), 0)                # once only
+
+    def test_a_dry_loss_counts_for_the_day(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            live, fetch = self.settled_store(tmp, 'other')
+            live.settle(fetch=fetch)
+            self.assertEqual(live.result()['pnl_usd'], '-2.5000')
+            self.assertEqual(live.day_loss_usd(), Decimal('2.5000'))
+
+    def test_an_open_window_is_not_settled(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            live, fetch = self.settled_store(tmp, 'tok')
+            live.clock = Now(1792200000 + 900 + 30)
+            self.assertEqual(live.settle(fetch=fetch), 0)
+
+
 if __name__ == '__main__':
     unittest.main()

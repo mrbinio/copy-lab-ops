@@ -44,6 +44,10 @@ MIN_MARKET_BUY_USD = Decimal('1')
 POOL = ThreadPoolExecutor(max_workers=4, thread_name_prefix='lab-live')
 PREP_POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix='lab-live-prep')
 PUSD = '0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB'
+CTF = '0x4D97DCd97eC945f40cF65F87097ACe5EA0476045'
+CTF_ADAPTER = '0xAdA100Db00Ca00073811820692005400218FcE1f'   # redeemPositions -> pUSD (V2)
+FEE_RATE = Decimal('0.07')
+SETTLE_AFTER_S = 120
 WALLET_RPCS = ('https://polygon-bor-rpc.publicnode.com', 'https://polygon.drpc.org')
 
 
@@ -153,8 +157,15 @@ class MitchLive:
 
     def exposure_usd(self, rows=None):
         rows = self._rows() if rows is None else rows
-        return sum((Decimal(r.get('spent_usd') or '0') for r in rows
-                    if r.get('status') == 'FILLED' and r.get('side') == 'BUY' and not r.get('closed')), Decimal(0))
+        total = Decimal(0)
+        for r in rows:
+            if r.get('side') != 'BUY' or r.get('closed'):
+                continue
+            if r.get('status') == 'FILLED':
+                total += Decimal(r.get('spent_usd') or '0')
+            elif r.get('status') == 'DRY_SIGNED':
+                total += Decimal(r.get('amount_usd') or '0')   # the test counts what would be in play
+        return total
 
     def day_loss_usd(self, rows=None):
         rows = self._rows() if rows is None else rows
@@ -430,6 +441,163 @@ class MitchLive:
             time.sleep(0.1)
         return False
 
+    # -- on-chain: redeem winnings (live mode only) -----------------------------
+    def _rpc(self, method, params):
+        import urllib.request
+        last = None
+        for url in WALLET_RPCS:
+            try:
+                req = urllib.request.Request(url, data=json.dumps({'jsonrpc': '2.0', 'id': 1, 'method': method, 'params': params}).encode(),
+                                             headers={'Content-Type': 'application/json', 'User-Agent': 'BTC-Lab/0.1'})
+                reply = json.load(urllib.request.urlopen(req, timeout=15))
+                if 'error' in reply:
+                    raise RuntimeError(str(reply['error'])[:200])
+                return reply['result']
+            except Exception as error:
+                last = error
+        raise RuntimeError('%s: %s' % (method, str(last)[:200]))
+
+    def send_tx(self, to, data, wait_s=90):
+        """Sign with the wallet key, send, wait for the receipt. Live mode only."""
+        from .live_gate import require_live
+        require_live()
+        from eth_account import Account
+        key = self.key_path().read_text().strip()
+        acct = Account.from_key(key)
+        del key
+        me = acct.address
+        nonce = int(self._rpc('eth_getTransactionCount', [me, 'pending']), 16)
+        gas = int(self._rpc('eth_estimateGas', [{'from': me, 'to': to, 'data': data}]), 16)
+        base = int(self._rpc('eth_gasPrice', []), 16)
+        signed = acct.sign_transaction({'to': to, 'data': data, 'value': 0, 'gas': int(gas * 1.3), 'nonce': nonce,
+                                        'chainId': CHAIN_ID, 'maxFeePerGas': base * 2,
+                                        'maxPriorityFeePerGas': max(30_000_000_000, base // 4), 'type': 2})
+        raw = signed.raw_transaction.hex()
+        tx = self._rpc('eth_sendRawTransaction', [raw if raw.startswith('0x') else '0x' + raw])
+        for _ in range(wait_s // 3):
+            time.sleep(3)
+            receipt = self._rpc('eth_getTransactionReceipt', [tx])
+            if receipt:
+                if int(receipt['status'], 16) != 1:
+                    raise RuntimeError('transaction failed: %s' % tx)
+                return tx
+        raise RuntimeError('not mined in %d s: %s' % (wait_s, tx))
+
+    def redeem(self, condition):
+        """Winning shares of a resolved market back to pUSD (CtfCollateralAdapter)."""
+        from eth_abi import encode
+        from eth_utils import keccak
+        cond = bytes.fromhex(str(condition)[2:] if str(condition).startswith('0x') else str(condition))
+        data = '0x' + (keccak(text='redeemPositions(address,bytes32,bytes32,uint256[])')[:4]
+                       + encode(['address', 'bytes32', 'bytes32', 'uint256[]'], [PUSD, b'\x00' * 32, cond, [1, 2]])).hex()
+        tx = self.send_tx(CTF_ADAPTER, data)
+        LOG.info('live redeem %s: %s', str(condition)[:12], tx)
+        return tx
+
+    # -- settlement ------------------------------------------------------------
+    def _winner(self, slug, fetch=None):
+        """The official winning token of a closed market, or None while open."""
+        cache = self.__dict__.setdefault('_winners', {})
+        if slug in cache:
+            return cache[slug]
+        import urllib.request
+        try:
+            if fetch:
+                raw = fetch('https://gamma-api.polymarket.com/markets/slug/' + slug)
+            else:
+                req = urllib.request.Request('https://gamma-api.polymarket.com/markets/slug/' + slug,
+                                             headers={'User-Agent': 'BTC-Lab-Paper/0.1'})
+                raw = json.load(urllib.request.urlopen(req, timeout=10))
+        except Exception:
+            return None
+        tokens = raw.get('clobTokenIds'); prices = raw.get('outcomePrices')
+        tokens = json.loads(tokens) if isinstance(tokens, str) else tokens
+        prices = json.loads(prices) if isinstance(prices, str) else prices
+        won = [str(t) for t, p in zip(tokens or [], prices or []) if str(p) in ('1', '1.0')]
+        if not raw.get('closed') or len(won) != 1:
+            return None
+        cache[slug] = won[0]
+        if len(cache) > 500:
+            cache.pop(next(iter(cache)))
+        return won[0]
+
+    @staticmethod
+    def _est_shares(row):
+        """Shares a dry buy would have got: the amount at the PAPER price (capped by
+        our limit), after the taker fee 0.07 * p * (1 - p) per share."""
+        amount = Decimal(row.get('amount_usd') or '0')
+        try:
+            price = min(Decimal(str(row.get('paper_vwap'))), Decimal(str(row.get('order_limit'))))
+        except Exception:
+            price = Decimal(str(row.get('order_limit') or '0.5'))
+        if price <= 0:
+            return Decimal(0)
+        return (amount / (price * (1 + FEE_RATE * (1 - price)))).quantize(Decimal('0.01'), rounding=ROUND_DOWN)
+
+    def settle(self, fetch=None, redeem=None):
+        """Close positions of ended windows on the official result. A position is
+        all live rows of one wallet and token. Dry rows are settled on estimates
+        and marked so. Returns how many positions closed."""
+        now = self.clock()
+        rows = self._rows()
+        groups = {}
+        for r in rows:
+            if r.get('closed') or r.get('status') not in ('FILLED', 'DRY_SIGNED'):
+                continue
+            try:
+                end = int(str(r.get('market', '')).rsplit('-', 1)[1]) + 900
+            except (ValueError, IndexError):
+                continue
+            if now < end + SETTLE_AFTER_S:
+                continue
+            groups.setdefault((r.get('wallet'), r.get('token'), r.get('market')), []).append(r)
+        closed = 0
+        for (wallet, token, market), items in groups.items():
+            winner = self._winner(market, fetch)
+            if winner is None:
+                continue
+            spent = proceeds = Decimal(0)
+            bought = sold = Decimal(0)
+            estimated = False
+            for r in items:
+                if r['side'] == 'BUY':
+                    if r['status'] == 'FILLED':
+                        spent += Decimal(r.get('spent_usd') or '0'); bought += Decimal(r.get('shares') or '0')
+                    else:
+                        spent += Decimal(r.get('amount_usd') or '0'); bought += self._est_shares(r); estimated = True
+                else:
+                    shares = Decimal(r.get('shares') or '0')
+                    sold += shares
+                    if r['status'] == 'FILLED' and (r.get('reply') or {}).get('takingAmount'):
+                        proceeds += Decimal(str(r['reply']['takingAmount']))
+                    else:
+                        proceeds += shares * Decimal(str(r.get('source_price') or '0')); estimated = True
+            left = max(bought - sold, Decimal(0))
+            payout = left if str(token) == str(winner) else Decimal(0)
+            pnl = (proceeds + payout - spent).quantize(Decimal('0.0001'))
+            redeem_tx = None
+            if payout > 0 and not estimated and redeem is not None:
+                try:
+                    redeem_tx = redeem(items[0].get('condition'))
+                except Exception as error:
+                    LOG.warning('live redeem %s: %s', market, str(error)[:200])
+            buys = [r for r in items if r['side'] == 'BUY'] or items
+            share_each = (pnl / len(buys)).quantize(Decimal('0.0001'))
+            for r in items:
+                r.update(closed=True, closed_at=now, won=str(token) == str(winner), estimated=estimated,
+                         pnl_usd=str(share_each if r in buys else Decimal(0)), redeem_tx=redeem_tx)
+                self._save(r)
+            closed += 1
+        return closed
+
+    def result(self, rows=None):
+        rows = self._rows() if rows is None else rows
+        done = [r for r in rows if r.get('closed')]
+        return {'pnl_usd': str(sum((Decimal(r.get('pnl_usd') or '0') for r in done), Decimal(0))),
+                'closed': len([r for r in done if r.get('side') == 'BUY']),
+                'won': len([r for r in done if r.get('side') == 'BUY' and r.get('won')]),
+                'estimated': any(r.get('estimated') for r in done)}
+
     def summary(self):
         rows = self._rows()
         settings = self.settings()
@@ -442,6 +610,7 @@ class MitchLive:
             'live_stop': self.live_stopped(),
             'limits': {k: str(v) for k, v in settings.items() if k != 'mode'},
             'wallet': self.wallet(), 'counts': counts, 'exposure_usd': str(self.exposure_usd(rows)),
+            'result': self.result(rows),
             'day_loss_usd': str(self.day_loss_usd(rows)), 'recent': recent,
         }
 

@@ -843,6 +843,9 @@ class Worker:
             from .mitch_live import MitchLive
             live=getattr(self,'_live_view',None) or MitchLive(self.store, self.data.parent if self.data.name=='data' else self.data)
             self._live_view=live
+            mode=live.settings()['mode']
+            if mode!='off':
+                live.settle(fetch=get_json, redeem=live.redeem if mode=='live' else None)
             self.store.set('mitch_live', live.summary())
         except Exception as error:
             LOG.warning('mitch live summary: %s', str(error)[:200])
