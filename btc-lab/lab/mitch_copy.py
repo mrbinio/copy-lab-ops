@@ -1428,12 +1428,37 @@ class MitchCopy:
                 except Exception:
                     pass
         loop = asyncio.get_running_loop()
+        if early is not None:
+            # 18 Oct 2026: at night the insert below waited 0.3-1.1 s on the write
+            # lock and the live order waited behind it. The live decision now
+            # starts as soon as the book is in, beside the insert.
+            asyncio.ensure_future(self._live_on_arrival(wallet, body, early))
         row = await loop.run_in_executor(MITCH, insert_row, self.store, wallet, body, detected_at)
         if row:
             row['_as_of'] = arrived
             await self.handle(row, pool=MITCH, early=early)
         elif early is not None:
             early.cancel()
+
+    async def _live_on_arrival(self, wallet, body, early):
+        live = self.live_mirror()
+        if live is None or live.settings()['mode'] == 'off':
+            return
+        try:
+            from .wallet_chain_monitor import _row_key
+            from .mitch_live import POOL as LIVE_POOL
+            checked, terms, book_started, book_done, decided = await early
+            key = _row_key(body)
+            tried = self.__dict__.setdefault('_live_tried', {})
+            tried[key] = self.clock()
+            if len(tried) > 2000:
+                for old in sorted(tried, key=tried.get)[:500]:
+                    tried.pop(old, None)
+            pre = {'row': {'wallet': wallet, 'event_key': key, 'source_ts': float(body.get('timestamp') or 0)},
+                   'event': body, 'decided_at': decided}
+            LIVE_POOL.submit(self._live_early, pre, checked, terms, book_started, book_done)
+        except Exception as error:
+            log.warning('live on arrival: %s', str(error)[:200])
 
     async def _early_book(self, event):
         started = time.monotonic()
@@ -1813,7 +1838,9 @@ class MitchCopy:
         # 17 Oct 2026: the live order waited 0.4-0.8 s for the PAPER write in the
         # evening. The same decision is taken here, before the database queue.
         live = self.live_mirror()
-        if live is not None and (pre.get('event') or {}).get('side') == 'BUY' and live.settings()['mode'] != 'off':
+        tried_on_arrival = (pre.get('row') or {}).get('event_key') in self.__dict__.get('_live_tried', {})
+        if live is not None and not tried_on_arrival and (pre.get('event') or {}).get('side') == 'BUY' \
+                and live.settings()['mode'] != 'off':
             try:
                 from .mitch_live import POOL as LIVE_POOL
                 LIVE_POOL.submit(self._live_early, pre, checked, terms, book_started, book_done)
