@@ -176,6 +176,10 @@ class MitchLive:
                 return list(self._last_rows)
             raise
 
+    def _real_only(self):
+        """In live mode the limits count real orders only, never test estimates."""
+        return self.settings()['mode'] == 'live'
+
     def exposure_usd(self, rows=None):
         rows = self._rows() if rows is None else rows
         total = Decimal(0)
@@ -184,7 +188,7 @@ class MitchLive:
                 continue
             if r.get('status') == 'FILLED':
                 total += Decimal(r.get('spent_usd') or '0')
-            elif r.get('status') == 'DRY_SIGNED':
+            elif r.get('status') == 'DRY_SIGNED' and not self._real_only():
                 total += Decimal(r.get('amount_usd') or '0')   # the test counts what would be in play
         return total
 
@@ -195,8 +199,10 @@ class MitchLive:
         rows = self._rows() if rows is None else rows
         now = time.localtime(self.clock())
         start = time.mktime((now.tm_year, now.tm_mon, now.tm_mday, 0, 0, 0, 0, 0, -1))
+        real = self._real_only()
         closed = sum((Decimal(r.get('pnl_usd') or '0') for r in rows
-                      if r.get('closed') and window_end(r) >= start), Decimal(0))
+                      if r.get('closed') and window_end(r) >= start
+                      and (not real or r.get('status') == 'FILLED')), Decimal(0))
         return self.exposure_usd(rows) - closed
 
     def _save(self, row):

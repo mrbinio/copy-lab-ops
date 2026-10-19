@@ -213,6 +213,16 @@ class MitchLiveTests(unittest.TestCase):
             row = live.on_buy('w', 'e' * 30, event(), {'vwap': '0.43', 'cost': 13_000_000}, Decimal('0.52'))
             self.assertEqual(row['status'], 'SKIPPED_DAY_LOSS_STOP')
 
+    def test_live_limits_ignore_test_estimates(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            live, client = self.make(tmp, 'live')
+            now = live.clock()
+            live._save({'id': 'd', 'paper_key': 'd', 'side': 'BUY', 'status': 'DRY_SIGNED', 'closed': True,
+                        'closed_at': now - 1, 'pnl_usd': '-30'})
+            live._save({'id': 'o', 'paper_key': 'o', 'side': 'BUY', 'status': 'DRY_SIGNED', 'amount_usd': '4'})
+            self.assertEqual(live.day_loss_usd(), Decimal(0))
+            self.assertEqual(live.exposure_usd(), Decimal(0))
+
     def test_an_open_window_is_not_settled(self):
         with tempfile.TemporaryDirectory() as tmp:
             live, fetch = self.settled_store(tmp, 'tok')
