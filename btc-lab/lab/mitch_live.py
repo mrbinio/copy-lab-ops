@@ -238,7 +238,10 @@ class MitchLive:
             return None
         def run():
             try:
-                self.client().get_version()
+                client = self.client()
+                client.get_version()
+                if self.settings()['mode'] == 'live':
+                    self._ensure_creds(client)   # the first real order does not pay for the login
             except Exception as error:
                 LOG.warning('live warm: %s', str(error)[:200])
         return PREP_POOL.submit(run)
