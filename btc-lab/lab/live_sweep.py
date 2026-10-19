@@ -146,7 +146,7 @@ class LiveSweeper:
         try:
             for line in self.journal.read_text().splitlines():
                 row = json.loads(line)
-                if row.get('stage') == 'done':
+                if row.get('stage') == 'done' and not row.get('test'):   # the test moved Damian's own money
                     rows.append(row)
         except (OSError, ValueError):
             pass

@@ -96,6 +96,11 @@ class SweepTests(unittest.TestCase):
             (root / 'data' / 'sweep_ok.json').write_text(json.dumps({'kraken_confirmed': True}))
             self.assertTrue(sweeper.allowed())
             self.assertIsNone(sweeper.cycle({'mode': 'dry', 'desk_line_usd': Decimal(100)}, {'pusd': 200}))
+            (root / 'logs').mkdir()
+            (root / 'logs' / 'live-sweeps.jsonl').write_text(
+                json.dumps({'stage': 'done', 'test': True, 'sent_micro': 2999406, 'amount_micro': 3000000}) + '\n')
+            self.assertEqual(sweeper.swept_usd(), 0)                         # the test is not profit
+            self.assertEqual(sweeper.unswept_profit([]), 0)
 
 
 if __name__ == '__main__':
