@@ -63,7 +63,7 @@ COMMANDS = [
     ('live_start', 'Wznów prawdziwe kupna'),
     ('live_pauza', 'Pauza prawdziwych kupień (to samo co /live_stop)'),
     ('live_wznow', 'Wznów prawdziwe kupna (to samo co /live_start)'),
-    ('wplata', 'Po dopłacie: przestaw limity LIVE pod nowe saldo (max 250 USD)'),
+    ('wplata', 'Przelicz limity LIVE pod obecne saldo (po wpłacie lab robi to sam)'),
     ('stop', 'STOP: wszystkie nowe kupna'),
     ('wznow', 'Usuń STOP'),
     ('pomoc', 'Lista komend'),
@@ -117,7 +117,7 @@ HELP = (
     '/live_stop – natychmiast wstrzymaj prawdziwe kupna (papier i sprzedaże działają)\n'
     '/live_start – wznów prawdziwe kupna\n'
     '/live_pauza, /live_wznow – to samo po polsku\n'
-    '/wplata – po dopłacie i live_setup.py: limity i dashboard pod nowe saldo (max 250 USD)\n'
+    '/wplata – przelicz limity pod obecne saldo (po wpłacie lab sam zamienia USDC i przestawia limity, max 250 USD)\n'
     '/stop zatrzymuje też prawdziwe kupna, /mitch_stop też.'
 )
 
@@ -152,9 +152,8 @@ def wplata(state, path=None, today=None):
     if pusd is None:
         return 'Nie widzę salda portfela. Spróbuj za minutę.'
     if float(wallet.get('waiting_usdc') or 0) >= 1:
-        return ('Na portfelu czeka %.2f USDC, które nie są jeszcze w grze. Najpierw w Terminalu:\n'
-                'cd ~/Library/Application\\ Support/BTC\\ Lab\n'
-                'python3 tools/live_setup.py secrets/polygon.key --send\npotem znowu /wplata.' % float(wallet['waiting_usdc']))
+        return ('Na portfelu czeka %.2f USDC. Lab sam zamienia je na pUSD (co minutę) i przestawia limity; '
+                'dostaniesz wiadomość, gdy będzie gotowe.' % float(wallet['waiting_usdc']))
     try:
         config = json.loads(path.read_text())
     except (OSError, ValueError):
@@ -692,15 +691,30 @@ def live_money_alerts(live, memory, now, first):
         memory['not_filled_alerted'] = True
     elif streak == 0:
         memory['not_filled_alerted'] = False
-    waiting = float((live.get('wallet') or {}).get('waiting_usdc') or 0)
-    if waiting >= 1 and not memory.get('deposit_alerted'):
-        out.append('Wpłata doszła: %.2f USDC czeka na portfelu (jeszcze nie w grze). W Terminalu:\n'
-                   'cd ~/Library/Application\\ Support/BTC\\ Lab\n'
-                   'python3 tools/live_setup.py secrets/polygon.key --send\n'
-                   'a potem wyślij /wplata, przestawię limity i dashboard.' % waiting)
-        memory['deposit_alerted'] = True
-    elif waiting < 1:
-        memory['deposit_alerted'] = False
+    deps = set(memory.get('deposits_seen') or [])
+    names = {'scale': 'część papieru', 'max_order_usd': 'zlecenie', 'max_exposure_usd': 'w grze',
+             'day_loss_stop_usd': 'stop dnia', 'desk_stop_usd': 'stop biurka'}
+    for dep in live.get('deposits') or []:
+        key = '%s|%s' % (dep.get('at'), dep.get('stage'))
+        if key in deps:
+            continue
+        deps.add(key)
+        if first:
+            continue
+        if dep.get('stage') == 'done':
+            memory['deposit_err'] = False
+        if dep.get('stage') == 'done' and dep.get('added_micro'):
+            msg = 'Wpłata w grze: %.2f USD zamienione na pUSD.' % (dep['added_micro'] / 1e6)
+            lim = dep.get('limits')
+            if lim:
+                msg += ' Limity pod biurko %.2f USD: %s.' % (lim['desk'], ', '.join(
+                    '%s %s→%s' % (names[k], lim['old'].get(k), v) for k, v in lim['new'].items()))
+            out.append(msg)
+        elif dep.get('stage') == 'error' and not memory.get('deposit_err'):
+            memory['deposit_err'] = True
+            out.append('Wpłata doszła, ale zamiana na pUSD się nie udała (spróbuję znowu za minutę): %s'
+                       % str(dep.get('error'))[:150])
+    memory['deposits_seen'] = sorted(deps)[-100:]
     pol = (live.get('wallet') or {}).get('pol')
     if pol is not None and float(pol) < LOW_POL and not memory.get('pol_alerted'):
         out.append('Mało POL na opłaty: %.2f. Dokup trochę POL na portfel.' % float(pol))

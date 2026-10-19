@@ -87,14 +87,19 @@ class AlertTests(unittest.TestCase):
             cfg = json.loads(path.read_text())
             self.assertEqual((cfg['scale'], cfg['max_order_usd'], cfg['max_exposure_usd'], cfg['day_loss_stop_usd']), ('0.50', '12', '75', '50'))
             st['mitch_live']['wallet']['waiting_usdc'] = 80.0
-            self.assertIn('live_setup.py', bot.wplata(st, path=path))
+            self.assertIn('Lab sam zamienia', bot.wplata(st, path=path))
 
-    def test_deposit_is_alerted_once(self):
+    def test_deposit_news(self):
         memory = {'primed': True}
-        live = {'mode': 'live', 'wallet': {'pusd': 170.0, 'pol': 10.0, 'waiting_usdc': 80.5}, 'recent': []}
+        dep = {'at': 5, 'stage': 'done', 'added_micro': 80_500_000,
+               'limits': {'desk': 250.0, 'old': {'max_order_usd': '8'}, 'new': {'max_order_usd': '12'}}}
+        live = {'mode': 'live', 'wallet': {'pusd': 250.0, 'pol': 10.0}, 'recent': [], 'deposits': [dep]}
         out = bot.alerts(dict(state(), mitch_live=live), memory, now=1000)
-        self.assertTrue(any('Wpłata doszła: 80.50 USDC' in m for m in out))
-        self.assertFalse(any('Wpłata' in m for m in bot.alerts(dict(state(), mitch_live=live), memory, now=1001)))
+        self.assertTrue(any('Wpłata w grze: 80.50 USD' in m and 'zlecenie 8→12' in m for m in out))
+        self.assertEqual(bot.alerts(dict(state(), mitch_live=live), memory, now=1001), [])
+        live['deposits'] = [{'at': 6, 'stage': 'error', 'error': 'x'}, {'at': 7, 'stage': 'error', 'error': 'x'}]
+        out = bot.alerts(dict(state(), mitch_live=live), memory, now=1002)
+        self.assertEqual(sum('nie udała' in m for m in out), 1)       # one message, not one a minute
 
     def test_live_flag_is_always_alerted(self):
         memory = {'primed': True}

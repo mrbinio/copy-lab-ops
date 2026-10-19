@@ -848,6 +848,7 @@ class Worker:
                 live.settle(fetch=get_json, redeem=live.redeem if mode=='live' else None)
                 if mode=='live':
                     live.sweeper().cycle(live.settings(), live.wallet())
+                    live.deposits().cycle(live.settings(), live.wallet())
             self.store.set('mitch_live', live.summary())
         except Exception as error:
             LOG.warning('mitch live summary: %s', str(error)[:200])

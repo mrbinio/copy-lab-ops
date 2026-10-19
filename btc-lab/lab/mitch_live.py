@@ -690,7 +690,14 @@ class MitchLive:
             'day_loss_usd': str(self.day_loss_usd(rows)), 'recent': recent,
             'swept_usd': str(self.sweeper().swept_usd()), 'sweep_ok': self.sweeper().allowed(),
             'sweeps': self.sweeper().recent(),
+            'deposits': self.deposits().recent(),
         }
+
+    def deposits(self):
+        if getattr(self, '_deposits', None) is None:
+            from .live_deposit import LiveDeposits
+            self._deposits = LiveDeposits(self)
+        return self._deposits
 
     def sweeper(self):
         if getattr(self, '_sweeper', None) is None:
