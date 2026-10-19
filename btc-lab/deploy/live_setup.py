@@ -20,7 +20,7 @@ ONRAMP = '0x93070a847efEf7F70739046A929D47a521F5B8ee'
 EXCHANGE_V2 = '0xE111180000d2663C0091e4f400237545B87B996B'
 CTF = '0x4D97DCd97eC945f40cF65F87097ACe5EA0476045'
 CTF_ADAPTER = '0xAdA100Db00Ca00073811820692005400218FcE1f'   # redeems winnings to pUSD (V2)
-ALLOW_PUSD = 200_000_000  # 200 pUSD (desk line 100, agreed 17 Oct), not unlimited
+ALLOW_PUSD = 300_000_000  # 300 pUSD (desk up to 250, Damian's top amount 19 Oct), not unlimited
 
 
 def rpc(method, params):

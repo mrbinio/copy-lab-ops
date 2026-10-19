@@ -152,6 +152,21 @@ class LiveSweeper:
             pass
         return rows
 
+    def recent(self, limit=5):
+        """Last finished or failed sweeps (tests left out), newest first."""
+        rows = []
+        try:
+            for line in self.journal.read_text().splitlines()[-200:]:
+                row = json.loads(line)
+                if row.get('test') or row.get('stage') not in ('done', 'error'):
+                    continue
+                rows.append({'at': row.get('at'), 'stage': row['stage'], 'sent_micro': row.get('sent_micro'),
+                             'amount_micro': row.get('amount_micro'), 'tx': row.get('transfer_tx'),
+                             'error': row.get('error')})
+        except (OSError, ValueError):
+            pass
+        return rows[::-1][:limit]
+
     def swept_usd(self):
         return sum((Decimal(int(r.get('sent_micro') or 0)) / Decimal(1_000_000) for r in self.done()), Decimal(0))
 

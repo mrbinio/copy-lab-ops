@@ -601,6 +601,66 @@ LIVE_ALARMS = {'ERROR': 'BŁĄD prawdziwego zlecenia', 'SKIPPED_DAY_LOSS_STOP': 
                'SKIPPED_DESK_STOP': 'STOP BIURKA: w portfelu za mało pieniędzy, prawdziwe kupna stoją'}
 
 
+LIVE_SUMMARY_EVERY_S = 3 * 3600
+NOT_FILLED_ALARM = 3
+LOW_POL = 1.0
+
+
+def live_money_alerts(live, memory, now, first):
+    """Real money only (Damian, 19 Oct 2026): a sweep to Kraken at once, an
+    execution problem at once, and a short summary every 3 hours when
+    something happened."""
+    out = []
+    swept = set(memory.get('sweeps_seen') or [])
+    for sw in live.get('sweeps') or []:
+        key = '%s|%s' % (sw.get('at'), sw.get('stage'))
+        if key in swept:
+            continue
+        swept.add(key)
+        if first:
+            continue
+        if sw.get('stage') == 'done':
+            out.append('Zysk odłożony: %.2f USDC poszło na Kraken. https://polygonscan.com/tx/%s' % (
+                (sw.get('sent_micro') or 0) / 1e6, sw.get('tx')))
+        else:
+            out.append('Przelew zysku na Kraken nie wyszedł (spróbuję znowu za minutę): %s' % str(sw.get('error'))[:150])
+    memory['sweeps_seen'] = sorted(swept)[-100:]
+    buys = [r for r in live.get('recent') or [] if r.get('side') == 'BUY' and r.get('status') in ('FILLED', 'NOT_FILLED')]
+    buys.sort(key=lambda r: -float(r.get('finished_at') or 0))
+    streak = 0
+    for r in buys:
+        if r.get('status') != 'NOT_FILLED':
+            break
+        streak += 1
+    if streak >= NOT_FILLED_ALARM and not memory.get('not_filled_alerted'):
+        out.append('Uwaga: %d prawdziwe kupna z rzędu NIEWYKONANE (brak ofert po naszej cenie). Sprawdzam.' % streak)
+        memory['not_filled_alerted'] = True
+    elif streak == 0:
+        memory['not_filled_alerted'] = False
+    pol = (live.get('wallet') or {}).get('pol')
+    if pol is not None and float(pol) < LOW_POL and not memory.get('pol_alerted'):
+        out.append('Mało POL na opłaty: %.2f. Dokup trochę POL na portfel.' % float(pol))
+        memory['pol_alerted'] = True
+    elif pol is not None and float(pol) >= LOW_POL:
+        memory['pol_alerted'] = False
+    last = memory.get('live_summary_at') or now
+    if now - last >= LIVE_SUMMARY_EVERY_S:
+        since = [r for r in live.get('recent') or [] if float(r.get('finished_at') or 0) >= last]
+        closed = [r for r in live.get('recent') or [] if r.get('closed') and float(r.get('closed_at') or 0) >= last]
+        if since or closed:
+            filled = sum(1 for r in since if r.get('status') == 'FILLED')
+            pnl = sum(float(r.get('pnl_usd') or 0) for r in closed)
+            res = live.get('result') or {}
+            out.append('LIVE ostatnie 3 h: %d kupna wykonane z %d, rozliczone %d (%d wygranych) %+.2f USD. '
+                       'Razem od startu %+.2f USD. Portfel %s pUSD, odłożone na Kraken %s USD.' % (
+                           filled, sum(1 for r in since if r.get('side') == 'BUY'), len(closed),
+                           sum(1 for r in closed if r.get('won')), pnl, float(res.get('pnl_usd') or 0),
+                           (live.get('wallet') or {}).get('pusd', '—'), live.get('swept_usd', '0')))
+        memory['live_summary_at'] = now
+    memory.setdefault('live_summary_at', last)
+    return out
+
+
 def alerts(state, memory, now=None):
     """Only what needs Damian now. Damian, 17 Oct 2026: too many messages; single
     PAPER trades, window reports, pause flips and discovery results are no
@@ -643,6 +703,8 @@ def alerts(state, memory, now=None):
             if not first:
                 out.append('%s.%s' % (LIVE_ALARMS[row['status']], (' ' + str(row.get('error'))[:150]) if row.get('error') else ''))
     memory['live_seen'] = sorted(live_seen)[-300:]
+    if live.get('mode') == 'live':
+        out.extend(live_money_alerts(live, memory, now, first))
     if state.get('live_enabled'):
         out.append('UWAGA: pulpit zgłasza live_enabled=true. Sprawdź natychmiast.')
     memory['paused'] = paused

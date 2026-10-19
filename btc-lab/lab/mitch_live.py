@@ -33,11 +33,13 @@ MODES = ('off', 'dry', 'live')
 # buy is the PAPER amount x 1/5 (at least the market minimum), at most 5 USD
 # an order, 30 USD in play, 20 USD day loss; buys stop below 10 USD in the
 # wallet (PAPER stops at 50 of 500).
-MAX_ORDER_USD = Decimal('5')
-MAX_EXPOSURE_USD = Decimal('30')
-DAY_LOSS_STOP_USD = Decimal('20')
+# Hard ceilings for the 250 USD desk, Damian's top amount (19 Oct 2026);
+# data/mitch_live.json sets the actual, lower limits for the money in the wallet.
+MAX_ORDER_USD = Decimal('12')
+MAX_EXPOSURE_USD = Decimal('75')
+DAY_LOSS_STOP_USD = Decimal('50')
 MAX_MIN_RATIO = Decimal('2')   # skip when the market minimum is over 2x PAPER x scale (Damian, 18 Oct 2026)
-MAX_SCALE = Decimal('0.2')
+MAX_SCALE = Decimal('0.5')
 DESK_STOP_USD = Decimal('10')
 DESK_LINE_USD = Decimal('100')   # profit above it goes to Kraken (agreed 17 Oct 2026)
 MIN_MARKET_BUY_USD = Decimal('1')
@@ -657,6 +659,7 @@ class MitchLive:
             'result': self.result(rows),
             'day_loss_usd': str(self.day_loss_usd(rows)), 'recent': recent,
             'swept_usd': str(self.sweeper().swept_usd()), 'sweep_ok': self.sweeper().allowed(),
+            'sweeps': self.sweeper().recent(),
         }
 
     def sweeper(self):

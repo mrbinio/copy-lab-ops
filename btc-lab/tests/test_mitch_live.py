@@ -53,7 +53,8 @@ class MitchLiveTests(unittest.TestCase):
     def make(self, tmp, mode, client=None, **settings):
         root = Path(tmp)
         (root / 'data').mkdir(exist_ok=True)
-        (root / 'data' / 'mitch_live.json').write_text(json.dumps(dict(settings, mode=mode)))
+        base = {'scale': '0.2', 'max_order_usd': '5', 'max_exposure_usd': '30', 'day_loss_stop_usd': '20'}   # the 100 USD desk
+        (root / 'data' / 'mitch_live.json').write_text(json.dumps(dict(base, **settings, mode=mode)))
         store = Store(root / 'data' / 'lab.sqlite')
         client = client or FakeClient()
         live = mitch_live.MitchLive(store, root, clock=Now(1792200100.5),

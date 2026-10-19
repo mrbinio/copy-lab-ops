@@ -55,6 +55,22 @@ class AlertTests(unittest.TestCase):
         self.assertIn('BŁĄD prawdziwego zlecenia', out[0])
         self.assertEqual(bot.alerts(st, memory), [])
 
+    def test_real_money_alerts(self):
+        memory = {'primed': True}
+        live = {'mode': 'live', 'wallet': {'pusd': 170.0, 'pol': 10.7}, 'result': {'pnl_usd': '4.5'}, 'swept_usd': '0',
+                'sweeps': [{'at': 100, 'stage': 'done', 'sent_micro': 6_120_000, 'tx': '0xabc'}],
+                'recent': [{'id': i, 'side': 'BUY', 'status': 'NOT_FILLED', 'finished_at': 50 + i} for i in range(3)]}
+        out = bot.alerts(dict(state(), mitch_live=live), memory, now=1000)
+        self.assertTrue(any('6.12 USDC poszło na Kraken' in m for m in out))
+        self.assertTrue(any('3 prawdziwe kupna z rzędu NIEWYKONANE' in m for m in out))
+        self.assertEqual(bot.alerts(dict(state(), mitch_live=live), memory, now=1001), [])   # once each
+        live['recent'] = [{'id': 9, 'side': 'BUY', 'status': 'FILLED', 'finished_at': 2000, 'closed': True,
+                           'closed_at': 2100, 'pnl_usd': '2.5', 'won': True}]
+        out = bot.alerts(dict(state(), mitch_live=live), memory, now=1000 + 3 * 3600)
+        self.assertEqual(len(out), 1)
+        self.assertIn('LIVE ostatnie 3 h: 1 kupna wykonane z 1, rozliczone 1 (1 wygranych) +2.50 USD', out[0])
+        self.assertEqual(bot.alerts(dict(state(), mitch_live=dict(live, mode='dry')), {'primed': True}, now=99999), [])
+
     def test_live_flag_is_always_alerted(self):
         memory = {'primed': True}
         out = bot.alerts(dict(state(), live_enabled=True), memory)
