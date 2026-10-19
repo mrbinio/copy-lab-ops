@@ -689,7 +689,7 @@ class Worker:
                         LOG.warning('clob_live=true in config is ignored: real orders are disabled in code')
                     if clob_key:
                         LOG.warning('a CLOB private key is stored in config.json while the lab is PAPER; move it out')
-                    if clob_key and clob_live is True and LIVE_ORDERS_ALLOWED:
+                    if clob_key and clob_live is True and LIVE_ORDERS_ALLOWED and False:   # old path shut (live_gate.OLD_CLOB_ALLOWED)
                         from .clob_order import CLOBClient as _CLOBClient
                         clob_client = _CLOBClient(
                             private_key=clob_key,

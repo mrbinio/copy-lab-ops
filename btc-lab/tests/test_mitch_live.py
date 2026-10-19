@@ -80,7 +80,9 @@ class MitchLiveTests(unittest.TestCase):
             self.assertEqual(args.order_type, 'FOK')
 
     def test_live_needs_the_code_gate(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        from unittest import mock
+        from lab import live_gate
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(live_gate, 'LIVE_ORDERS_ALLOWED', False):
             live, client = self.make(tmp, 'live')
             row = live.on_buy('w', 'k' * 30, event(), {'vwap': '0.43', 'cost': 13_000_000}, Decimal('0.52'))
             self.assertEqual(row['status'], 'ERROR')

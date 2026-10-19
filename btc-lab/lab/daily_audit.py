@@ -175,10 +175,16 @@ def live_gate(state, root):
         config = json.loads((Path(root) / 'config.json').read_text())
     except (OSError, ValueError):
         config = {}
-    on = bool(LIVE_ORDERS_ALLOWED) or config.get('clob_live') is True or bool(state.get('live_enabled'))
-    return check('live_gate', 'PROBLEM' if on else 'OK',
-                 'prawdziwe zlecenia WŁĄCZONE — to nie jest PAPER' if on else 'PAPER: prawdziwe zlecenia wyłączone w kodzie',
-                 on)
+    old_path = config.get('clob_live') is True or bool(state.get('live_enabled'))
+    try:
+        mitch_mode = json.loads((Path(root) / 'data' / 'mitch_live.json').read_text()).get('mode')
+    except (OSError, ValueError):
+        mitch_mode = None
+    if old_path or (LIVE_ORDERS_ALLOWED and mitch_mode != 'live'):
+        return check('live_gate', 'PROBLEM', 'prawdziwe zlecenia włączone poza ścieżką Mitcha — sprawdź', True)
+    if LIVE_ORDERS_ALLOWED:   # Damian's go, 19 Oct 2026: Mitch only, within the live limits
+        return check('live_gate', 'OK', 'LIVE: Mitch na prawdziwych pieniądzach (zgoda Damiana 19.10)', True)
+    return check('live_gate', 'OK', 'PAPER: prawdziwe zlecenia wyłączone w kodzie', False)
 
 
 def disk(root):

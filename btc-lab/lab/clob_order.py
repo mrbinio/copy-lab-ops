@@ -40,8 +40,8 @@ class CLOBClient:
             funder: Optional funder address (for proxy wallets)
             max_order_usd: Max USD per order (capped at MAX_ORDER_USD)
         """
-        from .live_gate import require_live
-        require_live()
+        from .live_gate import require_old_clob
+        require_old_clob()
         from py_clob_client_v2.client import ClobClient
         from py_clob_client_v2.clob_types import (
             MarketOrderArgs, OrderArgs, OrderType,

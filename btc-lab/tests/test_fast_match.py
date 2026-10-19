@@ -249,8 +249,8 @@ class InsertTests(unittest.TestCase):
 class LiveGateTests(unittest.TestCase):
     def test_no_config_can_build_a_real_order_client(self):
         from lab.clob_order import CLOBClient
-        from lab.live_gate import LiveOrdersDisabled, LIVE_ORDERS_ALLOWED
-        self.assertFalse(LIVE_ORDERS_ALLOWED)
+        from lab.live_gate import LiveOrdersDisabled, OLD_CLOB_ALLOWED
+        self.assertFalse(OLD_CLOB_ALLOWED)
         with self.assertRaises(LiveOrdersDisabled):
             CLOBClient(private_key='0x' + '1' * 64)
 
