@@ -101,6 +101,16 @@ class AlertTests(unittest.TestCase):
         out = bot.alerts(dict(state(), mitch_live=live), memory, now=1002)
         self.assertEqual(sum('nie udała' in m for m in out), 1)       # one message, not one a minute
 
+    def test_a_watched_wallet_losing_is_alerted_once_a_day(self):
+        memory = {'primed': True}
+        st = state()
+        st['mitch_copy']['wallets'] = [{'wallet': '0x94f471f6', 'label': 'izzyaussie', 'pause_today_net_usd': -21.5},
+                                       {'wallet': '0x943cea74', 'label': '0xdc27', 'pause_today_net_usd': -50}]
+        out = bot.alerts(st, memory)
+        self.assertEqual(len([m for m in out if 'traci dziś' in m]), 1)
+        self.assertIn('izzyaussie traci dziś -21.50', ' '.join(out))
+        self.assertEqual([m for m in bot.alerts(st, memory) if 'traci dziś' in m], [])
+
     def test_live_flag_is_always_alerted(self):
         memory = {'primed': True}
         out = bot.alerts(dict(state(), live_enabled=True), memory)

@@ -652,6 +652,8 @@ def discovery_text(d):
 
 
 BRAKE_ALERT_AFTER_S = 300
+WATCH_WALLETS = ('izzyaussie', '3e1')
+WATCH_LOSS_USD = 20
 LIVE_ALARMS = {'ERROR': 'BŁĄD prawdziwego zlecenia', 'SKIPPED_DAY_LOSS_STOP': 'LIMIT STRATY DNIA osiągnięty: prawdziwe kupna stoją do jutra',
                'SKIPPED_DESK_STOP': 'STOP BIURKA: w portfelu za mało pieniędzy, prawdziwe kupna stoją'}
 
@@ -773,6 +775,19 @@ def alerts(state, memory, now=None):
             out.append('Hamulec techniczny zdjęty: kopiowanie Mitcha znowu działa.')
         memory.pop('brake_since', None)
         memory['brake_alerted'] = False
+    # Damian, 19 Oct: izzyaussie and 3e1 went up to Mitch's amounts; warn early.
+    today = now_local().strftime('%Y-%m-%d')
+    warned = memory.get('wallet_loss_warned') or {}
+    warned = {k: v for k, v in warned.items() if v == today}
+    for row in mitch.get('wallets') or []:
+        if row.get('label') not in WATCH_WALLETS:
+            continue
+        net = row.get('pause_today_net_usd')
+        if net is not None and float(net) <= -WATCH_LOSS_USD and row.get('wallet') not in warned and not first:
+            out.append('UWAGA: portfel %s traci dziś %.2f USD (papier). Pauza: /mitch_pauza %s' % (
+                row['label'], float(net), str(row['wallet'])[2:6]))
+            warned[row['wallet']] = today
+    memory['wallet_loss_warned'] = warned
     live = state.get('mitch_live') or {}
     live_seen = set(memory.get('live_seen') or [])
     for row in live.get('recent') or []:
