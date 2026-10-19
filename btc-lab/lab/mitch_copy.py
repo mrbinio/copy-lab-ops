@@ -583,7 +583,7 @@ class MitchCopy:
             return {}
         return {str(k).lower(): v for k, v in (body.get('wallets') or {}).items() if isinstance(v, dict)}
 
-    def refresh_pauses(self, db):
+    def refresh_pauses(self, db, save=True):
         """Mitch's rule (his answer, 10 Oct 2026): no automatic wallet pause.
 
         A wallet stops only when a person pauses it after review. The one
@@ -655,11 +655,16 @@ class MitchCopy:
                 wallets[wallet] = dict(numbers, paused=False, kind=None, stint=stint_id, review=review)
         payload = {'updated_at': now, 'stint': stint, 'rule': PAUSE_RULE, 'desk_cash_usd': cash / 1e6,
                    'desk_stop': desk_stop, 'wallets': wallets}
+        if save:
+            self.save_pauses(db, payload)
+        return payload
+
+    @staticmethod
+    def save_pauses(db, payload):
         db.execute(
             "INSERT INTO state VALUES ('mitch_pauses', ?) ON CONFLICT(key) DO UPDATE SET body=excluded.body",
             (json.dumps(payload),),
         )
-        return payload
 
     def stopped(self):
         """PAUSE stops every copier; MITCH_OFF only this one (Telegram). Sells and settlement go on."""
@@ -1230,7 +1235,9 @@ class MitchCopy:
                 row['cash_micro'] = cash
                 row['reserved_micro'] = reserved
                 row['tradable_micro'] = tradable_cash(cash, reserved)
-            pauses = self.refresh_pauses(db)
+            # Read only here: a write first would hold the lock through every
+            # query below, ~0.6 s each publish (audit db_lock, 19 Oct 2026).
+            pauses = self.refresh_pauses(db, save=False)
             desk_now = self.desk_numbers(db)
             windows_now = self.window_report(db)
             stint = self.stint(db)
@@ -1282,6 +1289,8 @@ class MitchCopy:
             bank = bank_snapshot(db)
             latency_rows, missing_timing = self._executed_timings(db)
             late_before, late_after, late_unstamped = self._late_split(db, self.started())
+        with self.store.connect() as db:
+            self.save_pauses(db, pauses)
         latency = latency_summary(latency_rows)
         latency['executed_without_timing'] = missing_timing
         payload = {
