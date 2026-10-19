@@ -87,17 +87,20 @@ GROUPING = (
 )
 
 WALLETS = {
-    '0x16217458b59b3458149918058754cd234096b159': {'label': '096b159', 'limit_usd': Decimal('20')},
-    '0xeda9247a2b3c99a9e0bf46cdac6e1974365cf589': {'label': '0x9f672c31', 'limit_usd': Decimal('20')},
-    '0x943cea746e701823b6902a6f4eaeed58207e77c2': {'label': '0xdc27', 'limit_usd': Decimal('20')},
-    '0x454c48b436e5dda7a186cc7e0ebeee2a1d1865cf': {'label': 'checkr3', 'limit_usd': Decimal('20')},
+    # Mitch's list of 19 Oct 2026 (max $ per 15m window). Damian, 19 Oct: follow
+    # him for 096b159, 9f672, dc27 (20 -> 30) and 1Speed (5 -> 30); izzyaussie
+    # stays at 5 (lost on our copies that week); checkr3 removed (Mitch dropped
+    # it, negative here). His new wallet 3e1 joins only after our 90-day replay.
+    '0x16217458b59b3458149918058754cd234096b159': {'label': '096b159', 'limit_usd': Decimal('30')},
+    '0xeda9247a2b3c99a9e0bf46cdac6e1974365cf589': {'label': '0x9f672c31', 'limit_usd': Decimal('30')},
+    '0x943cea746e701823b6902a6f4eaeed58207e77c2': {'label': '0xdc27', 'limit_usd': Decimal('30')},
     # Mitch, 10 Oct 2026: miha went to 10 after a good week; new wallets start at 5.
     '0xa82365c8e854728c472812fba6202ca125386215': {'label': 'mihaXd', 'limit_usd': Decimal('10')},
     # Mitch's three newer wallets (his status of 10 Oct). Each passed our
     # 90-day replay on BTC 15m: +1488, +615, +1279 at 2 cents worse.
     '0x94f471f68396ff4a3cab8cb5c47c86274b8b77a2': {'label': 'izzyaussie', 'limit_usd': Decimal('5')},
     '0xbadb9af986ee66437bd39e6cd3d3036cbbdc31a7': {'label': '0xBadB9af', 'limit_usd': Decimal('5')},
-    '0x2a989ed9be66328c6d80a60758eadff6f279ff22': {'label': '1Speed', 'limit_usd': Decimal('5')},
+    '0x2a989ed9be66328c6d80a60758eadff6f279ff22': {'label': '1Speed', 'limit_usd': Decimal('30')},
 }
 
 # Mitch runs one desk of 500 for every wallet. Money above the 500 line is

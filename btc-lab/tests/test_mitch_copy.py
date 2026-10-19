@@ -143,7 +143,7 @@ class MitchBookTests(unittest.TestCase):
         self.assertEqual(cash, 123)
         published = self.engine.publish()
         self.assertEqual(published['spec'], 'mitch-copy-wallets-v1')
-        self.assertEqual(len(published['wallets']), 8)
+        self.assertEqual(len(published['wallets']), len(WALLETS))
 
     def test_chain_fast_quote_is_not_the_price_he_paid(self):
         from lab.mitch_copy import source_dollars, source_price
