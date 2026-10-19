@@ -772,7 +772,7 @@ function renderOpsBar(s){
   // 16 Oct 2026: one plain sentence by default; the technical line on click.
   const restarts=watch.restarts_in_window||0;
   const plain=ledgerBad?'Problem: księga się nie zgadza, kupno wstrzymane':pageLate?'Brak świeżych danych z laboratorium'+(fetchError?' ('+fetchError+')':''):collectorLate?'Laboratorium odpowiada z opóźnieniem':
-    (mitch.stop_active?'Działa, ale STOP z Telegrama wstrzymuje kupna':'Wszystko działa')+' · dane sprzed '+(genAge==null?'?':Math.round(genAge))+' s'+(restarts?' · restarty w ostatniej godzinie: '+restarts:'')+' · tryb PAPER (bez prawdziwych pieniędzy)';
+    (mitch.stop_active?'Działa, ale STOP z Telegrama wstrzymuje kupna':'Wszystko działa')+' · dane sprzed '+(genAge==null?'?':Math.round(genAge))+' s'+(restarts?' · restarty w ostatniej godzinie: '+restarts:'')+((s.mitch_live||{}).mode==='live'?' · LIVE: Mitch na prawdziwych pieniądzach':' · tryb PAPER (bez prawdziwych pieniędzy)');
   const open=el.dataset.open==='1';
   el.replaceChildren(document.createTextNode((stale||collectorLate?'⚠ ':'● ')+plain));
   el.append(node('span',open?'ukryj szczegóły':'szczegóły techniczne','ops-more'));
@@ -947,12 +947,24 @@ function renderHome(s){
   const o=s.overview||{};const m=s.mitch_copy||{};const now=Date.now()/1000;
   const sig=JSON.stringify([lang,(s.mitch_live||{}).at,o.at,m.updated_at&&Math.floor(m.updated_at/30),m.brake&&m.brake.on,m.stop_active,(s.wallet_copy_execution||{}).buys_enabled,Math.floor(now/60)]);
   if(box.dataset.sig===sig)return;box.dataset.sig=sig;box.replaceChildren();
-  const tabs=[['mitch-home',c=>{c.append(homeMitchCard(s,o));if((s.mitch_live||{}).mode&&(s.mitch_live||{}).mode!=='off')c.append(homeLiveCard(s));}],['wynik-home',c=>c.append(homeWalletsCard(s,o))]];
+  const liveOn=(s.mitch_live||{}).mode&&(s.mitch_live||{}).mode!=='off';
+  const realOn=(s.mitch_live||{}).mode==='live';const sb=document.querySelector('.sidebar-bottom strong');const sp=document.querySelector('.sidebar-bottom p');
+  if(sb)sb.textContent=realOn?t('LIVE: Mitch on real money','LIVE: Mitch na prawdziwych pieniądzach'):t('PAPER: simulation, not real money','PAPER — symulacja, nie prawdziwe pieniądze');
+  if(sp&&realOn)sp.textContent=t('Real orders go to Polymarket from the wallet. PAPER still makes every decision.','Prawdziwe zlecenia idą na Polymarket z portfela. Papier dalej podejmuje każdą decyzję.');
+  document.title=realOn?'BTC Lab · LIVE':'BTC Lab · PAPER';
+  const tabs=[['mitch-home',c=>{if(liveOn)c.append(homeLiveCard(s));c.append(homeMitchCard(s,o));}],['wynik-home',c=>c.append(homeWalletsCard(s,o))]];
   for(const [id,fill] of tabs){const el=$(id);if(el){el.replaceChildren();if(o.mitch)fill(el);}}
   if(!o.mitch){box.append(node('p','Podsumowanie liczy się raz na minutę. Za chwilę się pojawi.','home-why'));return;}
-  box.append(homeMitchCard(s,o));
-  if((s.mitch_live||{}).mode&&(s.mitch_live||{}).mode!=='off')box.append(homeLiveCard(s));
-  box.append(homeWalletsCard(s,o),homeReadyCard(o));
+  // 19 Oct 2026, Damian: real money first; PAPER (still the source of every
+  // live decision) folds below so it does not get in the way.
+  if(!liveOn){box.append(homeMitchCard(s,o),homeWalletsCard(s,o),homeReadyCard(o));return;}
+  const live=homeLiveCard(s);live.classList.add('home-wide');box.append(live);
+  const fold=document.createElement('details');fold.className='paper-fold';
+  try{fold.open=localStorage.getItem('btc-lab-paper-fold')==='1';}catch(e){}
+  fold.addEventListener('toggle',()=>{try{localStorage.setItem('btc-lab-paper-fold',fold.open?'1':'0');}catch(e){}});
+  const sum=document.createElement('summary');sum.textContent=t('PAPER: the base for LIVE (Mitch copy, your wallets, readiness)','PAPIER: podstawa dla LIVE (kopia Mitcha, Twoje portfele, gotowość)');
+  const inner=node('div',undefined,'paper-fold-grid');inner.append(homeMitchCard(s,o),homeWalletsCard(s,o),homeReadyCard(o));
+  fold.append(sum,inner);box.append(fold);
 }
 // 17 Oct 2026: Mitch on real money. Wallet balance straight from the chain,
 // what is in play, the live result and reserve, and every live order next to
@@ -971,10 +983,17 @@ function homeLiveCard(s){
   const inPlay=node('div',undefined,'home-num');inPlay.append(node('span',t('In play','W grze')),node('b',money(Number(l.exposure_usd||0))),node('small',t('cap ','limit ')+money(Number((l.limits||{}).max_exposure_usd||0))));
   const res=node('div',undefined,'home-num');res.append(node('span',t('LIVE result','Wynik LIVE')),node('b',closed?money(pnl,true):t('no settlements','brak rozliczeń'),closed?(pnl>0?'positive':pnl<0?'negative':''):''),node('small',closed?(est?t('test estimate · ','szacunek testu · '):'')+closed+t(' settled, ',' rozliczonych, ')+Number(R.won||0)+t(' won',' wygranych'):t('appears after the first window','pojawi się po pierwszym oknie')));
   const reserve=node('div',undefined,'home-num');reserve.append(node('span',t('Profit reserve (Kraken)','Rezerwa zysku (Kraken)')),node('b',money(Number(l.swept_usd||0))),node('small',t('surplus above the desk line','nadwyżka ponad linię biurka')));
-  nums.append(inPlay,res,reserve);card.append(nums);
+  if(mode==='live'){
+    const rl=R.real||{};const tv=Number(rl.today_usd||0),av=Number(rl.pnl_usd||0);
+    const today=node('div',undefined,'home-num');today.append(node('span',t('Today','Dziś')),node('b',money(tv,true),tv>0?'positive':tv<0?'negative':''),node('small',t('real orders only','tylko prawdziwe zlecenia')));
+    const all=node('div',undefined,'home-num');all.append(node('span',t('Since start','Od startu')),node('b',money(av,true),av>0?'positive':av<0?'negative':''),node('small',(rl.closed||0)+t(' settled, ',' rozliczonych, ')+(rl.won||0)+t(' won',' wygranych')+(rl.since?t(' · since ',' · od ')+homeWhen(rl.since):'')));
+    nums.append(today,all,reserve,inPlay);card.append(nums);
+    const line=Number((l.limits||{}).desk_line_usd||0);
+    if(line&&w.pusd!=null){const prog=node('p',undefined,'home-line');prog.append(t('Desk ','Biurko '),node('b',money(Number(w.pusd))),t(' of the line ',' z linii ')+money(line)+(Number(w.pusd)>=line?t(' · profit above it goes to Kraken',' · zysk ponad nią idzie na Kraken'):t(' · until then profit stays on the desk',' · do tego czasu zysk zostaje na biurku')));card.append(prog);}
+  }else{nums.append(inPlay,res,reserve);card.append(nums);}
   const signed=c.DRY_SIGNED||0,filled=c.FILLED||0,errs=c.ERROR||0,skipped=Object.entries(c).filter(([k])=>k.startsWith('SKIPPED')||k==='HELD_BELOW_MIN'||k==='NOT_FILLED').reduce((a,[,v])=>a+v,0);
   const line=node('p',undefined,'home-line');
-  line.append(t('Orders: ','Zlecenia: '),node('b',(mode==='live'?filled+t(' filled',' wykonanych'):signed+t(' signed',' podpisanych'))),' · '+skipped+t(' skipped · ',' pominiętych · ')+errs+t(' errors · day loss ',' błędów · strata dnia ')+money(Number(l.day_loss_usd||0))+t(' of the cap ',' z limitu ')+money(Number((l.limits||{}).day_loss_stop_usd||0))+t(' · POL for fees ',' · POL na opłaty ')+(w.pol==null?'—':w.pol));
+  line.append(t('Orders: ','Zlecenia: '),node('b',(mode==='live'?filled+t(' filled',' wykonanych'):signed+t(' signed',' podpisanych'))),' · '+skipped+t(' skipped · ',' pominiętych · ')+errs+t(' errors · day loss ',' błędów · strata dnia ')+money(Math.max(0,Number(l.day_loss_usd||0)))+t(' of the cap ',' z limitu ')+money(Number((l.limits||{}).day_loss_stop_usd||0))+t(' · POL for fees ',' · POL na opłaty ')+(w.pol==null?'—':w.pol));
   card.append(line);
   const days=Array.isArray(R.days)?R.days:[];
   if(days.length){

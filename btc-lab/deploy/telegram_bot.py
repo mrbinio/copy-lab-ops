@@ -61,6 +61,8 @@ COMMANDS = [
     ('live', 'Prawdziwe pieniądze: saldo, w grze, ostatnie zlecenia'),
     ('live_stop', 'Wstrzymaj prawdziwe kupna od razu (papier działa)'),
     ('live_start', 'Wznów prawdziwe kupna'),
+    ('live_pauza', 'Pauza prawdziwych kupień (to samo co /live_stop)'),
+    ('live_wznow', 'Wznów prawdziwe kupna (to samo co /live_start)'),
     ('stop', 'STOP: wszystkie nowe kupna'),
     ('wznow', 'Usuń STOP'),
     ('pomoc', 'Lista komend'),
@@ -113,6 +115,7 @@ HELP = (
     '/live – saldo portfela, w grze, strata dnia, ostatnie zlecenia\n'
     '/live_stop – natychmiast wstrzymaj prawdziwe kupna (papier i sprzedaże działają)\n'
     '/live_start – wznów prawdziwe kupna\n'
+    '/live_pauza, /live_wznow – to samo po polsku\n'
     '/stop zatrzymuje też prawdziwe kupna, /mitch_stop też.'
 )
 
@@ -734,13 +737,13 @@ def handle(command, chat, tg, allowed, opener=urllib.request.urlopen):
     if command == '/kwalifikator_start':
         tg.send(chat, switch(QUALIFIER_OFF, True, chat, 'Twoje portfele'))
         return
-    if command == '/live_stop':
+    if command in ('/live_stop', '/live_pauza'):
         LIVE_STOP.parent.mkdir(parents=True, exist_ok=True)
         LIVE_STOP.write_text('telegram %s %s\n' % (chat, now_local().isoformat()))
         tg.send(chat, 'Prawdziwe pieniądze: kupno WSTRZYMANE od teraz. Papier działa dalej, otwarte pozycje dalej się '
                       'sprzedają i rozliczają. /live_start wznawia.')
         return
-    if command == '/live_start':
+    if command in ('/live_start', '/live_wznow'):
         if LIVE_STOP.exists():
             LIVE_STOP.unlink()
         tg.send(chat, 'Prawdziwe pieniądze: kupno wraca (dalej obowiązują limity: w grze, strata dnia, stop biurka, /stop).')

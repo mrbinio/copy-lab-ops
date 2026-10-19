@@ -627,7 +627,22 @@ class MitchLive:
         return {'pnl_usd': str(sum((Decimal(r.get('pnl_usd') or '0') for r in done), Decimal(0))),
                 'closed': len([r for r in done if r.get('side') == 'BUY']),
                 'won': len([r for r in done if r.get('side') == 'BUY' and r.get('won')]),
-                'estimated': any(r.get('estimated') for r in done), 'days': self._days(done)}
+                'estimated': any(r.get('estimated') for r in done), 'days': self._days(done),
+                'real': self._real(rows)}
+
+    def _real(self, rows):
+        """Real money only: filled buys, their settled result, today by the
+        window end (local day)."""
+        buys = [r for r in rows if r.get('side') == 'BUY' and r.get('status') == 'FILLED']
+        done = [r for r in rows if r.get('closed') and r.get('status') == 'FILLED']
+        today = time.strftime('%Y-%m-%d', time.localtime(self.clock()))
+        day = lambda r: time.strftime('%Y-%m-%d', time.localtime(window_end(r)))
+        pnl = lambda rs: str(sum((Decimal(r.get('pnl_usd') or '0') for r in rs), Decimal(0)))
+        return {'pnl_usd': pnl(done), 'today_usd': pnl([r for r in done if day(r) == today]),
+                'buys': len(buys), 'closed': len([r for r in done if r.get('side') == 'BUY']),
+                'won': len([r for r in done if r.get('side') == 'BUY' and r.get('won')]),
+                'not_filled': len([r for r in rows if r.get('side') == 'BUY' and r.get('status') == 'NOT_FILLED']),
+                'since': min((float(r.get('finished_at') or 0) for r in buys), default=None)}
 
     @staticmethod
     def _days(done):
