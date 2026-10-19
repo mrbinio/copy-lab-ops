@@ -39,6 +39,7 @@ DAY_LOSS_STOP_USD = Decimal('20')
 MAX_MIN_RATIO = Decimal('2')   # skip when the market minimum is over 2x PAPER x scale (Damian, 18 Oct 2026)
 MAX_SCALE = Decimal('0.2')
 DESK_STOP_USD = Decimal('10')
+DESK_LINE_USD = Decimal('100')   # profit above it goes to Kraken (agreed 17 Oct 2026)
 MIN_MARKET_BUY_USD = Decimal('1')
 # 17 Oct 2026: the second dry order waited 308 ms for a thread (two threads,
 # shared with warm-up and market prefetch). Orders get four of their own.
@@ -76,7 +77,15 @@ def load_settings(root):
         'max_order_usd': capped('max_order_usd', MAX_ORDER_USD),
         'max_exposure_usd': capped('max_exposure_usd', MAX_EXPOSURE_USD),
         'day_loss_stop_usd': capped('day_loss_stop_usd', DAY_LOSS_STOP_USD),
+        'desk_line_usd': _line(raw.get('desk_line_usd', DESK_LINE_USD)),
     }
+
+
+def _line(value):
+    try:
+        return max(Decimal(str(value)), DESK_STOP_USD)
+    except Exception:
+        return DESK_LINE_USD
 
 
 def tick_floor(price, tick):
@@ -647,7 +656,14 @@ class MitchLive:
             'wallet': self.wallet(), 'counts': counts, 'exposure_usd': str(self.exposure_usd(rows)),
             'result': self.result(rows),
             'day_loss_usd': str(self.day_loss_usd(rows)), 'recent': recent,
+            'swept_usd': str(self.sweeper().swept_usd()), 'sweep_ok': self.sweeper().allowed(),
         }
+
+    def sweeper(self):
+        if getattr(self, '_sweeper', None) is None:
+            from .live_sweep import LiveSweeper
+            self._sweeper = LiveSweeper(self)
+        return self._sweeper
 
 
 def _safe_reply(reply):
