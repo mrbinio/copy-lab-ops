@@ -997,7 +997,10 @@ function homeLiveCard(s){
   card.append(line);
   // 19 Oct 2026, Damian: green/red daily bars under the real-money numbers.
   const realDays=((R.real||{}).days)||[];
-  const barDays=realDays.length?realDays:(Array.isArray(R.days)?R.days:[]).slice().reverse().map(d=>({day:d.day,net_micro:Math.round(Number(d.pnl||0)*1e6),closed:d.closed}));
+  const rawDays=realDays.length?realDays:(Array.isArray(R.days)?R.days:[]).slice().reverse().map(d=>({day:d.day,net_micro:Math.round(Number(d.pnl||0)*1e6),closed:d.closed}));
+  const byDay={};rawDays.forEach(d=>byDay[d.day]=d);const barDays=[];
+  for(let i=13;i>=0;i--){const dt=new Date(Date.now()-i*86400000);const k=dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');barDays.push(byDay[k]||{day:k,net_micro:0,closed:0});}
+  if(!rawDays.length)barDays.length=0;
   if(barDays.length){
     card.append(homeBars(barDays));
     const lg=node('div',undefined,'bars-legend');const f=x=>x?x.slice(8,10)+'.'+x.slice(5,7):'';
