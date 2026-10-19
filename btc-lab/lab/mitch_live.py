@@ -49,6 +49,8 @@ POOL = ThreadPoolExecutor(max_workers=4, thread_name_prefix='lab-live')
 PREP_POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix='lab-live-prep')
 PUSD = '0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB'
 CTF = '0x4D97DCd97eC945f40cF65F87097ACe5EA0476045'
+USDCE_TOKEN = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174'
+USDC_TOKEN = '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359'
 CTF_ADAPTER = '0xAdA100Db00Ca00073811820692005400218FcE1f'   # redeemPositions -> pUSD (V2)
 FEE_RATE = Decimal('0.07')
 SETTLE_AFTER_S = 120
@@ -457,7 +459,11 @@ class MitchLive:
             data = '0x70a08231' + address[2:].lower().rjust(64, '0')
             pusd = int(call('eth_call', [{'to': PUSD, 'data': data}, 'latest']), 16) / 1e6
             pol = int(call('eth_getBalance', [address, 'latest']), 16) / 1e18
-            self._wallet = {'at': now, 'address': address, 'pusd': round(pusd, 6), 'pol': round(pol, 4)}
+            # a new deposit waits as USDC.e or USDC until tools/live_setup.py wraps it
+            waiting = sum(int(call('eth_call', [{'to': token, 'data': data}, 'latest']), 16) / 1e6
+                          for token in (USDCE_TOKEN, USDC_TOKEN))
+            self._wallet = {'at': now, 'address': address, 'pusd': round(pusd, 6), 'pol': round(pol, 4),
+                            'waiting_usdc': round(waiting, 2)}
         except Exception as error:
             self._wallet = dict(cached or {'address': address}, at=now, error=str(error)[:120])
         return self._wallet

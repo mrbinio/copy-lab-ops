@@ -71,6 +71,31 @@ class AlertTests(unittest.TestCase):
         self.assertIn('LIVE ostatnie 3 h: 1 kupna wykonane z 1, rozliczone 1 (1 wygranych) +2.50 USD', out[0])
         self.assertEqual(bot.alerts(dict(state(), mitch_live=dict(live, mode='dry')), {'primed': True}, now=99999), [])
 
+    def test_wplata_sizes_limits_from_the_wallet(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'mitch_live.json'
+            path.write_text(json.dumps({'mode': 'live', 'desk_line_usd': '250', 'first_day': '2026-10-19'}))
+            st = {'mitch_live': {'wallet': {'pusd': 160.0, 'waiting_usdc': 0}, 'exposure_usd': '5'}}
+            out = bot.wplata(st, path=path, today='2026-10-20')
+            cfg = json.loads(path.read_text())
+            self.assertEqual((cfg['scale'], cfg['max_order_usd'], cfg['max_exposure_usd'], cfg['day_loss_stop_usd'], cfg['desk_stop_usd']),
+                             ('0.33', '8', '50', '33', '17'))
+            self.assertEqual(cfg['mode'], 'live')
+            self.assertIn('165.00 USD', out)
+            st['mitch_live']['wallet']['pusd'] = 400.0          # over the 250 ceiling
+            bot.wplata(st, path=path, today='2026-10-20')
+            cfg = json.loads(path.read_text())
+            self.assertEqual((cfg['scale'], cfg['max_order_usd'], cfg['max_exposure_usd'], cfg['day_loss_stop_usd']), ('0.50', '12', '75', '50'))
+            st['mitch_live']['wallet']['waiting_usdc'] = 80.0
+            self.assertIn('live_setup.py', bot.wplata(st, path=path))
+
+    def test_deposit_is_alerted_once(self):
+        memory = {'primed': True}
+        live = {'mode': 'live', 'wallet': {'pusd': 170.0, 'pol': 10.0, 'waiting_usdc': 80.5}, 'recent': []}
+        out = bot.alerts(dict(state(), mitch_live=live), memory, now=1000)
+        self.assertTrue(any('Wpłata doszła: 80.50 USDC' in m for m in out))
+        self.assertFalse(any('Wpłata' in m for m in bot.alerts(dict(state(), mitch_live=live), memory, now=1001)))
+
     def test_live_flag_is_always_alerted(self):
         memory = {'primed': True}
         out = bot.alerts(dict(state(), live_enabled=True), memory)

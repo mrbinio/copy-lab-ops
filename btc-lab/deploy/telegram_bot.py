@@ -63,6 +63,7 @@ COMMANDS = [
     ('live_start', 'Wznów prawdziwe kupna'),
     ('live_pauza', 'Pauza prawdziwych kupień (to samo co /live_stop)'),
     ('live_wznow', 'Wznów prawdziwe kupna (to samo co /live_start)'),
+    ('wplata', 'Po dopłacie: przestaw limity LIVE pod nowe saldo (max 250 USD)'),
     ('stop', 'STOP: wszystkie nowe kupna'),
     ('wznow', 'Usuń STOP'),
     ('pomoc', 'Lista komend'),
@@ -116,6 +117,7 @@ HELP = (
     '/live_stop – natychmiast wstrzymaj prawdziwe kupna (papier i sprzedaże działają)\n'
     '/live_start – wznów prawdziwe kupna\n'
     '/live_pauza, /live_wznow – to samo po polsku\n'
+    '/wplata – po dopłacie i live_setup.py: limity i dashboard pod nowe saldo (max 250 USD)\n'
     '/stop zatrzymuje też prawdziwe kupna, /mitch_stop też.'
 )
 
@@ -125,6 +127,56 @@ LIVE_STATUS_PL = {'DRY_SIGNED': 'test: podpisane', 'FILLED': 'wykonane', 'NOT_FI
                   'SKIPPED_EXPOSURE_CAP': 'pominięte: limit w grze', 'SKIPPED_DAY_LOSS_STOP': 'pominięte: limit dnia',
                   'SKIPPED_DESK_STOP': 'pominięte: stop biurka', 'SKIPPED_MIN_ABOVE_CAP': 'pominięte: minimum > limit', 'SKIPPED_MIN_TOO_BIG': 'pominięte: minimum > 2× papier/5',
                   'HELD_BELOW_MIN': 'trzymane do rozliczenia', 'SKIPPED_NOTHING_HELD': 'nic do sprzedania', 'ERROR': 'błąd'}
+
+
+LIVE_CONFIG = ROOT / 'data' / 'mitch_live.json'
+DESK_CEILING = 250.0   # Damian's top amount, 19 Oct 2026
+
+
+def sized_limits(desk, first_day=False):
+    """The agreed table (19 Oct 2026): 165 USD -> 1/3 of PAPER, 8/50/33, desk stop 17;
+    250 USD -> 1/2, 12/75/50, desk stop 25. Proportional in between, never above 250."""
+    desk = min(float(desk), DESK_CEILING)
+    r = lambda x: int(x + 0.5)
+    day = r(desk * 0.2)
+    return {'scale': '%.2f' % min(desk / 500, 0.5), 'max_order_usd': str(r(desk * 0.048)),
+            'max_exposure_usd': str(r(desk * 0.3)), 'day_loss_stop_usd': str(r(desk * 0.1) if first_day else day),
+            'desk_stop_usd': str(r(desk * 0.1))}
+
+
+def wplata(state, path=None, today=None):
+    path = path or LIVE_CONFIG
+    live = state.get('mitch_live') or {}
+    wallet = live.get('wallet') or {}
+    pusd = wallet.get('pusd')
+    if pusd is None:
+        return 'Nie widzę salda portfela. Spróbuj za minutę.'
+    if float(wallet.get('waiting_usdc') or 0) >= 1:
+        return ('Na portfelu czeka %.2f USDC, które nie są jeszcze w grze. Najpierw w Terminalu:\n'
+                'cd ~/Library/Application\\ Support/BTC\\ Lab\n'
+                'python3 tools/live_setup.py secrets/polygon.key --send\npotem znowu /wplata.' % float(wallet['waiting_usdc']))
+    try:
+        config = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return 'Nie mogę odczytać ustawień LIVE.'
+    desk = float(pusd) + float(live.get('exposure_usd') or 0)
+    today = today or now_local().strftime('%Y-%m-%d')
+    new = sized_limits(desk, first_day=config.get('first_day') == today)
+    old = {k: config.get(k) for k in new}
+    config.update(new)
+    config['sized_at'] = now_local().isoformat()
+    config['sized_for_usd'] = round(min(desk, DESK_CEILING), 2)
+    tmp = path.with_suffix('.tmp')
+    tmp.write_text(json.dumps(config))
+    tmp.replace(path)
+    lines = ['Limity LIVE przestawione pod biurko %.2f USD%s:' % (min(desk, DESK_CEILING),
+             ' (sufit 250, nadwyżka nie zwiększa limitów)' if desk > DESK_CEILING else '')]
+    names = {'scale': 'część papieru', 'max_order_usd': 'max na zlecenie', 'max_exposure_usd': 'max w grze',
+             'day_loss_stop_usd': 'stop dnia', 'desk_stop_usd': 'stop biurka'}
+    for k, label in names.items():
+        lines.append('%s: %s → %s' % (label, old.get(k), new[k]))
+    lines.append('Dashboard pokaże to w ciągu minuty. Linia przelewu na Kraken zostaje: %s USD.' % config.get('desk_line_usd'))
+    return '\n'.join(lines)
 
 
 def live_text(state):
@@ -640,6 +692,15 @@ def live_money_alerts(live, memory, now, first):
         memory['not_filled_alerted'] = True
     elif streak == 0:
         memory['not_filled_alerted'] = False
+    waiting = float((live.get('wallet') or {}).get('waiting_usdc') or 0)
+    if waiting >= 1 and not memory.get('deposit_alerted'):
+        out.append('Wpłata doszła: %.2f USDC czeka na portfelu (jeszcze nie w grze). W Terminalu:\n'
+                   'cd ~/Library/Application\\ Support/BTC\\ Lab\n'
+                   'python3 tools/live_setup.py secrets/polygon.key --send\n'
+                   'a potem wyślij /wplata, przestawię limity i dashboard.' % waiting)
+        memory['deposit_alerted'] = True
+    elif waiting < 1:
+        memory['deposit_alerted'] = False
     pol = (live.get('wallet') or {}).get('pol')
     if pol is not None and float(pol) < LOW_POL and not memory.get('pol_alerted'):
         out.append('Mało POL na opłaty: %.2f. Dokup trochę POL na portfel.' % float(pol))
@@ -736,6 +797,9 @@ def handle(command, chat, tg, allowed, opener=urllib.request.urlopen):
         return
     if command == '/kwalifikator_start':
         tg.send(chat, switch(QUALIFIER_OFF, True, chat, 'Twoje portfele'))
+        return
+    if command == '/wplata':
+        tg.send(chat, wplata(fetch_state(opener)))
         return
     if command in ('/live_stop', '/live_pauza'):
         LIVE_STOP.parent.mkdir(parents=True, exist_ok=True)
