@@ -91,6 +91,7 @@ LABELS = {
     '0x94f471f68396ff4a3cab8cb5c47c86274b8b77a2': 'izzyaussie',
     '0xbadb9af986ee66437bd39e6cd3d3036cbbdc31a7': '0xBadB9af',
     '0x2a989ed9be66328c6d80a60758eadff6f279ff22': '1Speed',
+    '0x3e105fda0e7a3b1bad425cfa1981c6ffedd40b9a': '3e1',
 }
 HELP = (
     'BTC Lab (PAPER). Komendy są też w menu „/” obok pola wiadomości.\n'

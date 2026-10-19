@@ -101,6 +101,10 @@ WALLETS = {
     '0x94f471f68396ff4a3cab8cb5c47c86274b8b77a2': {'label': 'izzyaussie', 'limit_usd': Decimal('5')},
     '0xbadb9af986ee66437bd39e6cd3d3036cbbdc31a7': {'label': '0xBadB9af', 'limit_usd': Decimal('5')},
     '0x2a989ed9be66328c6d80a60758eadff6f279ff22': {'label': '1Speed', 'limit_usd': Decimal('30')},
+    # Mitch's new wallet (his list of 19 Oct, $30 there). Our 90-day replay on
+    # BTC 15m passed: +1456 (90d), +994 (30d), +1273 without the best window;
+    # last 7 days -85. Damian, 19 Oct: starts like every new wallet, at 5.
+    '0x3e105fda0e7a3b1bad425cfa1981c6ffedd40b9a': {'label': '3e1', 'limit_usd': Decimal('5')},
 }
 
 # Mitch runs one desk of 500 for every wallet. Money above the 500 line is
