@@ -995,6 +995,15 @@ function homeLiveCard(s){
   const line=node('p',undefined,'home-line');
   line.append(t('Orders: ','Zlecenia: '),node('b',(mode==='live'?filled+t(' filled',' wykonanych'):signed+t(' signed',' podpisanych'))),' · '+skipped+t(' skipped · ',' pominiętych · ')+errs+t(' errors · day loss ',' błędów · strata dnia ')+money(Math.max(0,Number(l.day_loss_usd||0)))+t(' of the cap ',' z limitu ')+money(Number((l.limits||{}).day_loss_stop_usd||0))+t(' · POL for fees ',' · POL na opłaty ')+(w.pol==null?'—':w.pol));
   card.append(line);
+  // 19 Oct 2026, Damian: green/red daily bars under the real-money numbers.
+  const realDays=((R.real||{}).days)||[];
+  const barDays=realDays.length?realDays:(Array.isArray(R.days)?R.days:[]).slice().reverse().map(d=>({day:d.day,net_micro:Math.round(Number(d.pnl||0)*1e6),closed:d.closed}));
+  if(barDays.length){
+    card.append(homeBars(barDays));
+    const lg=node('div',undefined,'bars-legend');const f=x=>x?x.slice(8,10)+'.'+x.slice(5,7):'';
+    lg.append(node('span',f(barDays[0].day)),node('span',realDays.length?t('real money, daily result','prawdziwe pieniądze, wynik dzienny'):t('test before LIVE (estimate)','test przed LIVE (szacunek)')),node('span',f(barDays[barDays.length-1].day)));
+    card.append(lg);
+  }
   const days=Array.isArray(R.days)?R.days:[];
   if(days.length){
     card.append(node('div',est?t('Test result by day (estimate: what these orders would have made)','Wynik testu dzień po dniu (szacunek: ile zarobiłyby te zlecenia)'):t('Result by day','Wynik dzień po dniu'),'home-main-label'));

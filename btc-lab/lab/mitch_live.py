@@ -654,7 +654,20 @@ class MitchLive:
                 'buys': len(buys), 'closed': len([r for r in done if r.get('side') == 'BUY']),
                 'won': len([r for r in done if r.get('side') == 'BUY' and r.get('won')]),
                 'not_filled': len([r for r in rows if r.get('side') == 'BUY' and r.get('status') == 'NOT_FILLED']),
-                'since': min((float(r.get('finished_at') or 0) for r in buys), default=None)}
+                'since': min((float(r.get('finished_at') or 0) for r in buys), default=None),
+                'days': self._real_days(done)}
+
+    def _real_days(self, done, keep=14):
+        """Daily real result for the bar chart: local day of the window end."""
+        days = {}
+        for r in done:
+            if r.get('side') != 'BUY':
+                continue
+            day = time.strftime('%Y-%m-%d', time.localtime(window_end(r)))
+            d = days.setdefault(day, {'day': day, 'net_micro': 0, 'closed': 0})
+            d['net_micro'] += int(Decimal(r.get('pnl_usd') or '0') * 1_000_000)
+            d['closed'] += 1
+        return [days[k] for k in sorted(days)][-keep:]
 
     @staticmethod
     def _days(done):
