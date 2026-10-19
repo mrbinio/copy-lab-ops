@@ -126,7 +126,7 @@ HELP = (
 LIVE_STATUS_PL = {'DRY_SIGNED': 'test: podpisane', 'FILLED': 'wykonane', 'NOT_FILLED': 'niewykonane',
                   'SKIPPED_STOP': 'pominięte: STOP', 'SKIPPED_LIVE_STOP': 'pominięte: /live_stop',
                   'SKIPPED_EXPOSURE_CAP': 'pominięte: limit w grze', 'SKIPPED_DAY_LOSS_STOP': 'pominięte: limit dnia',
-                  'SKIPPED_DESK_STOP': 'pominięte: stop biurka', 'SKIPPED_MIN_ABOVE_CAP': 'pominięte: minimum > limit', 'SKIPPED_MIN_TOO_BIG': 'pominięte: minimum > 2× papier/5',
+                  'SKIPPED_DESK_STOP': 'pominięte: stop biurka', 'SKIPPED_MIN_ABOVE_CAP': 'pominięte: minimum > limit', 'SKIPPED_MIN_TOO_BIG': 'pominięte: minimum > 4× naszej części',
                   'HELD_BELOW_MIN': 'trzymane do rozliczenia', 'SKIPPED_NOTHING_HELD': 'nic do sprzedania', 'ERROR': 'błąd'}
 
 

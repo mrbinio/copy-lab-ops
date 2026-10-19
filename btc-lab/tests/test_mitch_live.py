@@ -191,8 +191,8 @@ class MitchLiveTests(unittest.TestCase):
     def test_a_market_minimum_over_twice_paper_is_skipped(self):
         with tempfile.TemporaryDirectory() as tmp:
             live, client = self.make(tmp, 'dry')
-            # paper 5 USD x 1/5 = 1 USD; the minimum 5 x 0.52 = 2.60 is over 2 USD
-            row = live.on_buy('w', 'd' * 30, event(), {'vwap': '0.43', 'cost': 5_000_000}, Decimal('0.52'))
+            # paper 2 USD x 1/5 = 0.40 USD; the minimum 5 x 0.52 = 2.60 is over 4 x 0.40
+            row = live.on_buy('w', 'd' * 30, event(), {'vwap': '0.43', 'cost': 2_000_000}, Decimal('0.52'))
             self.assertEqual(row['status'], 'SKIPPED_MIN_TOO_BIG')
             self.assertEqual(client.orders, [])
 
