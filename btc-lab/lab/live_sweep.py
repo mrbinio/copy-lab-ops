@@ -191,6 +191,18 @@ class LiveSweeper:
             if amount is None:
                 return None
             amount_micro = int(amount * 1_000_000)
+            if wallet.get('deposit_wallet'):
+                # 20 Oct 2026: profit sits in the Deposit Wallet; bring it to the
+                # signer first (gasless), recorded so a crash never pulls twice.
+                try:
+                    pulled = self.live.trader().pull(amount_micro, self.live.address())
+                except Exception as error:
+                    LOG.warning('sweep pull: %s', str(error)[:300])
+                    self._journal({'at': time.time(), 'stage': 'error', 'amount_micro': amount_micro,
+                                   'error': 'pull: ' + str(error)[:280]})
+                    return None
+                self.pending.save({'started': time.time(), 'amount_micro': amount_micro, 'stage': 'unwrap',
+                                   'pull_tx': pulled})
         else:
             amount_micro = job['amount_micro']
         try:

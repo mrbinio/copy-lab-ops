@@ -61,6 +61,13 @@ def ensure(db):
     db.execute('CREATE TABLE IF NOT EXISTS mitch_live_orders (id TEXT PRIMARY KEY, paper_key TEXT, body TEXT)')
 
 
+def load_raw(root):
+    try:
+        return json.loads((Path(root) / 'data' / 'mitch_live.json').read_text())
+    except (OSError, ValueError):
+        return {}
+
+
 def load_settings(root):
     try:
         raw = json.loads((Path(root) / 'data' / 'mitch_live.json').read_text())
@@ -118,7 +125,9 @@ def buy_amount(limit_price, min_shares, cap, paper_usd=None, scale=Decimal(0)):
 
 
 class MitchLive:
-    def __init__(self, store, root, clock=time.time, client_factory=None, pool=POOL):
+    def __init__(self, store, root, clock=time.time, client_factory=None, pool=POOL, trader_factory=None):
+        self._trader_factory = trader_factory
+        self._trader = None
         self.store = store
         self.root = Path(root)
         self.clock = clock
@@ -156,6 +165,18 @@ class MitchLive:
             if self._client is None:
                 self._client = self._client_factory()
             return self._client
+
+    def trader(self):
+        """Real orders, redeems and withdrawals through the Deposit Wallet (20 Oct 2026)."""
+        with self._lock:
+            if self._trader is None:
+                from .live_trader import Trader
+                self._trader = Trader(self.root, factory=self._trader_factory)
+        return self._trader
+
+    def deposit_wallet(self):
+        raw = load_raw(self.root)
+        return raw.get('deposit_wallet')
 
     def _ensure_creds(self, client):
         """API credentials are derived from the key only when an order is posted."""
@@ -249,7 +270,7 @@ class MitchLive:
                 client = self.client()
                 client.get_version()
                 if self.settings()['mode'] == 'live':
-                    self._ensure_creds(client)   # the first real order does not pay for the login
+                    self.trader().client()       # the first real order does not pay for the login
             except Exception as error:
                 LOG.warning('live warm: %s', str(error)[:200])
         return PREP_POOL.submit(run)
@@ -323,20 +344,20 @@ class MitchLive:
             if settings['mode'] == 'live' and wallet.get('pusd') is not None and \
                     Decimal(str(wallet['pusd'])) - amount < settings['desk_stop_usd']:
                 return self._finish(job, 'SKIPPED_DESK_STOP', started, amount_usd=str(amount))
-            from py_clob_client_v2.clob_types import MarketOrderArgsV2, OrderType
-            order = client.create_market_order(MarketOrderArgsV2(
-                token_id=job['token'], amount=float(amount), side='BUY', price=float(limit),
-                order_type=OrderType.FOK))
-            signed_at = self.clock()
             if settings['mode'] != 'live':
+                from py_clob_client_v2.clob_types import MarketOrderArgsV2, OrderType
+                client.create_market_order(MarketOrderArgsV2(
+                    token_id=job['token'], amount=float(amount), side='BUY', price=float(limit),
+                    order_type=OrderType.FOK))
                 return self._finish(job, 'DRY_SIGNED', started, amount_usd=str(amount),
-                                    order_limit=str(limit), sign_ms=round((signed_at - started) * 1000, 1))
+                                    order_limit=str(limit), sign_ms=round((self.clock() - started) * 1000, 1))
             from .live_gate import require_live
+            from .live_trader import filled
             require_live()
-            self._ensure_creds(client)
-            reply = client.post_order(order, OrderType.FOK)
+            signed_at = self.clock()
+            reply = self.trader().buy(job['token'], amount, limit)
             done = self.clock()
-            ok = bool(reply and reply.get('success') and str(reply.get('status', '')).lower() in ('matched', 'mined', 'confirmed'))
+            ok = filled(reply)
             return self._finish(job, 'FILLED' if ok else 'NOT_FILLED', started, amount_usd=str(amount),
                                 order_limit=str(limit), reply=_safe_reply(reply),
                                 spent_usd=str(_spent(reply, amount)) if ok else '0',
@@ -388,19 +409,19 @@ class MitchLive:
             if Decimal(str(info['mos'] or 0)) > shares:
                 return self._finish(job, 'HELD_BELOW_MIN', started, shares_wanted=str(shares), min_shares=info['mos'])
             floor = max(Decimal(str(info['tick'])), tick_floor(job['limit_price'], info['tick']))
-            from py_clob_client_v2.clob_types import MarketOrderArgsV2, OrderType
-            order = client.create_market_order(MarketOrderArgsV2(
-                token_id=job['token'], amount=float(shares), side='SELL', price=float(floor),
-                order_type=OrderType.FOK))
-            signed_at = self.clock()
             if settings['mode'] != 'live':
+                from py_clob_client_v2.clob_types import MarketOrderArgsV2, OrderType
+                client.create_market_order(MarketOrderArgsV2(
+                    token_id=job['token'], amount=float(shares), side='SELL', price=float(floor),
+                    order_type=OrderType.FOK))
                 return self._finish(job, 'DRY_SIGNED', started, shares=str(shares), order_limit=str(floor),
-                                    sign_ms=round((signed_at - started) * 1000, 1))
+                                    sign_ms=round((self.clock() - started) * 1000, 1))
             from .live_gate import require_live
+            from .live_trader import filled
             require_live()
-            self._ensure_creds(client)
-            reply = client.post_order(order, OrderType.FOK)
-            ok = bool(reply and reply.get('success') and str(reply.get('status', '')).lower() in ('matched', 'mined', 'confirmed'))
+            signed_at = self.clock()
+            reply = self.trader().sell(job['token'], shares, floor)
+            ok = filled(reply)
             return self._finish(job, 'FILLED' if ok else 'NOT_FILLED', started, shares=str(shares) if ok else '0',
                                 order_limit=str(floor), reply=_safe_reply(reply),
                                 post_ms=round((self.clock() - signed_at) * 1000, 1))
@@ -462,8 +483,14 @@ class MitchLive:
             # a new deposit waits as USDC.e or USDC until tools/live_setup.py wraps it
             waiting = sum(int(call('eth_call', [{'to': token, 'data': data}, 'latest']), 16) / 1e6
                           for token in (USDCE_TOKEN, USDC_TOKEN))
-            self._wallet = {'at': now, 'address': address, 'pusd': round(pusd, 6), 'pol': round(pol, 4),
-                            'waiting_usdc': round(waiting, 2)}
+            row = {'at': now, 'address': address, 'pusd': round(pusd, 6), 'pol': round(pol, 4),
+                   'waiting_usdc': round(waiting, 2)}
+            dw = self.deposit_wallet()
+            if dw:   # 20 Oct 2026: trading money lives in the Deposit Wallet
+                dw_data = '0x70a08231' + dw[2:].lower().rjust(64, '0')
+                row.update(bank_pusd=row['pusd'], deposit_wallet=dw,
+                           pusd=round(int(call('eth_call', [{'to': PUSD, 'data': dw_data}, 'latest']), 16) / 1e6, 6))
+            self._wallet = row
         except Exception as error:
             self._wallet = dict(cached or {'address': address}, at=now, error=str(error)[:120])
         return self._wallet
@@ -528,12 +555,9 @@ class MitchLive:
 
     def redeem(self, condition):
         """Winning shares of a resolved market back to pUSD (CtfCollateralAdapter)."""
-        from eth_abi import encode
-        from eth_utils import keccak
-        cond = bytes.fromhex(str(condition)[2:] if str(condition).startswith('0x') else str(condition))
-        data = '0x' + (keccak(text='redeemPositions(address,bytes32,bytes32,uint256[])')[:4]
-                       + encode(['address', 'bytes32', 'bytes32', 'uint256[]'], [PUSD, b'\x00' * 32, cond, [1, 2]])).hex()
-        tx = self.send_tx(CTF_ADAPTER, data)
+        from .live_gate import require_live
+        require_live()
+        tx = self.trader().redeem(condition)      # the shares sit in the Deposit Wallet (gasless)
         LOG.info('live redeem %s: %s', str(condition)[:12], tx)
         return tx
 

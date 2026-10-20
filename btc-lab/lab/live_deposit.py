@@ -70,13 +70,27 @@ class LiveDeposits:
     def cycle(self, settings, wallet):
         if settings.get('mode') != 'live' or not wallet:
             return None
-        if float(wallet.get('waiting_usdc') or 0) < MIN_DEPOSIT_MICRO / 1e6:
+        dw = wallet.get('deposit_wallet')
+        waiting = float(wallet.get('waiting_usdc') or 0) >= MIN_DEPOSIT_MICRO / 1e6
+        bank = bool(dw) and float(wallet.get('bank_pusd') or 0) >= MIN_DEPOSIT_MICRO / 1e6
+        if not waiting and not bank:
             return None
         if (self.root / 'data' / 'sweep_pending.json').exists():
-            return None   # a half-done sweep owns the USDC.e / USDC in the wallet
+            return None   # a half-done sweep owns the USDC.e / USDC / pUSD in the wallet
         row = {'at': time.time()}
+        send = lambda label, to, data: self.live.send_tx(to, data)
         try:
-            added = wrap_deposit(self.live._rpc, lambda label, to, data: self.live.send_tx(to, data), self.live.address())
+            added = wrap_deposit(self.live._rpc, send, self.live.address()) if waiting else 0
+            if dw:
+                # 20 Oct 2026: trading pUSD lives in the Deposit Wallet; move the
+                # signer's pUSD there (the signer pays the gas in POL).
+                me = self.live.address()
+                moved = balance(self.live._rpc, PUSD, me)
+                if moved >= MIN_DEPOSIT_MICRO:
+                    send('move pUSD -> deposit wallet', PUSD,
+                         _data('transfer(address,uint256)', ['address', 'uint256'], [dw, moved]))
+                    added = max(added, moved)
+                row['moved_micro'] = moved
             row.update(stage='done', added_micro=added)
             self.live._wallet = None            # read the new balance now
             fresh = self.live.wallet() or {}

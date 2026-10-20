@@ -66,6 +66,36 @@ class DepositTests(unittest.TestCase):
         self.assertEqual(ld.sized_limits(400)['max_order_usd'], '12')            # 250 ceiling
         self.assertEqual(ld.sized_limits(165, first_day=True)['day_loss_stop_usd'], '17')
 
+    def test_signer_pusd_moves_to_the_deposit_wallet(self):
+        import json
+        dw = '0x' + '33' * 20
+        chain = Chain(usdce=20_000_000, pusd=4_000_000)
+        sent = []
+
+        def send_tx(to, data):
+            from eth_abi import decode
+            raw = bytes.fromhex(data[2:])
+            if raw[:4] == bytes.fromhex(ls._data('transfer(address,uint256)', ['address', 'uint256'], [dw, 1])[2:10]):
+                dest, amount = decode(['address', 'uint256'], raw[4:])
+                sent.append((dest.lower(), amount))
+                chain.bal[ls.PUSD] -= amount
+                return '0x1'
+            label = {ld.ONRAMP.lower(): 'wrap USDC.e -> pUSD'}.get(to.lower(), 'approve x')
+            return chain.send(label, to, data)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'data').mkdir()
+            (root / 'data' / 'mitch_live.json').write_text(json.dumps({'mode': 'live'}))
+            live = type('L', (), {'root': root, '_rpc': staticmethod(chain.rpc), 'send_tx': staticmethod(send_tx),
+                                  'address': staticmethod(lambda: ME), 'wallet': staticmethod(lambda: {}),
+                                  'exposure_usd': staticmethod(lambda: 0), 'clock': staticmethod(lambda: 0),
+                                  '_wallet': None})()
+            row = ld.LiveDeposits(live).cycle({'mode': 'live'}, {'waiting_usdc': 20, 'bank_pusd': 4, 'deposit_wallet': dw})
+            self.assertEqual(row['stage'], 'done')
+            self.assertEqual(sent, [(dw, 24_000_000)])          # the deposit and the signer's pUSD, all in play
+            self.assertEqual(chain.bal[ls.PUSD], 0)
+
     def test_nothing_while_a_sweep_is_half_done(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

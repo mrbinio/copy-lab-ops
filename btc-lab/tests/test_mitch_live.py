@@ -223,6 +223,55 @@ class MitchLiveTests(unittest.TestCase):
             self.assertEqual(live.day_loss_usd(), Decimal(0))
             self.assertEqual(live.exposure_usd(), Decimal(0))
 
+    def test_real_orders_go_through_the_deposit_wallet(self):
+        from types import SimpleNamespace
+        from unittest import mock
+        from lab import live_gate
+
+        class SDK:
+            wallet = '0x2De437B983E864Dc8814bDca88493c87D3C1778c'
+
+            def __init__(self):
+                self.calls = []
+
+            def place_market_order(self, **args):
+                self.calls.append(args)
+                if args['side'] == 'BUY':
+                    return SimpleNamespace(ok=True, status='matched', order_id='0xo', making_amount=Decimal('2.6'),
+                                           taking_amount=Decimal('5.2'), transactions_hashes=('0xt',))
+                return SimpleNamespace(ok=True, status='matched', order_id='0xs', making_amount=Decimal('2.6'),
+                                       taking_amount=Decimal('3.1'), transactions_hashes=('0xu',))
+
+        sdk = SDK()
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(live_gate, 'LIVE_ORDERS_ALLOWED', True):
+            live, client = self.make(tmp, 'live')
+            live._trader_factory = lambda: sdk
+            row = live.on_buy('w', 'g' * 30, event(), {'vwap': '0.43', 'cost': 13_000_000}, Decimal('0.523'))
+            self.assertEqual(row['status'], 'FILLED')
+            self.assertEqual((row['spent_usd'], row['shares']), ('2.6', '5.2'))
+            self.assertEqual(sdk.calls[0]['order_type'], 'FOK')
+            self.assertEqual(sdk.calls[0]['max_price'], Decimal('0.52'))     # the PAPER cap, on the tick
+            self.assertEqual(client.posted, [])                             # never the old plain-wallet path
+            sold = live.on_sell('w', 'h' * 30, event('0.70'), Decimal('1'), Decimal('0.60'))
+            self.assertEqual(sold['status'], 'FILLED')
+            self.assertEqual(sdk.calls[1]['side'], 'SELL')
+            self.assertEqual(sdk.calls[1]['shares'], Decimal('5.20'))
+
+    def test_no_offers_is_not_filled_not_an_error(self):
+        from unittest import mock
+        from lab import live_gate
+        from polymarket.errors import InsufficientLiquidityError
+
+        class SDK:
+            def place_market_order(self, **args):
+                raise InsufficientLiquidityError('no liquidity')
+
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(live_gate, 'LIVE_ORDERS_ALLOWED', True):
+            live, client = self.make(tmp, 'live')
+            live._trader_factory = lambda: SDK()
+            row = live.on_buy('w', 'i' * 30, event(), {'vwap': '0.43', 'cost': 13_000_000}, Decimal('0.52'))
+            self.assertEqual(row['status'], 'NOT_FILLED')
+
     def test_an_open_window_is_not_settled(self):
         with tempfile.TemporaryDirectory() as tmp:
             live, fetch = self.settled_store(tmp, 'tok')
