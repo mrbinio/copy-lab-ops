@@ -1,2 +1,5 @@
 websockets==16.0
 py-clob-client-v2==1.1.0
+# Deposit Wallet orders (20 Oct 2026). Install with --no-deps: it pins older
+# eth-* and websockets than the lab uses, and works with the newer ones (tested).
+# pip install --no-deps polymarket-client==0.13.0 msgpack
