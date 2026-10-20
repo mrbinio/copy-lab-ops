@@ -776,7 +776,40 @@ class MitchLive:
             'swept_usd': str(self.sweeper().swept_usd()), 'sweep_ok': self.sweeper().allowed(),
             'sweeps': self.sweeper().recent(),
             'deposits': self.deposits().recent(),
+            'unredeemed': self.unredeemed(),
         }
+
+    def unredeemed(self, late_s=1800, every_s=600, fetch=None):
+        """Winning shares Polymarket has not paid out 30 min after the window,
+        read from its positions API every 10 min. Empty means all paid."""
+        dw = self.deposit_wallet()
+        if not dw or self.settings()['mode'] != 'live':
+            return []
+        now = self.clock()
+        cached = getattr(self, '_unredeemed', None)
+        if cached is not None and now - cached[0] < every_s:
+            return cached[1]
+        found = []
+        try:
+            if fetch is None:
+                import urllib.request
+                req = urllib.request.Request('https://data-api.polymarket.com/positions?user=' + dw,
+                                             headers={'User-Agent': 'BTC-Lab-Paper/0.1'})
+                positions = json.load(urllib.request.urlopen(req, timeout=10))
+            else:
+                positions = fetch(dw)
+            for p in positions or []:
+                try:
+                    end = int(str(p.get('slug') or '').rsplit('-', 1)[1]) + 900
+                except (IndexError, ValueError):
+                    continue
+                if p.get('redeemable') and float(p.get('currentValue') or 0) >= 0.5 and now - end >= late_s:
+                    found.append({'slug': p['slug'], 'value': round(float(p['currentValue']), 2)})
+        except Exception as error:
+            LOG.debug('unredeemed check: %s', str(error)[:200])
+            found = cached[1] if cached else []
+        self._unredeemed = (now, found)
+        return found
 
     def deposits(self):
         if getattr(self, '_deposits', None) is None:

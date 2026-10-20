@@ -290,3 +290,17 @@ class TakerFeeTests(unittest.TestCase):
         total = sum(mitch_live.taker_fee(c, s) for c, s in buys)
         self.assertAlmostEqual(float(total), 1.12, delta=0.02)        # off the wallet balance, 20 Oct 2026
         self.assertEqual(mitch_live.taker_fee('0', '5'), Decimal(0))
+
+
+class UnredeemedTests(unittest.TestCase):
+    def test_only_late_winning_positions(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'data').mkdir()
+            (root / 'data' / 'mitch_live.json').write_text(json.dumps({'mode': 'live', 'deposit_wallet': '0xdw'}))
+            live = mitch_live.MitchLive(Store(root / 'data' / 'lab.sqlite'), root, clock=Now(1792200000 + 900 + 2000))
+            got = live.unredeemed(fetch=lambda dw: [
+                {'slug': 'btc-updown-15m-1792200000', 'redeemable': True, 'currentValue': 20.5},   # 33 min late
+                {'slug': 'btc-updown-15m-1792201800', 'redeemable': True, 'currentValue': 9},      # just ended
+                {'slug': 'btc-updown-15m-1792199100', 'redeemable': True, 'currentValue': 0}]) # a loss
+            self.assertEqual(got, [{'slug': 'btc-updown-15m-1792200000', 'value': 20.5}])

@@ -718,6 +718,14 @@ def live_money_alerts(live, memory, now, first):
             out.append('Wpłata doszła, ale zamiana na pUSD się nie udała (spróbuję znowu za minutę): %s'
                        % str(dep.get('error'))[:150])
     memory['deposits_seen'] = sorted(deps)[-100:]
+    paid = set(memory.get('unredeemed_seen') or [])
+    for item in live.get('unredeemed') or []:
+        if item.get('slug') not in paid:
+            paid.add(item.get('slug'))
+            if not first:
+                out.append('Wygrana nieodebrana od 30 min: %s, %.2f USD. Polymarket zwykle wypłaca sam — sprawdzam.'
+                           % (item.get('slug'), float(item.get('value') or 0)))
+    memory['unredeemed_seen'] = sorted(paid)[-100:]
     pol = (live.get('wallet') or {}).get('pol')
     if pol is not None and float(pol) < LOW_POL and not memory.get('pol_alerted'):
         out.append('Mało POL na opłaty: %.2f. Dokup trochę POL na portfel.' % float(pol))
