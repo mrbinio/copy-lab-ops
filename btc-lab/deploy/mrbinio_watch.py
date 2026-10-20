@@ -62,10 +62,80 @@ def problems():
     return out
 
 
+ALLOWED_HOSTS = ('clob.polymarket.com', 'data-api.polymarket.com', 'gamma-api.polymarket.com', 'bridge.polymarket.com',
+                 'relayer-v2.polymarket.com', 'ws-live-data.polymarket.com', 'ws-subscriptions-clob.polymarket.com',
+                 'polygon-bor-rpc.publicnode.com', 'polygon-bor.publicnode.com', 'polygon.drpc.org',
+                 'rpc-mainnet.matic.quiknode.pro', 'api.binance.com', 'data.binance.vision', 'api.telegram.org',
+                 'www.coindesk.com', 'news.google.com', 'decrypt.co', 'cointelegraph.com')
+# Cloudflare fronts Polymarket, publicnode and drpc; their addresses rotate inside these ranges.
+CLOUDFLARE = ('104.16.', '104.17.', '104.18.', '104.19.', '104.20.', '104.21.', '104.22.', '104.23.', '104.24.',
+              '104.25.', '104.26.', '104.27.', '172.64.', '172.65.', '172.66.', '172.67.', '172.68.', '172.69.',
+              '172.70.', '172.71.', '162.158.', '162.159.', '108.162.', '141.101.', '188.114.', '190.93.', '197.234.', '198.41.')
+CODE_GLOB = ('*.py', 'dashboard/*.html', 'wallet_targets*.json')
+
+
+def strange_connections():
+    """Remote addresses the desk talks to that are not on the known list."""
+    import socket
+    import subprocess
+    pid = subprocess.run(['pgrep', '-f', 'Strata-live/run.py'], capture_output=True, text=True).stdout.split()
+    if not pid:
+        return []
+    out = subprocess.run(['lsof', '-nP', '-a', '-p', pid[0], '-i'], capture_output=True, text=True).stdout
+    known = set()
+    for host in ALLOWED_HOSTS:
+        try:
+            known.update(a[4][0] for a in socket.getaddrinfo(host, 443))
+        except OSError:
+            pass
+    odd = set()
+    for line in out.splitlines()[1:]:
+        if '->' not in line:
+            continue
+        ip = line.split('->')[1].split()[0].rsplit(':', 1)[0].strip('[]')
+        if ip.startswith(('127.', '::1')) or ip in known or ip.startswith(CLOUDFLARE):
+            continue
+        odd.add(ip)
+    named = []
+    for ip in sorted(odd):
+        try:
+            named.append('%s (%s)' % (ip, socket.gethostbyaddr(ip)[0]))
+        except OSError:
+            named.append(ip)
+    return named
+
+
+def code_print():
+    import hashlib
+    files = {}
+    for pattern in CODE_GLOB:
+        for f in DESK.glob('**/' + pattern if pattern.startswith('*') else pattern):
+            if '.venv' in f.parts or 'data' in f.parts:
+                continue
+            files[str(f.relative_to(DESK))] = hashlib.sha256(f.read_bytes()).hexdigest()
+    return files
+
+
+def code_changes(st):
+    now = code_print()
+    base = st.get('code')
+    if not base:
+        st['code'] = now
+        return []
+    return sorted(k for k in set(now) | set(base) if now.get(k) != base.get(k))
+
+
 def check():
     st = load_state()
     now = time.time()
     found = problems()
+    odd = strange_connections()
+    if odd:
+        found.append('NIEZNANE połączenie programu: ' + ', '.join(odd))
+    changed = code_changes(st)
+    if changed and st.get('code_alerted') != changed:
+        tell('⚠️ Mr.Binio: zmienił się kod programu: ' + ', '.join(changed[:8]) + '. Jeśli to nie aktualizacja zrobiona przez Claude, napisz od razu.')
+        st['code_alerted'] = changed
     # The chain feed may blink; alarm only when a problem lasts two checks in a row.
     if found:
         if st.get('seen') == found and not st.get('alerted'):
