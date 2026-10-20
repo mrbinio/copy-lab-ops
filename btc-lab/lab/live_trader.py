@@ -77,6 +77,19 @@ class Trader:
                 'transactionsHashes': list(getattr(r, 'transactions_hashes', None) or []),
                 'errorMsg': getattr(r, 'error_msg', None) or getattr(r, 'error', None)}
 
+    def warm_market(self, token):
+        """Cache a market's order data before its first order. With None it
+        refreshes the last market, which also keeps the connection open."""
+        client = self.client()
+        ctx = client._ctx
+        if token is None:
+            token = getattr(self, '_last_warm', None)
+            if token:
+                ctx.order_metadata.fetch_current_market(ctx, token_id=token)
+            return
+        ctx.order_metadata.resolve_market(ctx, token_id=str(token))
+        self._last_warm = str(token)
+
     def redeem(self, condition):
         return _tx(self.client().redeem_positions(condition_id=str(condition)))
 

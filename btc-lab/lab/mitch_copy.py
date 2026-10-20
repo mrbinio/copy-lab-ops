@@ -1490,6 +1490,9 @@ class MitchCopy:
         loop = asyncio.get_running_loop()
         # Schema first, then the board, then decisions. Anchors must not hold the first step.
         await loop.run_in_executor(DB, self.ensure)
+        # 20 Oct 2026: the first real order paid 3 s for the Deposit Wallet login;
+        # build the live mirror (and its warm-up) at start, not at the first buy.
+        self.live_mirror()
         await loop.run_in_executor(DB, self.publish)
         anchors = asyncio.create_task(self.ensure_anchors())
         last_publish = self.clock()

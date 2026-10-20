@@ -271,9 +271,43 @@ class MitchLive:
                 client.get_version()
                 if self.settings()['mode'] == 'live':
                     self.trader().client()       # the first real order does not pay for the login
+                    LOG.info('live warm: deposit wallet client ready')
             except Exception as error:
                 LOG.warning('live warm: %s', str(error)[:200])
+        if not getattr(self, '_window_warmer', None):
+            self._window_warmer = threading.Thread(target=self._warm_windows, name='live-window-warm', daemon=True)
+            self._window_warmer.start()
         return PREP_POOL.submit(run)
+
+    def _warm_windows(self, every_s=60):
+        """Once a minute in live mode: market data for the current and the next
+        BTC 15m window, so the first order of a window is as fast as the rest and
+        the connection to the exchange stays open."""
+        warmed = []
+        while True:
+            try:
+                if self.settings()['mode'] == 'live':
+                    now = int(self.clock())
+                    start = now - now % 900
+                    for begin in (start, start + 900):
+                        slug = 'btc-updown-15m-%d' % begin
+                        if slug in warmed:
+                            continue
+                        for token in self._window_tokens(slug):
+                            self.trader().warm_market(token)
+                        warmed = (warmed + [slug])[-6:]
+                    self.trader().warm_market(None)
+            except Exception as error:
+                LOG.debug('live window warm: %s', str(error)[:200])
+            time.sleep(every_s)
+
+    @staticmethod
+    def _window_tokens(slug):
+        import urllib.request
+        req = urllib.request.Request('https://gamma-api.polymarket.com/markets/slug/' + slug,
+                                     headers={'User-Agent': 'BTC-Lab-Paper/0.1'})
+        market = json.load(urllib.request.urlopen(req, timeout=8))
+        return [str(t) for t in json.loads(market.get('clobTokenIds') or '[]')]
 
     def prefetch(self, condition, token):
         """Market minimum and tick for a fresh BTC 15m buy, while PAPER decides."""
