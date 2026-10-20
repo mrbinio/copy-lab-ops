@@ -113,6 +113,16 @@ def window_end(row):
         return float(row.get('closed_at') or 0)
 
 
+def taker_fee(cash, shares):
+    """Polymarket's taker fee, paid in pUSD on top: 7% x (1 - price) of the cash.
+    Checked on 20 Oct 2026: nine real buys, 1.125 estimated vs 1.12 off the balance."""
+    cash, shares = Decimal(str(cash)), Decimal(str(shares))
+    if cash <= 0 or shares <= 0:
+        return Decimal(0)
+    price = min(cash / shares, Decimal(1))
+    return (cash * Decimal('0.07') * (1 - price)).quantize(Decimal('0.0001'))
+
+
 def buy_amount(limit_price, min_shares, cap, paper_usd=None, scale=Decimal(0)):
     """The PAPER amount x scale, at least the market minimum at the cap price.
     None when even the minimum does not fit the per-order cap."""
@@ -663,21 +673,25 @@ class MitchLive:
             for r in items:
                 if r['side'] == 'BUY':
                     if r['status'] == 'FILLED':
-                        spent += Decimal(r.get('spent_usd') or '0'); bought += Decimal(r.get('shares') or '0')
+                        paid = Decimal(r.get('spent_usd') or '0'); got = Decimal(r.get('shares') or '0')
+                        spent += paid + taker_fee(paid, got); bought += got
                     else:
                         spent += Decimal(r.get('amount_usd') or '0'); bought += self._est_shares(r); estimated = True
                 else:
                     shares = Decimal(r.get('shares') or '0')
                     sold += shares
                     if r['status'] == 'FILLED' and (r.get('reply') or {}).get('takingAmount'):
-                        proceeds += Decimal(str(r['reply']['takingAmount']))
+                        cash = Decimal(str(r['reply']['takingAmount']))
+                        proceeds += cash - taker_fee(cash, shares)
                     else:
                         proceeds += shares * Decimal(str(r.get('source_price') or '0')); estimated = True
             left = max(bought - sold, Decimal(0))
             payout = left if str(token) == str(winner) else Decimal(0)
             pnl = (proceeds + payout - spent).quantize(Decimal('0.0001'))
             redeem_tx = None
-            if payout > 0 and not estimated and redeem is not None:
+            # Polymarket redeems Deposit Wallet winnings by itself (seen 20 Oct
+            # 2026, ~3 min after the window); our call is only for a plain wallet.
+            if payout > 0 and not estimated and redeem is not None and not self.deposit_wallet():
                 try:
                     redeem_tx = redeem(items[0].get('condition'))
                 except Exception as error:

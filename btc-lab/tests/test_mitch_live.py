@@ -281,3 +281,12 @@ class MitchLiveTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TakerFeeTests(unittest.TestCase):
+    def test_fee_matches_the_first_real_window(self):
+        buys = [('2.55', '6.219513'), ('2.8', '6.829269'), ('2', '6.666667'), ('1.75', '6.73077'), ('1.95', '6.09375'),
+                ('5.2', '22.608696'), ('4.389999', '7.19672'), ('3.75', '6.147541'), ('4.389999', '7.19672')]
+        total = sum(mitch_live.taker_fee(c, s) for c, s in buys)
+        self.assertAlmostEqual(float(total), 1.12, delta=0.02)        # off the wallet balance, 20 Oct 2026
+        self.assertEqual(mitch_live.taker_fee('0', '5'), Decimal(0))
