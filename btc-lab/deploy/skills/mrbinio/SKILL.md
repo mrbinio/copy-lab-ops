@@ -19,7 +19,7 @@ Mitch's copy desk. Answer in Polish, short, with proof (numbers, Polygonscan/Pol
 - Our tools (source in `~/Projects/copy-lab-ops/btc-lab/deploy/`, installed in `BTC Lab/tools/`):
   - `mrbinio_watch.py check` every 5 min (`com.mrbinio.watch`): alive/halted/live/clob, unknown
     network connections, code-fingerprint changes → Telegram
-  - `mrbinio_watch.py audit` 07:30 (`com.mrbinio.audit`), `shadow` every 1 h (`com.mrbinio.shadow`)
+  - `mrbinio_watch.py audit` 07:30 (`com.mrbinio.audit`), `shadow` every 3 h (`com.mrbinio.shadow`)
   - `strata_gate.py` (`com.mrbinio.gate`): btc.damianbiniarz.com → login → desk on 8900
 - Wallets: signer `0xEb1FA4A1AFA2138Bba3B106E4a56778236a3bF01`, deposit wallet (trading money)
   `0x2De437B983E864Dc8814bDca88493c87D3C1778c`, Kraken USDC (Polygon) `0xcFf015f1C22bfFE66529d5F8967ADbeDf5E95396`
