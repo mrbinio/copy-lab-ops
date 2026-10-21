@@ -65,7 +65,7 @@ def problems():
 ALLOWED_HOSTS = ('clob.polymarket.com', 'data-api.polymarket.com', 'gamma-api.polymarket.com', 'bridge.polymarket.com',
                  'relayer-v2.polymarket.com', 'ws-live-data.polymarket.com', 'ws-subscriptions-clob.polymarket.com',
                  'polygon-bor-rpc.publicnode.com', 'polygon-bor.publicnode.com', 'polygon.drpc.org',
-                 'rpc-mainnet.matic.quiknode.pro', 'api.binance.com', 'data.binance.vision', 'api.telegram.org',
+                 'rpc-mainnet.matic.quiknode.pro', 'api.binance.com', 'data.binance.vision', 'data-api.binance.vision', 'api.binance.us', 'api.telegram.org',
                  'www.coindesk.com', 'news.google.com', 'decrypt.co', 'cointelegraph.com')
 # Cloudflare fronts Polymarket, publicnode and drpc; their addresses rotate inside these ranges.
 CLOUDFLARE = ('104.16.', '104.17.', '104.18.', '104.19.', '104.20.', '104.21.', '104.22.', '104.23.', '104.24.',
