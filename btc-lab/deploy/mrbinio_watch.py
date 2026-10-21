@@ -90,12 +90,15 @@ def strange_connections():
             pass
     odd = set()
     for line in out.splitlines()[1:]:
+        if 'ESTABLISHED' not in line and 'CLOSE_WAIT' not in line and 'SYN_SENT' not in line:
+            continue
         if '->' not in line:
             continue
         ip = line.split('->')[1].split()[0].rsplit(':', 1)[0].strip('[]')
         if ip.startswith(('127.', '::1')) or ip in known or ip.startswith(CLOUDFLARE):
             continue
         odd.add(ip)
+    odd = {ip for ip in odd if not proves_allowed(ip)}
     named = []
     for ip in sorted(odd):
         try:
@@ -103,6 +106,22 @@ def strange_connections():
         except OSError:
             named.append(ip)
     return named
+
+
+def proves_allowed(ip):
+    """Binance and others sit behind CloudFront and rotate addresses. An address
+    is fine when it presents a valid TLS certificate for one of the allowed hosts."""
+    import socket
+    import ssl
+    ctx = ssl.create_default_context()
+    for host in ALLOWED_HOSTS:
+        try:
+            with socket.create_connection((ip, 443), timeout=4) as raw:
+                with ctx.wrap_socket(raw, server_hostname=host):
+                    return True
+        except (OSError, ssl.SSLError):
+            continue
+    return False
 
 
 def code_print():
