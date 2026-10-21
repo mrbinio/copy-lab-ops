@@ -187,6 +187,83 @@ def source_windows(since):
     return wins
 
 
+def shadow(since):
+    """What the desk would have done since `since` with Mitch's sizing and our
+    local caps: per window stake and result, from Polymarket's public trades and
+    official winners. An estimate: it skips Mitch's price/book checks."""
+    from collections import defaultdict
+    targets = json.loads((DESK / 'wallet_targets.json').read_text())['wallets']
+    try:
+        local = json.loads((DESK / 'wallet_targets.local.json').read_text())
+    except (OSError, ValueError):
+        local = {}
+    top = float(local.get('max_cap') or 30)
+    caps = {t['name']: min(float(t.get('cap') or 30), top) for t in targets}
+    buys = defaultdict(list)
+    for t in targets:
+        try:
+            rows = get('https://data-api.polymarket.com/activity?user=%s&limit=500&type=TRADE' % t['wallet'], timeout=20)
+        except Exception:
+            continue
+        for r in rows:
+            slug = str(r.get('slug') or '')
+            if r.get('side') == 'BUY' and slug.startswith('btc-updown-15m-') and float(r['timestamp']) >= since:
+                buys[slug].append((float(r['timestamp']), t['name'], r.get('outcome'), float(r['price']), float(r['usdcSize'])))
+        time.sleep(1.5)
+    out = []
+    for slug in sorted(buys):
+        try:
+            m = get('https://gamma-api.polymarket.com/markets/slug/' + slug, timeout=15)
+        except Exception:
+            continue
+        if not m.get('closed'):
+            continue
+        prices = json.loads(m.get('outcomePrices') or '[]')
+        names = json.loads(m.get('outcomes') or '[]')
+        if '1' not in prices:
+            continue
+        winner = names[prices.index('1')]
+        spent, pnl = defaultdict(float), 0.0
+        for ts, name, side, px, usd in sorted(buys[slug]):
+            stake = usd if usd <= 22.5 else 22.5 + 0.05 * (usd - 22.5)
+            stake = min(stake, 30.0, caps.get(name, top) - spent[name])
+            if stake < 1 or px <= 0:
+                continue
+            spent[name] += stake
+            pnl += (stake / px if side == winner else 0) - stake - stake * 0.07 * (1 - px)
+        if spent:
+            out.append({'window': int(slug.rsplit('-', 1)[1]), 'stake': sum(spent.values()), 'pnl': pnl})
+    return out
+
+
+def shadow_text(since, label):
+    rows = shadow(since)
+    if not rows:
+        return '%s: portfele Mitcha nie grały na BTC 15m.' % label
+    won = sum(1 for r in rows if r['pnl'] > 0)
+    total = sum(r['pnl'] for r in rows)
+    last = ', '.join('%s %+.2f' % (time.strftime('%H:%M', time.localtime(r['window'])), r['pnl']) for r in rows[-6:])
+    return '%s: %d okien z zakładem, %d wygranych, wynik %+.2f USD (szacunek). Ostatnie: %s' % (
+        label, len(rows), won, total, last)
+
+
+def halt_since():
+    try:
+        return float((DESK / 'data' / 'live' / 'halt').read_text().split()[0])
+    except (OSError, ValueError, IndexError):
+        return None
+
+
+def shadow_report():
+    """Every 2 h while the desk is stopped: how it would have done."""
+    since = halt_since()
+    if since is None:
+        return
+    tell('⏸ Mr.Binio stoi od %s.\nGdybyśmy grali — %s' % (
+        time.strftime('%d.%m %H:%M', time.localtime(since)),
+        shadow_text(since, 'od zatrzymania')))
+
+
 def audit():
     since = time.time() - 86400
     lines = ['☀️ Mr.Binio — audyt dzienny (ostatnie 24 h)']
@@ -214,8 +291,12 @@ def audit():
     floor = db.execute("SELECT v FROM meta WHERE k='exodus_floor'").fetchone()
     lines.append('Kraken: linia %s USD, nadwyżka idzie na %s…%s' % (floor[0] if floor else '?', KRAKEN[:6], KRAKEN[-4:]))
     lines.append('Szybki podgląd blockchaina: %s' % ('✅' if state.get('copy_chain') else '❌ (wolniejsza droga zapasowa)'))
+    stopped = halt_since()
+    if stopped is not None:
+        lines.append('⏸ Program stoi od %s. Gdybyśmy grali — %s' % (
+            time.strftime('%d.%m %H:%M', time.localtime(stopped)), shadow_text(stopped, 'od zatrzymania')))
     tell('\n'.join(lines))
 
 
 if __name__ == '__main__':
-    {'check': check, 'audit': audit}[sys.argv[1] if len(sys.argv) > 1 else 'check']()
+    {'check': check, 'audit': audit, 'shadow': shadow_report}[sys.argv[1] if len(sys.argv) > 1 else 'check']()
