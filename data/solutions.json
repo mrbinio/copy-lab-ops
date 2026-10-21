@@ -30,18 +30,20 @@
     ]
   },
   "dead_pl": [
+    "0xaBea08725590a4C6Ae7c8E63214C9628BbC772AE-1781431873018 · SPORTS · jeden event / veto",
     "gopfan2 · ECONOMICS · jeden event / veto"
   ],
   "dead_en": [
+    "0xaBea08725590a4C6Ae7c8E63214C9628BbC772AE-1781431873018 · SPORTS · jeden event / veto",
     "gopfan2 · ECONOMICS · jeden event / veto"
   ],
-  "error": "http 401 claude-sonnet-5 {\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"invalid x-api-key\"},\"request_id\":\"req_011CgEQ4udE2852zQUZgiALM\"}",
-  "updated_at": "2026-10-21T00:00:06.412350+00:00",
-  "hunt_updated_at": "2026-10-21T00:00:06.225621+00:00",
+  "error": "http 401 claude-sonnet-5 {\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"invalid x-api-key\"},\"request_id\":\"req_011CgEnKJtfcCjMuuNQ9eVr5\"}",
+  "updated_at": "2026-10-21T04:51:51.857479+00:00",
+  "hunt_updated_at": "2026-10-21T04:51:51.643114+00:00",
   "x_source": "error",
   "x_model": null,
   "x_error": "http 403 grok-4.6 {\"code\":\"permission-denied\",\"error\":\"Your newly created team doesn't have any credits or licenses yet. You can purchase those on https://conso",
   "x_pl": "Filtr X: błąd API. Zostają sity. Copy off.",
   "x_en": "X filter: API error. Gates stand. Copy off.",
-  "x_updated_at": "2026-10-21T00:00:06.677314+00:00"
+  "x_updated_at": "2026-10-21T04:51:52.010575+00:00"
 }
