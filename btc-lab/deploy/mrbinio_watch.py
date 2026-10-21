@@ -243,8 +243,8 @@ def shadow_text(since, label):
     won = sum(1 for r in rows if r['pnl'] > 0)
     total = sum(r['pnl'] for r in rows)
     last = ', '.join('%s %+.2f' % (time.strftime('%H:%M', time.localtime(r['window'])), r['pnl']) for r in rows[-6:])
-    return '%s: %d okien z zakładem, %d wygranych, wynik %+.2f USD (szacunek). Ostatnie: %s' % (
-        label, len(rows), won, total, last)
+    return 'RAZEM %s: %s%.2f USD (szacunek)\n%d okien z zakładem, %d wygranych\nOstatnie: %s' % (
+        label, '+' if total >= 0 else '−', abs(total), len(rows), won, last)
 
 
 def halt_since():
@@ -259,7 +259,7 @@ def shadow_report():
     since = halt_since()
     if since is None:
         return
-    tell('⏸ Mr.Binio stoi od %s.\nGdybyśmy grali — %s' % (
+    tell('⏸ Mr.Binio stoi od %s.\nGdybyśmy grali:\n%s' % (
         time.strftime('%d.%m %H:%M', time.localtime(since)),
         shadow_text(since, 'od zatrzymania')))
 
