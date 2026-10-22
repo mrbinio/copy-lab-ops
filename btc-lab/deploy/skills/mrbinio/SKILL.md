@@ -71,11 +71,17 @@ send `emergency halt` to the bot.)
 Stop-loss baseline is `meta.live_start_cash` (first live wallet read; survives restarts). Deleting
 only the halt file re-halts at once. So:
 1. Show Damian the shadow result since the stop and confirm he wants to resume.
-2. Reset baseline and halt, then gated restart:
+2. Set caps for the current balance (Mitch's table), then — only when FLAT — stop the service
+   (the running desk locks the DB), reset baseline and halt, start again:
 ```bash
-cd ~/Projects/Strata-Oktober-20 && rm -f data/live/halt && sqlite3 data/live/windows.sqlite "update meta set v='' where k='live_start_cash'"
+cd ~/Projects/Strata-Oktober-20 && U=$(id -u) && curl -s -m 8 http://127.0.0.1:8900/api/state | python3 -c "import sys,json;d=json.load(sys.stdin);sys.exit(1 if d.get('open_position') else 0)" \
+ && launchctl bootout gui/$U/com.mrbinio.desk && sleep 4 \
+ && sqlite3 -cmd ".timeout 10000" data/live/windows.sqlite "update meta set v='' where k='live_start_cash'" \
+ && rm -f data/live/halt && launchctl bootstrap gui/$U ~/Library/LaunchAgents/com.mrbinio.desk.plist && sleep 25 \
+ && curl -s -m 5 http://127.0.0.1:8900/api/health
 ```
-   then the gated restart. The next wallet read becomes the new start; stop-loss = start − 50.
+   The next wallet read becomes the new start; stop-loss = start − 50. Make sure `com.mrbinio.watch`
+   is loaded (alerts) and `com.mrbinio.shadow` is off while playing; reset the watch baseline.
 3. Verify `halted False`, `mode live`, `clob ok`, cash; tell Damian new start and stop line.
 
 ### Mitch's update ("aktualizacja", "git pull")
