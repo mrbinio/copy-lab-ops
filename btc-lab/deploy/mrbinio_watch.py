@@ -199,6 +199,7 @@ def shadow(since):
         local = {}
     top = float(local.get('max_cap') or 30)
     caps = {t['name']: min(float(t.get('cap') or 30), top) for t in targets}
+    floors = {t['name']: float(t.get('min_px') or 0) for t in targets}   # Mitch's per-wallet minimum price
     buys = defaultdict(list)
     for t in targets:
         try:
@@ -227,7 +228,7 @@ def shadow(since):
         for ts, name, side, px, usd in sorted(buys[slug]):
             stake = usd if usd <= 22.5 else 22.5 + 0.05 * (usd - 22.5)
             stake = min(stake, 30.0, caps.get(name, top) - spent[name])
-            if stake < 1 or px <= 0:
+            if stake < 1 or px <= 0 or px < floors.get(name, 0):
                 continue
             spent[name] += stake
             pnl += (stake / px if side == winner else 0) - stake - stake * 0.07 * (1 - px)
