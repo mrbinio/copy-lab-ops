@@ -32,20 +32,22 @@
   "dead_pl": [
     "gangmusic · SPORTS · jeden event / veto",
     "christianox · SPORTS · jeden event / veto",
+    "tiger105 · SPORTS · jeden event / veto",
     "gopfan2 · ECONOMICS · jeden event / veto"
   ],
   "dead_en": [
     "gangmusic · SPORTS · jeden event / veto",
     "christianox · SPORTS · jeden event / veto",
+    "tiger105 · SPORTS · jeden event / veto",
     "gopfan2 · ECONOMICS · jeden event / veto"
   ],
-  "error": "http 401 claude-sonnet-5 {\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"invalid x-api-key\"},\"request_id\":\"req_011CgJa5Rocxn3oJd5B6FXVH\"}",
-  "updated_at": "2026-10-23T04:53:44.279740+00:00",
-  "hunt_updated_at": "2026-10-23T04:53:44.106664+00:00",
+  "error": "http 401 claude-sonnet-5 {\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"invalid x-api-key\"},\"request_id\":\"req_011CgK7N6UMmYFNf9WdMSuAB\"}",
+  "updated_at": "2026-10-23T11:44:01.876522+00:00",
+  "hunt_updated_at": "2026-10-23T11:44:01.652980+00:00",
   "x_source": "error",
   "x_model": null,
   "x_error": "http 403 grok-4.6 {\"code\":\"permission-denied\",\"error\":\"Your newly created team doesn't have any credits or licenses yet. You can purchase those on https://conso",
   "x_pl": "Filtr X: błąd API. Zostają sity. Copy off.",
   "x_en": "X filter: API error. Gates stand. Copy off.",
-  "x_updated_at": "2026-10-23T04:53:44.459930+00:00"
+  "x_updated_at": "2026-10-23T11:44:02.091403+00:00"
 }
