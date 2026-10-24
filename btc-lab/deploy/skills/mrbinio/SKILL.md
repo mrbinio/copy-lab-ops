@@ -32,7 +32,8 @@ Mitch's copy desk. Answer in Polish, short, with proof (numbers, Polygonscan/Pol
    (`max_cap`: $100→3, $250→8, $500→15, $1000→30; between: interpolate down). Stop-loss = his
    default 50. If any value is not Mitch's, say so explicitly before using it.
 2. **Never restart while a ticket is open.** Always use the gated restart below.
-3. **No automatic transfers** except the agreed Kraken sweep (line 250, chunks of 5, keep 0).
+3. **No automatic transfers** except the agreed Kraken sweep: since 24.10 Damian chose 40% of profit to Kraken —
+   STRATA_SWEEP_USD=10, STRATA_SWEEP_KEEP_SHARE=0.6 (each +10 above meta exodus_floor sends 4, floor +6).
    Never send anything to Mitch. Profit share was removed by Mitch (no 10%).
 4. **A bare "ok" is not consent** to change trading, code or money paths — confirm in one line.
 5. **Never pull Mitch's updates blindly** — review first (procedure below).
