@@ -6,14 +6,14 @@
   "verb_en": "DO NOT ENABLE",
   "now_pl": "Żaden tor nie przeszedł sitów do włączenia. $39 zostaje. Najbliższa ścieżka to hunt pod książkę $5 / $15, nie dokupowanie i nie All Copy.",
   "now_en": "No lane cleared the gates. Leave the $39. Closest path is hunt for a $5 / $15 book, not more cash and not All Copy.",
-  "path_pl": "Najbliżej: juice-fruit (SPORTS). Brakuje: sity prawie — nadal WAIT, nie enable. Patrz w Symulacji. W Telegramie nic nie klikasz.",
-  "path_en": "Closest: juice-fruit (SPORTS). Missing: sity prawie — nadal WAIT, nie enable. Look in Simulation. Do nothing in Telegram.",
+  "path_pl": "Najbliżej: juice-fruit (SPORTS). Brakuje: jeden event (conc 0.58). Patrz w Symulacji. W Telegramie nic nie klikasz.",
+  "path_en": "Closest: juice-fruit (SPORTS). Missing: jeden event (conc 0.58). Look in Simulation. Do nothing in Telegram.",
   "hunt_next_pl": "Następny bieg: głębiej SPORTS (offset 250/300), potem POLITICS, FINANCE. Pomijamy Top 8, świece 5 min, esport, conc=1.0 jako pick.",
   "hunt_next_en": "Next run: deeper SPORTS (offset 250/300), then POLITICS, FINANCE. Skip Top 8, 5-min candles, esports, conc=1.0 picks.",
   "closest": {
     "name": "juice-fruit",
     "lane": "SPORTS",
-    "missing": "sity prawie — nadal WAIT, nie enable"
+    "missing": "jeden event (conc 0.58)"
   },
   "next_cats": [
     "SPORTS",
@@ -29,15 +29,19 @@
       300
     ]
   },
-  "dead_pl": [],
-  "dead_en": [],
-  "error": "http 401 claude-sonnet-5 {\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"invalid x-api-key\"},\"request_id\":\"req_011CgSyrCm1XmB9VFhsZk4Ys\"}",
-  "updated_at": "2026-10-27T15:30:13.792793+00:00",
-  "hunt_updated_at": "2026-10-27T15:30:13.561689+00:00",
+  "dead_pl": [
+    "juice-fruit · SPORTS · jeden event / veto"
+  ],
+  "dead_en": [
+    "juice-fruit · SPORTS · jeden event / veto"
+  ],
+  "error": "http 401 claude-sonnet-5 {\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"invalid x-api-key\"},\"request_id\":\"req_011CgTX5SJ4sdRVdkUir51Ey\"}",
+  "updated_at": "2026-10-27T22:19:44.772367+00:00",
+  "hunt_updated_at": "2026-10-27T22:19:44.606215+00:00",
   "x_source": "error",
   "x_model": null,
   "x_error": "http 403 grok-4.6 {\"code\":\"permission-denied\",\"error\":\"Your newly created team doesn't have any credits or licenses yet. You can purchase those on https://conso",
   "x_pl": "Filtr X: błąd API. Zostają sity. Copy off.",
   "x_en": "X filter: API error. Gates stand. Copy off.",
-  "x_updated_at": "2026-10-27T15:30:14.029484+00:00"
+  "x_updated_at": "2026-10-27T22:19:44.946880+00:00"
 }
