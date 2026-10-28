@@ -35,13 +35,13 @@
   "dead_en": [
     "juice-fruit · SPORTS · jeden event / veto"
   ],
-  "error": "http 401 claude-sonnet-5 {\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"invalid x-api-key\"},\"request_id\":\"req_011CgTX5SJ4sdRVdkUir51Ey\"}",
-  "updated_at": "2026-10-27T22:19:44.772367+00:00",
-  "hunt_updated_at": "2026-10-27T22:19:44.606215+00:00",
+  "error": "http 401 claude-sonnet-5 {\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"invalid x-api-key\"},\"request_id\":\"req_011CgU77svgineshr6K4kpe8\"}",
+  "updated_at": "2026-10-28T05:46:09.826757+00:00",
+  "hunt_updated_at": "2026-10-28T05:46:09.642131+00:00",
   "x_source": "error",
   "x_model": null,
   "x_error": "http 403 grok-4.6 {\"code\":\"permission-denied\",\"error\":\"Your newly created team doesn't have any credits or licenses yet. You can purchase those on https://conso",
   "x_pl": "Filtr X: błąd API. Zostają sity. Copy off.",
   "x_en": "X filter: API error. Gates stand. Copy off.",
-  "x_updated_at": "2026-10-27T22:19:44.946880+00:00"
+  "x_updated_at": "2026-10-28T05:46:10.008333+00:00"
 }
