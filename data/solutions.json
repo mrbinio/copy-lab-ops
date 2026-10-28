@@ -30,20 +30,18 @@
     ]
   },
   "dead_pl": [
-    "juice-fruit · SPORTS · jeden event / veto",
-    "0x6bAB66c4BB24c96Ed14dccA0f0979B38a6830FE5-1760703674960 · FINANCE · jeden event / veto"
+    "juice-fruit · SPORTS · jeden event / veto"
   ],
   "dead_en": [
-    "juice-fruit · SPORTS · jeden event / veto",
-    "0x6bAB66c4BB24c96Ed14dccA0f0979B38a6830FE5-1760703674960 · FINANCE · jeden event / veto"
+    "juice-fruit · SPORTS · jeden event / veto"
   ],
-  "error": "http 401 claude-sonnet-5 {\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"invalid x-api-key\"},\"request_id\":\"req_011CgUgHSkF3CCfNuanWvBLy\"}",
-  "updated_at": "2026-10-28T13:01:04.710722+00:00",
-  "hunt_updated_at": "2026-10-28T13:01:04.539651+00:00",
+  "error": "http 401 claude-sonnet-5 {\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"invalid x-api-key\"},\"request_id\":\"req_011CgVG6uVyHkCEGFsWoyR3V\"}",
+  "updated_at": "2026-10-28T20:24:33.696827+00:00",
+  "hunt_updated_at": "2026-10-28T20:24:33.479117+00:00",
   "x_source": "error",
   "x_model": null,
   "x_error": "http 403 grok-4.6 {\"code\":\"permission-denied\",\"error\":\"Your newly created team doesn't have any credits or licenses yet. You can purchase those on https://conso",
   "x_pl": "Filtr X: błąd API. Zostają sity. Copy off.",
   "x_en": "X filter: API error. Gates stand. Copy off.",
-  "x_updated_at": "2026-10-28T13:01:05.246777+00:00"
+  "x_updated_at": "2026-10-28T20:24:33.887284+00:00"
 }
