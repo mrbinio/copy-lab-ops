@@ -30,20 +30,20 @@
     ]
   },
   "dead_pl": [
-    "juice-fruit · SPORTS · jeden event / veto",
-    "0x8c66E28FbE7Ede7F57bA6CBc70408DfF442944F3-1777220320442 · ECONOMICS · jeden event / veto"
+    "0x8c66E28FbE7Ede7F57bA6CBc70408DfF442944F3-1777220320442 · ECONOMICS · jeden event / veto",
+    "askilika · SPORTS · jeden event / veto"
   ],
   "dead_en": [
-    "juice-fruit · SPORTS · jeden event / veto",
-    "0x8c66E28FbE7Ede7F57bA6CBc70408DfF442944F3-1777220320442 · ECONOMICS · jeden event / veto"
+    "0x8c66E28FbE7Ede7F57bA6CBc70408DfF442944F3-1777220320442 · ECONOMICS · jeden event / veto",
+    "askilika · SPORTS · jeden event / veto"
   ],
-  "error": "http 401 claude-sonnet-5 {\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"invalid x-api-key\"},\"request_id\":\"req_011CgVdHc8T3uss8RZ5zsRPH\"}",
-  "updated_at": "2026-10-29T01:02:22.114363+00:00",
-  "hunt_updated_at": "2026-10-29T01:02:21.923516+00:00",
+  "error": "http 401 claude-sonnet-5 {\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"invalid x-api-key\"},\"request_id\":\"req_011CgWLqtA2ahBffLHqijmaF\"}",
+  "updated_at": "2026-10-29T10:07:19.640978+00:00",
+  "hunt_updated_at": "2026-10-29T10:07:19.397679+00:00",
   "x_source": "error",
   "x_model": null,
   "x_error": "http 403 grok-4.6 {\"code\":\"permission-denied\",\"error\":\"Your newly created team doesn't have any credits or licenses yet. You can purchase those on https://conso",
   "x_pl": "Filtr X: błąd API. Zostają sity. Copy off.",
   "x_en": "X filter: API error. Gates stand. Copy off.",
-  "x_updated_at": "2026-10-29T01:02:22.305015+00:00"
+  "x_updated_at": "2026-10-29T10:07:19.863722+00:00"
 }
