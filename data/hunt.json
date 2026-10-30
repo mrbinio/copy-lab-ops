@@ -1,7 +1,7 @@
 {
   "status": "done",
   "goal": "Find one specialist a $39 stack can copy at $5 after 60/90d, not Top 8.",
-  "checked": 1055,
+  "checked": 1054,
   "log": [
     "plan cats=SPORTS,POLITICS,FINANCE,CULTURE,TECH,ECONOMICS extra={\"SPORTS\":[250,300]} x_skip=",
     "LB SPORTS ALL off=150 n=50",
@@ -53,18 +53,20 @@
     "scanned 585, queued 30",
     "scanned 600, queued 30",
     "scanned 630, queued 31",
+    "scanned 645, queued 36",
     "scanned 660, queued 36",
     "scanned 675, queued 36",
-    "scanned 690, queued 36",
-    "scanned 720, queued 36",
+    "scanned 705, queued 36",
+    "scanned 735, queued 36",
     "scanned 750, queued 36",
-    "scanned 780, queued 36",
-    "scanned 870, queued 36",
-    "scanned 900, queued 36",
-    "scanned 915, queued 36",
+    "scanned 765, queued 36",
+    "scanned 795, queued 36",
+    "scanned 885, queued 36",
+    "scanned 930, queued 36",
     "scanned 945, queued 36",
+    "scanned 960, queued 36",
     "scanned 975, queued 36",
-    "scanned 1020, queued 36",
+    "scanned 1005, queued 36",
     "scanned 1035, queued 36",
     "scanned 1050, queued 36",
     "simming 36",
@@ -159,5 +161,5 @@
     },
     "score": -23.0
   },
-  "updated_at": "2026-10-30T22:23:44.974758+00:00"
+  "updated_at": "2026-10-30T22:41:49.666130+00:00"
 }
