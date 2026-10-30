@@ -37,13 +37,13 @@
     "0x8c66E28FbE7Ede7F57bA6CBc70408DfF442944F3-1777220320442 · ECONOMICS · jeden event / veto",
     "askilika · SPORTS · jeden event / veto"
   ],
-  "error": "http 401 claude-sonnet-5 {\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"invalid x-api-key\"},\"request_id\":\"req_011CgYEY3knD544t5ciSFhU3\"}",
-  "updated_at": "2026-10-30T10:05:48.056504+00:00",
-  "hunt_updated_at": "2026-10-30T10:05:47.891414+00:00",
+  "error": "http 401 claude-sonnet-5 {\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"invalid x-api-key\"},\"request_id\":\"req_011CgYsHbabVqJyjTHvSGMbv\"}",
+  "updated_at": "2026-10-30T18:07:44.408542+00:00",
+  "hunt_updated_at": "2026-10-30T18:07:44.244193+00:00",
   "x_source": "error",
   "x_model": null,
   "x_error": "http 403 grok-4.6 {\"code\":\"permission-denied\",\"error\":\"Your newly created team doesn't have any credits or licenses yet. You can purchase those on https://conso",
   "x_pl": "Filtr X: błąd API. Zostają sity. Copy off.",
   "x_en": "X filter: API error. Gates stand. Copy off.",
-  "x_updated_at": "2026-10-30T10:05:48.222103+00:00"
+  "x_updated_at": "2026-10-30T18:07:44.583554+00:00"
 }
