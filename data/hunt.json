@@ -1,7 +1,7 @@
 {
   "status": "done",
   "goal": "Find one specialist a $39 stack can copy at $5 after 60/90d, not Top 8.",
-  "checked": 1054,
+  "checked": 1055,
   "log": [
     "plan cats=SPORTS,POLITICS,FINANCE,CULTURE,TECH,ECONOMICS extra={\"SPORTS\":[250,300]} x_skip=",
     "LB SPORTS ALL off=150 n=50",
@@ -53,20 +53,18 @@
     "scanned 585, queued 30",
     "scanned 600, queued 30",
     "scanned 630, queued 31",
-    "scanned 645, queued 36",
     "scanned 660, queued 36",
     "scanned 675, queued 36",
-    "scanned 705, queued 36",
-    "scanned 735, queued 36",
+    "scanned 690, queued 36",
+    "scanned 720, queued 36",
     "scanned 750, queued 36",
-    "scanned 765, queued 36",
-    "scanned 795, queued 36",
-    "scanned 885, queued 36",
-    "scanned 930, queued 36",
+    "scanned 780, queued 36",
+    "scanned 870, queued 36",
+    "scanned 900, queued 36",
+    "scanned 915, queued 36",
     "scanned 945, queued 36",
-    "scanned 960, queued 36",
     "scanned 975, queued 36",
-    "scanned 1005, queued 36",
+    "scanned 1020, queued 36",
     "scanned 1035, queued 36",
     "scanned 1050, queued 36",
     "simming 36",
@@ -81,7 +79,7 @@
     "676767676767     CULTURE    d=302 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "crystalfalls     CULTURE    d=613 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "DonkeyDonkey999  CULTURE    d=445 60=+0.0 90=+0.0 conc=0.64 cg=None",
-    "TeemuPukki       CULTURE    d=250 60=+0.0 90=+0.0 conc=1.0 cg=None",
+    "TeemuPukki       CULTURE    d=249 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "ScarletRot       TECH       d=363 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "dzsibenaja       TECH       d=644 60=+0.0 90=+0.0 conc=1.0 cg=Copy with caution",
     "NBetz            TECH       d=353 60=+0.0 90=+0.0 conc=1.0 cg=None",
@@ -89,9 +87,9 @@
     "ChironCrossing   TECH       d=450 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "YK321            TECH       d=571 60=+0.0 90=+0.0 conc=0.27 cg=None",
     "Optimus-         FINANCE    d=103 60=+0.0 90=+0.0 conc=0.61 cg=Avoid",
-    "MinautorRanger   FINANCE    d=271 60=+0.0 90=+0.0 conc=1.0 cg=None",
+    "MinautorRanger   FINANCE    d=312 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "0xDba78EAeC18Da2 FINANCE    d=122 60=+0.0 90=+0.0 conc=0.27 cg=None",
-    "0x6bAB66c4BB24c9 FINANCE    d=80 60=+0.0 90=-2.3 conc=1.0 cg=None",
+    "0x6bAB66c4BB24c9 FINANCE    d=79 60=+0.0 90=-2.3 conc=1.0 cg=None",
     "0xbandit         FINANCE    d=220 60=+0.0 90=+0.0 conc=0.31 cg=None",
     "TTCM             FINANCE    d=129 60=+0.0 90=+0.0 conc=0.76 cg=None",
     "Tirdenchi        SPORTS     d=290 60=+0.0 90=+0.0 conc=0.58 cg=None",
@@ -100,7 +98,7 @@
     "SportsPsychology SPORTS     d=184 60=+0.0 90=+0.0 conc=0.77 cg=None",
     "JPMorgan101      SPORTS     d=105 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "askilika         SPORTS     d=143 60=+5.6 90=+7.4 conc=1.0 cg=None",
-    "0x8c66E28FbE7Ede ECONOMICS  d=136 60=+5.9 90=+3.3 conc=0.5 cg=None",
+    "0x8c66E28FbE7Ede ECONOMICS  d=136 60=+5.9 90=+1.0 conc=0.5 cg=None",
     "H27JA            ECONOMICS  d=684 60=+0.0 90=+0.0 conc=0.15 cg=None",
     "torrest          ECONOMICS  d=109 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "SwissMiss        ECONOMICS  d=145 60=+0.0 90=+0.0 conc=1.0 cg=None",
@@ -116,7 +114,7 @@
       "domain": "other",
       "history_days": 136.0,
       "w60": 5.91,
-      "w90": 3.28,
+      "w90": 1.03,
       "copies": 6,
       "conc": 0.5,
       "top_market": "US-Iran 60 day negotiation period extended?",
@@ -124,7 +122,7 @@
       "copygrade": {
         "status": "rate_limit"
       },
-      "score": -23.0
+      "score": -25.3
     },
     {
       "username": "askilika",
@@ -151,7 +149,7 @@
     "domain": "other",
     "history_days": 136.0,
     "w60": 5.91,
-    "w90": 3.28,
+    "w90": 1.03,
     "copies": 6,
     "conc": 0.5,
     "top_market": "US-Iran 60 day negotiation period extended?",
@@ -159,7 +157,7 @@
     "copygrade": {
       "status": "rate_limit"
     },
-    "score": -23.0
+    "score": -25.3
   },
-  "updated_at": "2026-10-30T22:41:49.666130+00:00"
+  "updated_at": "2026-10-31T05:43:48.553137+00:00"
 }
