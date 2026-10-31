@@ -86,13 +86,13 @@
     "0x4e25605fd905e9 TECH       d=77 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "ChironCrossing   TECH       d=450 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "YK321            TECH       d=571 60=+0.0 90=+0.0 conc=0.27 cg=None",
-    "Optimus-         FINANCE    d=103 60=+0.0 90=+0.0 conc=0.61 cg=Avoid",
+    "Optimus-         FINANCE    d=104 60=+0.0 90=+0.0 conc=1.0 cg=Avoid",
     "MinautorRanger   FINANCE    d=312 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "0xDba78EAeC18Da2 FINANCE    d=122 60=+0.0 90=+0.0 conc=0.27 cg=None",
-    "0x6bAB66c4BB24c9 FINANCE    d=79 60=+0.0 90=-2.3 conc=1.0 cg=None",
+    "0x6bAB66c4BB24c9 FINANCE    d=78 60=+0.0 90=-2.3 conc=1.0 cg=None",
     "0xbandit         FINANCE    d=220 60=+0.0 90=+0.0 conc=0.31 cg=None",
     "TTCM             FINANCE    d=129 60=+0.0 90=+0.0 conc=0.76 cg=None",
-    "Tirdenchi        SPORTS     d=290 60=+0.0 90=+0.0 conc=0.58 cg=None",
+    "Tirdenchi        SPORTS     d=303 60=+0.0 90=+0.0 conc=1.0 cg=None",
     "BroadwaySlasher  SPORTS     d=147 60=+0.0 90=+0.0 conc=0.56 cg=None",
     "warluigi         SPORTS     d=108 60=+0.0 90=+0.0 conc=0.65 cg=None",
     "SportsPsychology SPORTS     d=184 60=+0.0 90=+0.0 conc=0.77 cg=None",
@@ -159,5 +159,5 @@
     },
     "score": -25.3
   },
-  "updated_at": "2026-10-31T06:01:38.680677+00:00"
+  "updated_at": "2026-10-31T12:29:47.273637+00:00"
 }
