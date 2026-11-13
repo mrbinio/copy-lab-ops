@@ -31,13 +31,13 @@
   },
   "dead_pl": [],
   "dead_en": [],
-  "error": "http 401 claude-sonnet-5 {\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"invalid x-api-key\"},\"request_id\":\"req_011CgzUBz3xXXmQ5uSwMuP1c\"}",
-  "updated_at": "2026-11-13T06:40:18.249152+00:00",
-  "hunt_updated_at": "2026-11-13T06:40:18.091128+00:00",
+  "error": "http 401 claude-sonnet-5 {\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"invalid x-api-key\"},\"request_id\":\"req_011CgzUxMuqDp39fb1tUmXBC\"}",
+  "updated_at": "2026-11-13T06:50:20.263201+00:00",
+  "hunt_updated_at": "2026-11-13T06:50:20.098692+00:00",
   "x_source": "error",
   "x_model": null,
   "x_error": "http 403 grok-4.6 {\"code\":\"permission-denied\",\"error\":\"Your newly created team doesn't have any credits or licenses yet. You can purchase those on https://conso",
   "x_pl": "Filtr X: błąd API. Zostają sity. Copy off.",
   "x_en": "X filter: API error. Gates stand. Copy off.",
-  "x_updated_at": "2026-11-13T06:40:18.487780+00:00"
+  "x_updated_at": "2026-11-13T06:50:20.430786+00:00"
 }
